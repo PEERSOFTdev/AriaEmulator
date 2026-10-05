@@ -1,0 +1,15 @@
+# Konce radku drzi git, ne nastroje (zkusenost z projektu Eureka: smes CRLF
+# a LF ukazovala v diffu prepsane cele soubory misto zmenenych radku).
+* text=auto
+
+# .bat vykonava cmd.exe; na LF-only davkach umi tise selhat na if/else a goto.
+*.bat text eol=crlf
+
+# Python (tools/, doplnek NVDA) a davky pro Linux/WSL: bash na \r selze az za behu.
+*.py text eol=lf
+*.sh text eol=lf
+# Skript vydani nema priponu, aby se spoustel jako ./release.
+/release text eol=lf
+
+# Binarni soubory musi byt posledni: pri shode vice vzoru vyhrava ten nizsi.
+*.wav binary

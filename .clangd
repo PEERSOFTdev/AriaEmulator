@@ -1,0 +1,17 @@
+# clangd nevidi do Makefile a bez kompilacni databaze preklada s vychozimi
+# prepinaci. Proto (stejne jako v Eurece):
+#
+# -std=c++20, jinak std::filesystem, wstring_view a podobne vypadaji jako
+# neexistujici.
+#
+# --target, protoze vychozi cil clangd na Windows je MSVC: bral by STL
+# z Visual Studia, tedy jinou knihovnu, nez kterou se projekt preklada.
+#
+# Trikrat -Isrc, protoze clangd bez kompilacni databaze vyhodnocuje relativni
+# cesty vuci slozce souboru: z src/ plati prvni, z tests/ druha.
+#
+# Prepinace musi odpovidat Makefile; tohle je jedine misto, kde jsou zdvojene.
+CompileFlags:
+  Add: [-std=c++20, --target=x86_64-w64-windows-gnu,
+        -Isrc, -I../src, -I../../src,
+        -DWINVER=0x0A00, -D_WIN32_WINNT=0x0A00]

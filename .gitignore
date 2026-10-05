@@ -1,0 +1,36 @@
+# Firmware se nedistribuuje, viz ROM-NOTICE.txt
+*.IMG
+*.img
+ARIAA4.*
+*.ZIP
+*.zip
+*.rar
+*.flash
+
+# Rozbalene soubory z disku B: a z nich odvozene zvuky
+extracted/
+audio/
+
+# Vystup sestaveni: build/ jsou mezivystupy, bin/ hotove EXE
+build/
+bin/
+*.o
+*.obj
+*.exe
+*.EXE
+*.COM
+*.SYS
+*.DSP
+__pycache__/
+
+# Beads / Dolt
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+.beads.gate.lock
+.beads/.auto-import-issues.jsonl
+*.gate.lock.info
+
+# Beads / Dolt files (added by bd init)
+*.gate.lock*
