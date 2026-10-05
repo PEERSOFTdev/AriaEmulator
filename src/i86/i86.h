@@ -6,9 +6,9 @@
 // i186.cpp compiles verbatim without the MAME framework. Member names and
 // enums are MAME's; the device, address-space, debugger and save-state
 // plumbing is replaced by the small shims below and by the I86Bus
-// interface. Only what the Aria needs is kept: the 80186/80188 path. The
-// PCB peripherals (timer, DMA, interrupt controller) keep their state
-// structs so that execute_run() compiles unchanged, but are not driven yet
+// interface. Only what the Aria needs is kept: the 80186/80188 path with
+// its PCB peripherals (interrupt controller, timers, DMA, chip selects);
+// MAME's scheduler is replaced by the cycle timers declared below
 // (HANDOFF 6.12).
 
 #ifndef ARIA_I86_I86_H
@@ -28,8 +28,14 @@ class I86Bus {
   virtual void WriteMemory(uint32_t address, uint8_t value) = 0;
   virtual uint8_t ReadIo(uint16_t port) = 0;
   virtual void WriteIo(uint16_t port, uint8_t value) = 0;
-  // INTA cycle for a maskable interrupt: returns the vector number.
-  virtual uint8_t AcknowledgeInterrupt() = 0;
+  // INTA from an external controller cascaded on INT0/INT1 (cascade mode
+  // of the PCB interrupt controller): returns the vector number.
+  virtual uint8_t AcknowledgeInterrupt() { return 0; }
+  // TMROUT0/TMROUT1 pin levels.
+  virtual void TimerOutput(int timer, int state) {}
+  // A chip-select register was written: 0 UMCS, 1 LMCS, 2 PACS, 3 MMCS,
+  // 4 MPCS, with the value as the PCB stores it.
+  virtual void ChipSelect(int which, uint16_t value) {}
 };
 
 // ---- ARIA: shims for the few MAME facilities the core uses ----
@@ -78,6 +84,8 @@ class AddressSpace {
     write_byte(address, static_cast<uint8_t>(value));
     write_byte(address + 1, static_cast<uint8_t>(value >> 8));
   }
+  // The 80188 bus is 8 bits wide; DMA does byte transfers only (i186.cpp).
+  int data_width() const { return 8; }
   // Masked word write as used by write_port_byte_al: only the selected
   // half reaches the 8-bit bus.
   void write_word(offs_t address, uint16_t value, uint16_t mask) {
@@ -90,9 +98,48 @@ class AddressSpace {
   bool io_;
 };
 
-// MAME's devcb line callback, used here only for the LOCK prefix.
+using address_space = AddressSpace;  // MAME's name, used by the DMA code.
+
+// MAME's devcb line callback where the line goes nowhere (LOCK, IRQA, the
+// iRMX interrupt output).
 struct LineCallback {
   void operator()(int) const {}
+};
+
+// MAME's scheduler reduced to CPU cycles: attotime carries a cycle count,
+// emu_timer is a one-shot that the CPU fires between instructions
+// (i80186_cpu_device::ServiceTimers). HANDOFF 6.12.
+struct attotime {
+  int64_t cycles;
+  static const attotime never;
+  bool operator==(const attotime& other) const { return cycles == other.cycles; }
+};
+inline const attotime attotime::never{INT64_MAX};
+
+class emu_timer {
+ public:
+  explicit emu_timer(const int64_t* now = nullptr) : now_(now) {}
+  void bind(const int64_t* now) { now_ = now; }
+  void adjust(attotime delay, int param = 0) {
+    param_ = param;
+    if (delay == attotime::never) {
+      enabled_ = false;
+    } else {
+      enabled_ = true;
+      due_ = *now_ + delay.cycles;
+    }
+  }
+  bool enabled() const { return enabled_; }
+  attotime remaining() const { return attotime{enabled_ && due_ > *now_ ? due_ - *now_ : 0}; }
+  int64_t due() const { return due_; }
+  int param() const { return param_; }
+  void disable() { enabled_ = false; }
+
+ private:
+  const int64_t* now_;
+  bool enabled_ = false;
+  int64_t due_ = 0;
+  int param_ = 0;
 };
 
 /////////////////////////////////////////////////////////////////
@@ -335,7 +382,9 @@ protected:
 	void debugger_wait_hook() {}
 	void debugger_exception_hook(int) {}
 	uint64_t total_cycles() const { return 1; }  // Only "not at reset" matters.
-	int standard_irq_callback(int, uint32_t) { return bus_->AcknowledgeInterrupt(); }
+	// INTA cycle. The 80186 overrides it with its interrupt controller.
+	virtual int standard_irq_callback(int, uint32_t) { return bus_->AcknowledgeInterrupt(); }
+	void set_input_line(int line, int state) { execute_set_input(line, state); }
 
 	union
 	{                   /* eight general registers */
@@ -443,6 +492,8 @@ class i80186_cpu_device : public i8086_common_cpu_device
 protected:
 	// ARIA: replaces the MAME device constructor; 80188 only.
 	i80186_cpu_device();
+	i80186_cpu_device(const i80186_cpu_device&) = delete;
+	i80186_cpu_device& operator=(const i80186_cpu_device&) = delete;
 
 	void execute_run();
 	void device_reset();
@@ -469,9 +520,71 @@ protected:
 	// ARIA: opcode fetch, MAME's opcode cache reduced to the bus.
 	uint8_t m_or8(uint32_t address) { return m_opcodes->read_byte(address); }
 
+	// ---- PCB peripherals, MAME's functions (i186.cpp) ----
+	// ARIA: MAME's IRQ_CALLBACK_MEMBER / TIMER_CALLBACK_MEMBER signatures.
+#define IRQ_CALLBACK_MEMBER(name) int name(i8086_common_cpu_device &device, int irqline)
+#define TIMER_CALLBACK_MEMBER(name) void name(int param)
+	IRQ_CALLBACK_MEMBER(int_callback);
+	IRQ_CALLBACK_MEMBER(inta_callback);
+	virtual int standard_irq_callback(int, uint32_t) override { return inta_callback(*this, 0); }
+
+	void update_interrupt_state();
+	void handle_eoi(int data);
+	void external_int(uint16_t intno, int state);
+	void restart_timer(int which);
+	void internal_timer_sync(int which);
+	void internal_timer_update(int which, int new_count, int new_maxA, int new_maxB, int new_control);
+	void external_tmrin(int which, int state);
+	void update_dma_control(int which, int new_control);
 	void drq_callback(int which);
+	void inc_timer(int which);
 	uint16_t internal_port_r(offs_t offset, uint16_t mem_mask = static_cast<uint16_t>(~0));
 	void internal_port_w(offs_t offset, uint16_t data);
+	TIMER_CALLBACK_MEMBER(timer_elapsed);
+
+	// ARIA: CPU cycle clock for the timers. m_icount counts down within one
+	// execute_run(); m_clock_base and m_icount_base turn that into an
+	// absolute cycle number. While a timer fires, the clock reads its due
+	// time, so that a periodic timer reprimes without drift.
+	int64_t m_clock = 0;           // Absolute cycle, see UpdateClock().
+	int64_t m_clock_base = 0;
+	int m_icount_base = 0;
+	void UpdateClock() { m_clock = m_clock_base + (m_icount_base - m_icount); }
+	void BeginRun(int cycles) { m_icount = m_icount_base = cycles; UpdateClock(); }
+	void EndRun() { m_clock_base += m_icount_base - m_icount; m_icount_base = m_icount; UpdateClock(); }
+	attotime cycles_to_attotime(int64_t cycles) const { return attotime{cycles}; }
+	static int64_t attotime_to_cycles(attotime time) { return time.cycles; }
+	emu_timer m_int_timers[3];
+	// Fires the timers that are due; returns true when any fired.
+	bool ServiceTimers();
+	// HLT: skip ahead to the next timer event if it falls within the
+	// current budget; returns false when nothing is due before the end.
+	bool HaltUntilTimer();
+
+	// ARIA: MAME's devcb callbacks, routed to I86Bus.
+	struct SlaveAck {
+		I86Bus*& bus;
+		uint8_t operator()(int) const { return bus->AcknowledgeInterrupt(); }
+	};
+	struct TimerOut {
+		I86Bus*& bus;
+		int timer;
+		void operator()(int state) const { bus->TimerOutput(timer, state); }
+	};
+	struct ChipSelectOut {
+		I86Bus*& bus;
+		void operator()(int which, uint16_t value, uint16_t) const { bus->ChipSelect(which, value); }
+	};
+	struct IrqAck {
+		int operator()(i8086_common_cpu_device&, int) const { return 0; }
+	};
+	SlaveAck m_read_slave_ack_func{bus_};
+	ChipSelectOut m_out_chip_select_func{bus_};
+	TimerOut m_out_tmrout0_func{bus_, 0};
+	TimerOut m_out_tmrout1_func{bus_, 1};
+	LineCallback m_irmx_irq_cb;
+	LineCallback m_irqa_cb;
+	IrqAck m_irmx_irq_ack;
 
 	struct mem_state
 	{
@@ -488,6 +601,7 @@ protected:
 		uint16_t    maxA;
 		uint16_t    maxB;
 		uint16_t    count;
+		emu_timer   *int_timer;
 	};
 
 	struct dma_state

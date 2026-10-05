@@ -1711,10 +1711,11 @@ bool i8086_common_cpu_device::common_op(uint8_t op)
 				int tmp = (int)((int8_t)fetch());
 
 				CLK(JMP_SHORT);
-				if (tmp==-2 && m_no_interrupt==0 && (m_pending_irq==0) && m_icount>0)
-				{
-					m_icount%=12; /* cycle skip */
-				}
+				// ARIA: MAME's idle-loop cycle skip for "jmp $" removed. It
+				// jumps over the rest of the time slice, so PCB timer
+				// interrupts and DMA transfers waited for the next slice
+				// (found by cpu_selftest, DMA with DRQ0). An 80188 is cheap to
+				// emulate cycle by cycle. HANDOFF 6.12.
 				m_ip = (uint16_t)(m_ip+tmp);
 			}
 			break;
@@ -1854,7 +1855,10 @@ bool i8086_common_cpu_device::common_op(uint8_t op)
 
 		case 0xf4: // i_hlt
 			//logerror("%s: %06x: HALT\n", tag(), m_pc);
-			m_icount = 0;
+			// ARIA: was m_icount = 0, which burns the whole time slice (in
+			// Step() 16M cycles) and lets timers fall behind. Waiting is done
+			// at the top of execute_run() (HaltUntilTimer). HANDOFF 6.12.
+			CLK(HLT);
 			m_halt = true;
 			break;
 

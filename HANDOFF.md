@@ -347,9 +347,16 @@ Kde je co:
   `I86Bus`, logování, háčky debuggeru).
 - `src/cpu80188.*` — rozhraní pro emulátor: `Step()` (celá instrukce
   i s prefixy a REP), `Run()`, registry, linky INTR a NMI.
-- Periferie PCB zatím nejsou: funguje jen relokační registr (přesun PCB
-  na `0000h`, bit pasti ESC). Struktury časovačů, DMA a řadiče přerušení
-  zůstaly, aby `execute_run()` zůstal doslovný.
+- Periferie PCB **od 5. 10. 2026 převzaté** (`i186.cpp` řádky 927–2099
+  doslovně): řadič přerušení (master i iRMX), tři časovače, dva kanály
+  DMA, chip selecty, relokační registr. Plánovač MAME (`emu_timer`) je
+  nahrazen časovači v taktech CPU, které se obsluhují mezi instrukcemi
+  (`ServiceTimers`) a při expiraci čtou čas splatnosti, takže periodický
+  časovač neujíždí; HLT přeskočí rovnou na příští událost časovače
+  (`HaltUntilTimer`). Piny desky jsou v `Cpu80188`: `SetInterruptPin`
+  (INT0–INT3 do řadiče; INTR CPU budí jen řadič), `SetNmiLine`,
+  `SetDmaRequest`, `SetTimerInput`; výstupy TMROUT a zápisy chip selectů
+  jdou do `I86Bus::TimerOutput` a `ChipSelect` (pro mapu paměti, 6.2).
 
 Chyby MAME, které testy z hardwaru našly a které jsou opravené (vše
 s `ARIA:` v kódu):
@@ -374,6 +381,29 @@ s `ARIA:` v kódu):
    kazil CF/AF.
 10. `ENTER` přepsán podle algoritmu Intelu (displej z *původního* BP, pak
     ukazatel rámce, až potom odečtení velikosti; úroveň mod 32).
+
+S periferiemi přibyly tři změny, které našel `cpu_selftest`, ne sady
+z hardwaru (ty časovače nepokrývají):
+
+11. `HLT` nevynuluje zbytek časového úseku (`m_icount = 0`); s plánovačem
+    MAME to nevadilo, u nás by časovač zaostal o celý úsek (v `Step()`
+    16M taktů) a přerušení by se slila do jednoho.
+12. Odstraněno přeskakování taktů u `jmp $` (idle smyčka): posouvalo
+    přerušení časovačů a přenosy DMA až do dalšího úseku.
+13. Reset zastaví běžící časovače; MAME je nechával naplánované.
+
+Scénáře `cpu_selftest` pro periferie, všechny s PCB přesunutým na
+`0000h` jako na Arii: INT0 dvakrát přes řadič s EOI mezi tím (bez EOI
+druhé přerušení nepřijde), časovač 0 periodicky po 400 taktech během
+HLT, DMA paměť→paměť a DMA paměť→port `0401h` synchronizované DRQ0, které
+se zastaví na koncovém počtu (tvar, jaký programuje `SPEAK.EXE`). Mutace
+(zrušené EOI pro INT0, poloviční perioda časovače) shodí příslušný
+scénář.
+
+Co zatím **není ověřené** proti skutečnému kódu Arie: zda AAPI/FOSSIL/
+SPEAK programují PCB tak, jak model MAME čeká (úrovňové vs. hranové
+INT0–3, kaskáda, prescaler časovače 2). To ukáže až běh ovladačů
+(fáze 3).
 
 Co testy z rozhodnutí nesrovnávají, vypisuje `tests/cpu_test.cpp` i
 s počty (8088: 46 375 testů a 28 souborů; V20: 43 508 testů):
@@ -400,8 +430,9 @@ zalomení segmentu) shodí vždy příslušný test. `tests/cpu_selftest.cpp`
 bez dat ověřuje reset, přesun PCB relokačním registrem, INT, INTR a past
 ESC s obsluhou zkopírovanou z `VOICE.SYS+01C5h`.
 
-**Otevřené k 6.12:** periferie PCB (časovače, DMA, řadič přerušení,
-chip selecty) a rozbalení PKLITE (zbytek fáze 1).
+**Otevřené k 6.12:** rozbalení PKLITE (zbytek fáze 1). Kmitočet CPU
+Arie není známý (potřebný pro převod taktů na reálný čas a pro časovače),
+patří k 6.5 a fázi 3.
 
 ## 8. Pořadí
 

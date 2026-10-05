@@ -17,7 +17,9 @@ binárek a z instrukcí `mov dx,imm16` těsně před `in`/`out`.
   (`SPEAK.EXE+09F0h`), který EB nemá **[binárka]** (HANDOFF 6.12).
 - Řídicí blok periferií (PCB) je přemístěn do I/O na adresu `0000h`
   **[binárka]**: registry na offsetech podle Intelu sedí s tím, co
-  programy dělají:
+  programy dělají. Emulátor má celý PCB z MAME (HANDOFF 6.12), takže
+  níže uvedené porty už fungují; offset v MAME je číslo slova, port =
+  základ + 2 × offset.
   - `22h` EOI řadiče přerušení (`FOSSIL.COM`, `SPEAK.EXE`)
   - `34h` řízení přerušení DMA0 a `3Eh` řízení INT3 (`SPEAK.EXE+0F89`,
     `+6794`); DSP tedy nejspíš hlásí rámce přes INT3 a DMA0

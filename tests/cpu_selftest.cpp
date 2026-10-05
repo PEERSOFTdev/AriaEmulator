@@ -35,17 +35,26 @@ class Bus : public CpuBus {
   void WriteMemory(uint32_t address, uint8_t value) override { memory[address] = value; }
   uint8_t ReadIo(uint16_t) override { return 0xFF; }
   void WriteIo(uint16_t port, uint8_t value) override { writes.emplace_back(port, value); }
-  uint8_t AcknowledgeInterrupt() override {
-    ++acknowledged;
-    if (cpu) cpu->SetInterruptLine(false);  // Edge: one request.
-    return 0x40;
-  }
 
   std::vector<uint8_t> memory;
   std::vector<std::pair<uint16_t, uint8_t>> writes;
-  int acknowledged = 0;
-  Cpu80188* cpu = nullptr;
 };
+
+// mov dx,FFFEh; xor ax,ax; out dx,ax: the PCB to I/O 0000h, as the Aria
+// has it (HANDOFF 6.1). Six bytes.
+const std::vector<uint8_t> kRelocatePcb = {0xBA, 0xFE, 0xFF, 0x31, 0xC0, 0xEF};
+
+// mov dx,PORT; mov ax,VALUE; out dx,ax. Seven bytes.
+std::vector<uint8_t> OutWord(uint16_t port, uint16_t value) {
+  return {0xBA, static_cast<uint8_t>(port), static_cast<uint8_t>(port >> 8), 0xB8,
+          static_cast<uint8_t>(value), static_cast<uint8_t>(value >> 8), 0xEF};
+}
+
+std::vector<uint8_t> Join(std::initializer_list<std::vector<uint8_t>> parts) {
+  std::vector<uint8_t> code;
+  for (const auto& part : parts) code.insert(code.end(), part.begin(), part.end());
+  return code;
+}
 
 bool RunUntilHalt(Cpu80188& cpu) {
   for (int step = 0; step < 1000; ++step) {
@@ -105,17 +114,96 @@ void TestProgram() {
   Check(bus.writes == expected, "board sees port 80h only before the PCB moved there");
 }
 
-void TestHardwareInterrupt() {
+void TestExternalInterrupt() {
+  // INT0 through the PCB interrupt controller: type 0Ch, EOI to port 22h.
+  // The second request only gets through if the EOI cleared in-service.
   Bus bus;
   Cpu80188 cpu(bus);
-  bus.cpu = &cpu;
-  bus.Load(0x01000, {0xFB, 0x90, 0xF4});  // sti; nop; hlt
-  bus.Vector(0x40, 0x0000, 0x0600);
-  bus.Load(0x00600, {0xB3, 0x55, 0xCF});  // mov bl,55h; iret
+  bus.Load(0x01000, Join({kRelocatePcb,
+                          OutWord(0x0038, 0x0000),  // INT0 control: edge, unmasked, priority 0
+                          {0xFB, 0xF4, 0xEB, 0xFD}}));  // sti; hlt; jmp hlt
+  bus.Vector(0x0C, 0x0000, 0x0600);
+  bus.Load(0x00600, Join({{0xFE, 0xC3},                 // inc bl
+                          OutWord(0x0022, 0x000C),      // specific EOI, type 0Ch
+                          {0xCF}}));                    // iret
   cpu.SetRegisters(At(0x0100, 0x0000));
-  cpu.SetInterruptLine(true);
-  Check(RunUntilHalt(cpu), "interrupt program halts");
-  Check(bus.acknowledged == 1 && (cpu.GetRegisters().bx & 0xFF) == 0x55, "INTR taken once after STI");
+  Check(RunUntilHalt(cpu), "INT0 program halts");
+  for (int request = 0; request < 2; ++request) {
+    cpu.SetInterruptPin(0, true);
+    cpu.Run(2000);
+    cpu.SetInterruptPin(0, false);
+  }
+  Check((cpu.GetRegisters().bx & 0xFF) == 2, "INT0 twice through the PCB, EOI clears in-service");
+}
+
+void TestTimerInterrupt() {
+  // Timer 0 continuous, max count 100: an interrupt every 400 CPU cycles
+  // (timers count every fourth cycle, i186.cpp restart_timer). The CPU
+  // waits in HLT, so this also checks that HLT skips to the timer event.
+  Bus bus;
+  Cpu80188 cpu(bus);
+  bus.Load(0x01000, Join({kRelocatePcb,
+                          OutWord(0x0052, 100),     // T0 max count A
+                          OutWord(0x0032, 0x0000),  // timer interrupt control: unmasked
+                          OutWord(0x0056, 0xE001),  // T0 control: EN, INH, INT, CONT
+                          {0xFB, 0xF4, 0xEB, 0xFD}}));
+  bus.Vector(0x08, 0x0000, 0x0700);
+  bus.Load(0x00700, Join({{0x41},                       // inc cx
+                          OutWord(0x0022, 0x0008),      // specific EOI, type 08h
+                          {0xCF}}));
+  cpu.SetRegisters(At(0x0100, 0x0000));
+  Check(RunUntilHalt(cpu), "timer program halts");
+  const uint16_t before = cpu.GetRegisters().cx;
+  cpu.Run(400 * 50);
+  const int ticks = cpu.GetRegisters().cx - before;
+  if (ticks < 49 || ticks > 51) std::cout << "  timer ticks: " << ticks << "\n";
+  Check(ticks >= 49 && ticks <= 51, "timer 0 interrupts every 400 cycles");
+}
+
+void TestDma() {
+  Bus bus;
+  Cpu80188 cpu(bus);
+  // Unsynchronised memory to memory: the whole block at once.
+  for (int i = 0; i < 16; ++i) bus.memory[0x02000 + i] = static_cast<uint8_t>(i * 3 + 1);
+  bus.memory[0x03010] = 0xAA;
+  bus.Load(0x01000, Join({kRelocatePcb,
+                          OutWord(0x00C0, 0x2000), OutWord(0x00C2, 0),  // source 02000h
+                          OutWord(0x00C4, 0x3000), OutWord(0x00C6, 0),  // destination 03000h
+                          OutWord(0x00C8, 16),                          // count
+                          // DEST mem+inc, SRC mem+inc, TC, START, CHG, byte, no sync
+                          OutWord(0x00CA, 0xB606),
+                          {0xF4}}));
+  cpu.SetRegisters(At(0x0100, 0x0000));
+  Check(RunUntilHalt(cpu), "DMA program halts");
+  bool copied = bus.memory[0x03010] == 0xAA;
+  for (int i = 0; i < 16; ++i) copied = copied && bus.memory[0x03000 + i] == bus.memory[0x02000 + i];
+  Check(copied, "DMA0 copies 16 bytes memory to memory");
+
+  // Destination-synchronised memory to a fixed port, the shape SPEAK.EXE
+  // programs (HANDOFF 6.3): one byte per DRQ0, stop at terminal count.
+  Bus bus2;
+  Cpu80188 cpu2(bus2);
+  for (int i = 0; i < 4; ++i) bus2.memory[0x02000 + i] = static_cast<uint8_t>(0x10 + i);
+  bus2.Load(0x01000, Join({kRelocatePcb,
+                           OutWord(0x00C0, 0x2000), OutWord(0x00C2, 0),
+                           OutWord(0x00C4, 0x0401), OutWord(0x00C6, 0),  // port 0401h
+                           OutWord(0x00C8, 4),
+                           // DEST I/O no change, SRC mem+inc, TC, sync dest, START, CHG
+                           OutWord(0x00CA, 0x7686),
+                           {0xEB, 0xFE}}));  // jmp $
+  cpu2.SetRegisters(At(0x0100, 0x0000));
+  cpu2.Run(1000);
+  Check(bus2.writes.empty(), "synchronised DMA waits for DRQ");
+  cpu2.SetDmaRequest(0, true);
+  cpu2.Run(1000);
+  const std::vector<std::pair<uint16_t, uint8_t>> expected = {
+      {0x0401, 0x10}, {0x0401, 0x11}, {0x0401, 0x12}, {0x0401, 0x13}};
+  if (bus2.writes != expected) {
+    std::cout << "  DMA writes:";
+    for (const auto& [port, value] : bus2.writes) std::cout << " " << std::hex << port << "=" << int(value) << std::dec;
+    std::cout << "\n";
+  }
+  Check(bus2.writes == expected, "DRQ0 moves 4 bytes to port 0401h and stops at terminal count");
 }
 
 void TestEscapeTrap() {
@@ -145,7 +233,9 @@ void TestEscapeTrap() {
 int main() {
   TestReset();
   TestProgram();
-  TestHardwareInterrupt();
+  TestExternalInterrupt();
+  TestTimerInterrupt();
+  TestDma();
   TestEscapeTrap();
   std::cout << (failures == 0 ? "PASS" : "FAIL") << " cpu_selftest\n";
   return failures == 0 ? 0 : 1;

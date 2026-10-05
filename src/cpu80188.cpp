@@ -19,17 +19,21 @@ int Cpu80188::Step() {
   // rather than stop at the end of the budget, which MAME does by moving
   // IP back to the instruction for the next call.
   constexpr int kBudget = 1 << 24;
-  m_icount = kBudget;
+  BeginRun(kBudget);
   m_single_step = true;
   execute_run();
   m_single_step = false;
-  return kBudget - m_icount;
+  const int used = kBudget - m_icount;
+  EndRun();
+  return used;
 }
 
 int Cpu80188::Run(int cycles) {
-  m_icount = cycles;
+  BeginRun(cycles);
   execute_run();
-  return cycles - m_icount;
+  const int used = cycles - m_icount;
+  EndRun();
+  return used;
 }
 
 Cpu80188::Registers Cpu80188::GetRegisters() const {
@@ -68,9 +72,18 @@ void Cpu80188::SetRegisters(const Registers& r) {
   ExpandFlags(r.flags);
 }
 
-void Cpu80188::SetInterruptLine(bool asserted) {
-  execute_set_input(mame_i86::INPUT_LINE_INT0,
-                    asserted ? mame_i86::ASSERT_LINE : mame_i86::CLEAR_LINE);
+void Cpu80188::SetInterruptPin(int pin, bool asserted) {
+  UpdateClock();
+  external_int(static_cast<uint16_t>(pin), asserted ? mame_i86::ASSERT_LINE : mame_i86::CLEAR_LINE);
+}
+
+void Cpu80188::SetDmaRequest(int channel, bool asserted) {
+  m_dma[channel].drq_state = asserted;
+}
+
+void Cpu80188::SetTimerInput(int timer, bool asserted) {
+  UpdateClock();
+  external_tmrin(timer, asserted ? mame_i86::ASSERT_LINE : mame_i86::CLEAR_LINE);
 }
 
 void Cpu80188::SetNmiLine(bool asserted) {
