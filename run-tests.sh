@@ -1,7 +1,11 @@
 #!/bin/sh
-# Sestavi testy a pusti je naraz. Ocekava se DESET radku PASS: codec_test,
-# flash_selftest a osm rezimu firmware_test (jedna aktualizace od Robotronu
-# na rezim). Bez firmwaru jen DVA a skript to rekne.
+# Sestavi testy a pusti je naraz. Ocekava se TRINACT radku PASS:
+#   - tri bez dat: codec_test, flash_selftest, cpu_selftest;
+#   - osm rezimu firmware_test (jedna aktualizace od Robotronu na rezim),
+#     kdyz je firmware (ARIAFW);
+#   - dva behy cpu_test (8088 a rozsireni 80186 ze sady V20), kdyz jsou data
+#     instrukcnich testu (ARIA_CPUTESTS, HANDOFF 6.12).
+# Co chybi, skript vynecha a rekne to; pocet PASS se podle toho snizi.
 #
 # Volani:  ./run-tests.sh                    (firmware z promenne ARIAFW)
 #          ./run-tests.sh /mnt/d/aria/update
@@ -36,22 +40,40 @@ if [ $# -ge 1 ] && [ -n "$1" ]; then
 fi
 ARIAFW="${ARIAFW:-}"
 SKIP_FIRMWARE=0
-EXPECTED=10
+EXPECTED=3
 if [ -n "$ARIAFW" ]; then
   ARIAFW="$(to_unix "$ARIAFW")"
 fi
 if [ -z "$ARIAFW" ] || [ ! -d "$ARIAFW/CARD" ]; then
   echo "Nenašel jsem firmware Arie: ${ARIAFW:-(nezadán)}"
   echo "Zadejte složku s podsložkami CARD a SERIAL argumentem nebo proměnnou ARIAFW."
-  echo "Testy s firmwarem se vynechají, PASS budou jen dva a není to regrese."
+  echo "Osm testů s firmwarem se vynechá a není to regrese."
   SKIP_FIRMWARE=1
-  EXPECTED=2
   FW_WIN=""
 else
   # EXE dostane windowsovou cestu, s lomitky dopredu (Windows je prijima).
   FW_WIN="$(wslpath -w "$ARIAFW" | tr '\\' '/')"
+  EXPECTED=$((EXPECTED + 8))
 fi
 export SKIP_FIRMWARE
+
+# Data instrukcnich testu CPU, mimo strom (HANDOFF 6.12).
+ARIA_CPUTESTS="${ARIA_CPUTESTS:-}"
+SKIP_CPU=0
+if [ -n "$ARIA_CPUTESTS" ]; then
+  ARIA_CPUTESTS="$(to_unix "$ARIA_CPUTESTS")"
+fi
+if [ -z "$ARIA_CPUTESTS" ] || [ ! -f "$ARIA_CPUTESTS/8088/metadata.json" ]; then
+  echo "Nenašel jsem data instrukčních testů CPU: ${ARIA_CPUTESTS:-(nezadána)}"
+  echo "Zadejte složku s podsložkami 8088 a v20 proměnnou ARIA_CPUTESTS."
+  echo "Dva testy jádra CPU se vynechají a není to regrese."
+  SKIP_CPU=1
+  CPU_WIN=""
+else
+  CPU_WIN="$(wslpath -w "$ARIA_CPUTESTS" | tr '\\' '/')"
+  EXPECTED=$((EXPECTED + 2))
+fi
+export SKIP_CPU
 
 ./build-tests.sh
 
@@ -67,6 +89,7 @@ if make -j"$JOBS" -k --output-sync=target \
      CC="${TOOLPREFIX}gcc" \
      RC="${TOOLPREFIX}windres" \
      FW="$FW_WIN" \
+     CPUTESTS="$CPU_WIN" \
      check 2>&1 | tee "$LOG"; then
   :
 fi

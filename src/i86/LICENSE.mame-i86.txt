@@ -1,0 +1,41 @@
+The files i86inline.h, i86.cpp and i186.cpp in this folder contain code taken
+from MAME (https://github.com/mamedev/mame, commit
+2aa75c509dca2bebd8cbb3c0e27b9e75d3dcb597, src/devices/cpu/i86/), and i86.h
+declares it. The instruction code is kept verbatim; changes for this project
+are marked with "ARIA:" comments. That code is under the BSD 3-Clause licence
+below, not under the MIT licence of the rest of the repository.
+
+Copyright holders as named in the original files: Carl (i86 and i186 cores);
+the i86 core is based on code by Bryan McPhail, Oliver Bergmann, Fabrice
+Frances and David Hedley; the i186 peripheral code comes from the rmnimbus
+driver by Phill Harvey-Smith, based on the Leland sound driver by Aaron Giles
+and Paul Leaman.
+
+Copyright Carl and the other MAME contributors named above
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

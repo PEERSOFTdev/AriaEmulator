@@ -24,4 +24,8 @@ bool Inflate(const uint8_t* input, std::size_t length,
 
 uint32_t Crc32(const uint8_t* data, std::size_t length);
 
+// A .gz file (RFC 1952), single member, checked against its CRC-32 and
+// size. Used for the CPU test data (HANDOFF 6.12).
+bool Gunzip(const std::vector<uint8_t>& file, std::vector<uint8_t>& output);
+
 #endif

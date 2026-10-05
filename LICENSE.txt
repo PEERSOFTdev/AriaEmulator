@@ -1,8 +1,12 @@
 MIT License
 
-Scope: this licence covers the repository except for the NVDA add-on in
-nvda-addon/ (once it exists), which is under the GNU GPL version 2 or later,
-because NVDA treats add-ons as derivative works of itself.
+Scope: this licence covers the repository except for:
+- the CPU core code taken from MAME in src/i86/ (i86inline.h, i86.cpp,
+  i186.cpp and the declarations in i86.h), which is under the BSD 3-Clause
+  licence, see src/i86/LICENSE.mame-i86.txt;
+- the NVDA add-on in nvda-addon/ (once it exists), which is under the GNU
+  GPL version 2 or later, because NVDA treats add-ons as derivative works
+  of itself.
 
 Two things this project uses are deliberately NOT in the repository and are
 not covered by any licence here: the Aria firmware images, and the Aria

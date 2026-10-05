@@ -244,6 +244,30 @@ bool Inflate(const uint8_t* input, std::size_t length, std::vector<uint8_t>& out
   return true;
 }
 
+bool Gunzip(const std::vector<uint8_t>& file, std::vector<uint8_t>& output) {
+  output.clear();
+  if (file.size() < 18 || file[0] != 0x1F || file[1] != 0x8B || file[2] != 8) return false;
+  const uint8_t flags = file[3];
+  std::size_t position = 10;
+  if (flags & 0x04) {  // FEXTRA
+    if (position + 2 > file.size()) return false;
+    position += 2 + Read16(&file[position]);
+  }
+  for (const uint8_t text_flag : {uint8_t{0x08}, uint8_t{0x10}}) {  // FNAME, FCOMMENT
+    if (flags & text_flag) {
+      while (position < file.size() && file[position] != 0) ++position;
+      ++position;
+    }
+  }
+  if (flags & 0x02) position += 2;  // FHCRC
+  if (position + 8 > file.size()) return false;
+  const uint32_t crc = Read32(&file[file.size() - 8]);
+  const uint32_t size = Read32(&file[file.size() - 4]);
+  output.reserve(size);
+  if (!Inflate(&file[position], file.size() - 8 - position, output)) return false;
+  return static_cast<uint32_t>(output.size()) == size && Crc32(output.data(), output.size()) == crc;
+}
+
 bool ReadZip(const std::vector<uint8_t>& archive, std::vector<ZipMember>& members,
              std::wstring& error) {
   members.clear();

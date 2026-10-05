@@ -111,8 +111,10 @@ z `FlashImage` (`src/flash_image.h`).
 
 Z WSL krosovým mingw-w64: `./build.sh`, `./build-tests.sh`,
 `./run-tests.sh [složka firmwaru]` (jinak z proměnné `ARIAFW`). Výstup
-EXE do `bin/`, mezivýstupy do `build/`. Očekává se **deset** řádků `PASS`,
-bez firmwaru **dva** a skript to řekne.
+EXE do `bin/`, mezivýstupy do `build/`. Očekává se **třináct** řádků
+`PASS`: tři bez dat, osm s firmwarem (`ARIAFW`) a dva s daty instrukčních
+testů CPU (`ARIA_CPUTESTS`, výchozí `D:\aria\cputests`, 562 MB,
+SingleStepTests). Co chybí, skript vynechá, řekne to a počet sníží.
 
 Z Windows s msys2 (`C:\msys64\mingw64`, jinak proměnná `MINGW64`):
 `build.bat`, `build-tests.bat`, `run-tests.bat [složka firmwaru]` (jinak
@@ -138,6 +140,24 @@ a uživatelské řetězce česky.
 
 Komentuj *proč*, ne *co*. U hardwarových předpokladů připiš místo
 v binárce, které je dokládá — jinak je nikdo později neověří.
+
+### Jádro CPU z MAME (`src/i86/`)
+
+Je to kód MAME pod BSD-3 (`src/i86/LICENSE.mame-i86.txt`), ne pod MIT.
+Pravidla (HANDOFF 6.12):
+
+- Kód MAME zůstává **doslovný**, aby šel porovnat s originálem (commit
+  `2aa75c50`); styl projektu se na něj nevztahuje (tabulátory, jména
+  MAME). Každá naše změna nese komentář `ARIA:` s důvodem a odkazem na
+  test, který ji vynutil.
+- Opravy chování se dělají **jen podle měření** (`cpu_test`) nebo podle
+  dokumentace Intelu pro 80186, nikdy podle odhadu. Kde 8088 a 80186
+  mohou chování mít jinak, nesmí se test 8088 „opravit“ úpravou jádra;
+  patří do výjimek v `tests/cpu_test.cpp`, s důvodem a počtem ve výpisu.
+- Varování GCC v kódu MAME se vypíná v Makefile jen pro `src/i86/`
+  (`-Wno-sign-compare`), ne úpravou kódu.
+- Ladění jednoho opkódu: `bin/cpu_test.exe D:/aria/cputests 8088 7C -v`
+  vypíše vstupní stav a všechny rozdíly prvních selhání.
 
 ## Režim, který není slyšet, je chyba
 

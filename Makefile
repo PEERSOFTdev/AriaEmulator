@@ -22,14 +22,19 @@ SECTIONS := -ffunction-sections -fdata-sections
 CXXFLAGS  := -std=c++20 -O2 $(WARN) $(SECTIONS) -Isrc -DWINVER=0x0A00 -D_WIN32_WINNT=0x0A00
 TESTFLAGS := -std=c++20 -O2 $(WARN) -Isrc -DWINVER=0x0A00 -D_WIN32_WINNT=0x0A00
 
-EMU_NAMES  := main text_codec zip_reader fat12 flash_image
-EMU_OBJS   := $(addprefix $(BUILD)/,$(addsuffix .o,$(EMU_NAMES)))
+EMU_NAMES  := main text_codec zip_reader fat12 flash_image cpu80188
+# Jadro CPU prevzate z MAME (src/i86/LICENSE.mame-i86.txt, HANDOFF 6.12).
+I86_NAMES  := i86 i186
+I86_OBJS   := $(addprefix $(BUILD)/i86_,$(addsuffix .o,$(I86_NAMES)))
+EMU_OBJS   := $(addprefix $(BUILD)/,$(addsuffix .o,$(EMU_NAMES))) $(I86_OBJS)
 # Objekty, proti kterym se linkuji testy. Bez main.o (ma vlastni wWinMain).
 CORE_OBJS  := $(BUILD)/text_codec.o $(BUILD)/zip_reader.o $(BUILD)/fat12.o \
               $(BUILD)/flash_image.o
+CPU_OBJS   := $(BUILD)/cpu80188.o $(I86_OBJS)
 
 EMU        := $(BIN)/AriaEmulator.exe
-TEST_EXES  := $(BIN)/codec_test.exe $(BIN)/flash_selftest.exe $(BIN)/firmware_test.exe
+TEST_EXES  := $(BIN)/codec_test.exe $(BIN)/flash_selftest.exe $(BIN)/firmware_test.exe \
+              $(BIN)/cpu_test.exe $(BIN)/cpu_selftest.exe
 
 .PHONY: all tests check clean
 .DEFAULT_GOAL := all
@@ -49,6 +54,12 @@ $(BUILD)/%.o: src/%.cpp Makefile | $(BUILD)
 $(BUILD)/test_%.o: tests/%.cpp Makefile | $(BUILD)
 	$(CXX) $(TESTFLAGS) $(DEPFLAGS) -c $< -o $@
 
+# Kod z MAME zustava doslovny, aby sel porovnat s originalem; jedine
+# varovani, ktere v nem GCC hlasi (int proti uint32_t ve smycce ENTER,
+# i186.cpp), se proto vypina jen tady, ne opravou kodu.
+$(BUILD)/i86_%.o: src/i86/%.cpp Makefile | $(BUILD)
+	$(CXX) $(CXXFLAGS) -Wno-sign-compare $(DEPFLAGS) -c $< -o $@
+
 # -municode: vstupni bod je sirokoznakovy. -mwindows: GUI subsystem, bez okna
 # konzole. shell32 kvuli CommandLineToArgvW.
 $(EMU): $(EMU_OBJS) | $(BIN)
@@ -63,6 +74,14 @@ $(BIN)/flash_selftest.exe: $(BUILD)/test_flash_selftest.o $(CORE_OBJS) | $(BIN)
 # wmain, proto -municode.
 $(BIN)/firmware_test.exe: $(BUILD)/test_firmware_test.o $(CORE_OBJS) | $(BIN)
 	$(CXX) $(STATIC) -municode -o $@ $^
+
+# Instrukcni testy jadra proti SingleStepTests (HANDOFF 6.12). wmain.
+$(BIN)/cpu_test.exe: $(BUILD)/test_cpu_test.o $(CPU_OBJS) $(BUILD)/zip_reader.o | $(BIN)
+	$(CXX) $(STATIC) -municode -o $@ $^
+
+# Jadro CPU bez dat testu: kratke programy (PCB, preruseni, past ESC).
+$(BIN)/cpu_selftest.exe: $(BUILD)/test_cpu_selftest.o $(CPU_OBJS) | $(BIN)
+	$(CXX) $(STATIC) -o $@ $^
 
 # ---------------------------------------------------------------------------
 # Testy
@@ -82,7 +101,15 @@ MODES :=
 else
 MODES := $(FW_MODES)
 endif
-CHECKS := check-codec check-flash $(addprefix check-fw-,$(MODES))
+CHECKS := check-codec check-flash check-cpu $(addprefix check-fw-,$(MODES))
+
+# Data instrukcnich testu (MIT, ale velka) lezi mimo strom v ARIA_CPUTESTS
+# (HANDOFF 6.12). Bez nich run-tests.sh nastavi SKIP_CPU=1.
+ARIA_CPUTESTS ?= D:/aria/cputests
+CPUTESTS      ?= $(ARIA_CPUTESTS)
+ifneq ($(SKIP_CPU),1)
+CHECKS += check-cpu-8088 check-cpu-v20
+endif
 
 .PHONY: $(CHECKS)
 
@@ -93,6 +120,15 @@ check-codec: $(BIN)/codec_test.exe
 
 check-flash: $(BIN)/flash_selftest.exe
 	$(BIN)/flash_selftest.exe
+
+check-cpu: $(BIN)/cpu_selftest.exe
+	$(BIN)/cpu_selftest.exe
+
+check-cpu-8088: $(BIN)/cpu_test.exe
+	$(BIN)/cpu_test.exe "$(CPUTESTS)" 8088
+
+check-cpu-v20: $(BIN)/cpu_test.exe
+	$(BIN)/cpu_test.exe "$(CPUTESTS)" v20
 
 # Vyslovna pravidla, ne vzorove `check-fw-%`: make na .PHONY cilech vzorova
 # pravidla nehleda a rezimy by tise prosly bez receptu (zkusenost z Eureky).

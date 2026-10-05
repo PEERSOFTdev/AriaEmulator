@@ -13,7 +13,8 @@ binárek a z instrukcí `mov dx,imm16` těsně před `in`/`out`.
 
 ## Procesor a periferie na čipu
 
-- CPU 80C188 **[web]**.
+- CPU 80C188 **[web]**, klasická varianta, ne EB: používá se DMA kanál 0
+  (`SPEAK.EXE+09F0h`), který EB nemá **[binárka]** (HANDOFF 6.12).
 - Řídicí blok periferií (PCB) je přemístěn do I/O na adresu `0000h`
   **[binárka]**: registry na offsetech podle Intelu sedí s tím, co
   programy dělají:
@@ -63,8 +64,10 @@ Sken portů pochází z `tools/ports.py` (7.05, bez PKLITE programů).
   **[binárka]**
 - `62h` čtení řeči (AAPI) **[API]**
 - `07h` — `VOICE.SYS` ho nastaví na obsluhu, která přeskočí 2 bajty
-  (`VOICE.SYS+01C5h`); nejspíš past ESC pro instrukce koprocesoru
-  **[binárka]**, význam **[předpoklad]**
+  (`VOICE.SYS+01C5h`) **[binárka]**. Je to past ESC 80186 pro instrukce
+  koprocesoru (bit 15 relokačního registru PCB), což sedí s kódem MAME
+  `i186.cpp` (HANDOFF 6.12); že Aria ten bit nastavuje, je zatím
+  **[předpoklad]**.
 - `69h` — služba **`VOICE.SYS`** pro latch `0580h` (`VOICE.SYS+01ADh`,
   větvení podle `CH` = 0 až 5; funkce 2 zapisuje `DL`) **[binárka]**. Není
   to služba boot ROM, jak se předpokládalo zpočátku (HANDOFF 6.1).
