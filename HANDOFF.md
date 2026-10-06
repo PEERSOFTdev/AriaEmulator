@@ -211,6 +211,15 @@ tedy v kódu). Výsledek pro 7.05, ověřený pohledem do `tools/dis.py`:
   - `INT 6Bh` — `BPHDARIA.SYS` ×13 (`+0270`: `AH` a `DL` z proměnných).
 
   Po opravě `65h` tedy zbývají tři kandidáti: `63h`, `68h`, `6Bh`.
+
+  **Oprava 6. 10. 2026: ani `INT 63h` není služba boot ROM.** Je to
+  **MODE API** podle `ARIA-INT.H` (`MODE_INT 0x63`: 0 popup, 1 nastav
+  stupeň Braillu, 2 nastav hlasitost, 3 zjisti hlasitost, 4 zjisti
+  předvolbu vytáčení); poskytuje ho `ARIAMODE.EXE` (`setvect`, sken to
+  nevidí). BKB volá `AH=2` a `AH=3` = hlasitost. Hlavička také potvrzuje
+  `ALARM_INT 0x65` (0 budík, 1–3 alarmy diáře). **Zbývají dva kandidáti,
+  `68h` a `6Bh`, a oba používají jen ovladače mechanik Backpack** — je tedy
+  možné, že patří jim, ne boot ROM (ověřit).
 - **BIOS a DOS** (rozsah `00h`–`2Fh`): navíc proti dřívějšku `01h`,
   `02h`, `0Ah`, `12h`, `14h`, `28h`, `2Fh`, `1Dh`–`1Fh` (tabulky BIOSu)
   z aplikací. Jádro DOS je celé v boot ROM.
@@ -308,6 +317,57 @@ vede zvukový výstup (sériový port DSP → DAC?).
 `BKB.COM` čte `0700h` (5×), `0480h`, `050Dh`, `0581h`, `0584h`; instaluje
 `INT 13h` a `INT 16h`. Rozložení braillských kláves zatím neznámé.
 
+**6. 10. 2026 (BKB 7.05, ARIAKBD.PAS, ARIA-API.H, API.DOC):**
+
+- **Matice kláves** se čte třemi porty, jeden adresní bit na řádek:
+  `0581h`, `0582h`, `0584h` (`BKB.COM+02EAh`–`+02FEh` porovnává se
+  stavem, `+036Ch` maskuje `0584h` `0Fh` a `0582h` `FFh`). Tři bajty
+  odpovídají `KbdGetPowerOnState` z API: nízký bajt braillské klávesy,
+  střední funkční, vyšší kurzorové. Který port je který řádek, zatím
+  nerozhodnuto. Zápis na `0580h` je přitom latch okna (6.2) — čtení a
+  zápis jsou na desce dekódované zvlášť.
+- ~~**`0700h` stav:** bit 4 je zvláštní klávesa … nejspíš vypínač~~ —
+  **neplatí**, viz níže: `0700h` je stav baterie a nabíječe.
+- **`0700h` = baterie a nabíjení** (doloženo hláškami): BKB načte
+  `LoadStringEx(0C00h, …, 1Dh)` (AAPI pořadí 66h, `BKB.COM+186Ah`–`+18A3h`)
+  do tabulky ukazatelů od `[289h]`; v ARIAMSG.H jsou to `IDS_KBD_CHARGING`
+  0C00h, `FULLY_CHARGED`, `100`, `75`, `50`, `25`, `FLAT`, `LOW_BATTERY`
+  0C07h, … `RTCFLAT` 0C10h, `TRICKLE_CHARGING` 0C1Ah, `PCCARD_LOW/FLAT`
+  0C1Bh/0C1Ch. Rutina hlášení baterie `BKB.COM+15B5h`:
+  - bit 4 = 1 → **běh z baterie**; bity 0–3 stav nabití, nejnižší
+    nastavený = 100 / 75 / 50 / 25 %, žádný = vybitá;
+  - bit 4 = 0 → **adaptér připojen**: bit 5 = 0 nabíjí se; bit 5 = 1
+    a bity 0–3 všechny = nabito, jinak udržovací nabíjení.
+  - `+1A5Ch` (časovač): z baterie a vybitá 32 tiků → zruší řeč, událost
+    11h, hláška `IDS_LOW_BATTERY` — vypnutí při vybité baterii.
+  - `+160Bh`: registr D RTC bit 7 = 0 → `IDS_KBD_RTCFLAT`, vybitá
+    baterie hodin. `+1622h`: BVD karty → `IDS_KBD_PCCARD_LOW/FLAT`.
+- **Vzpomínky uživatele (6. 10. 2026):** kurzorové klávesy tvoří kříž
+  jako ciferník — nahoru na 12, vpravo na 3, dolů na 6, vlevo na 9 — a
+  uprostřed je malá kulatá klávesa **Shift** s vystouplým bodem; stiskem
+  Shift se ztlumí řeč. Sedí to s kódy kláves: kurzorový bajt má čtyři bity
+  šipek a `K_SHIFT = 10h`. BKB maskuje jeden řádek matice (`0584h`) `0Fh`,
+  tedy jen šipky, takže **`0584h` je nejspíš řádek kurzorového kříže**,
+  `0581h`/`0582h` braillské a funkční klávesy **[předpoklad]**.
+- **Kódy kláves AAPI** (ARIA-API.H, ARIAKBD.PAS): funkční `1C0h + n`
+  (F1–F12), kurzorový blok je **akord** `180h + maska` (nahoru 1, dolů 2,
+  vlevo 4, vpravo 8; Home = nahoru+vlevo, PgDn = dolů+vpravo, Ins, Del…),
+  Shift `+10h`, Alt `+20h` = **mezerník na BKB**. Akordy z API.DOC:
+  Mode = mezera+bod 1, Kde jsem = mezera+bod 4, Čas = mezera+body 2345,
+  Datum = mezera+body 145, Data ROM = mezera+body 1235, Vložit/přepsat =
+  mezera+body 24, Baterie i Kontrolní součet = mezera+body 12;
+  `K_SLEEPY = 424Eh` dostane program jako klávesu před vypnutím.
+- **Služby BKB:** `INT 64h` = vlož klávesu `CX` do vlastní fronty BKB
+  (`+0DA2h`; API.DOC: „called by the keyboard driver to add a keystroke“;
+  AAPI ho zachytává kvůli Up pro virtuální obrazovku); `INT 6Ah` = echo
+  znaku z vnější klávesnice (`+05E8h`, třídy malé/velké/číslice/jiné,
+  volá ATKBD); **`INT 16h` celé nahrazené** (`+0DC5h`) — standardní
+  funkce 00h–03h, 05h, 10h–12h a rozšíření Arie **21h–31h, FEh, FFh**
+  (22h = `KB_GETSTAT`, 2Eh = povolit/zakázat).
+- AAPI z Arie volá rozšíření 21h, 22h, 24h–27h, 29h, 2Ah, 2Eh, 30h;
+  aplikace přímo jen 2Eh (ARIALARM, MAINMENU, ZM), 2Fh (ARIAMODE) a
+  30h (MAINMENU). Významy 21h–31h zatím neznámé.
+
 ### 6.5 RTC a buzení alarmem
 
 API má `AwokenByRTC` a `EnableAlarm`; `ARIALARM.EXE` a `ARIAMODE.EXE`
@@ -348,6 +408,14 @@ a registry PCB `INT0`/`INT1` (`38h`, `3Ah`) a časovač 1 (`5Ah`, `5Eh`).
 
 `BACKPACK.SYS` přebírá `INT 13h`, `BPHDARIA.SYS` volá `INT 6Bh`.
 
+**Vzpomínka uživatele (6. 10. 2026):** sériový i paralelní port měly na
+Arii velmi malé konektory a k plným konektorům se připojovaly přes
+**redukce**, které uživatel měl; připojit šlo různý hardware včetně
+disketové mechaniky (v provozu ji nikdy neviděl). Sedí s README.DOC
+na disku B: (od 702): mechaniky Backpack se připojují kabelem k redukci,
+která „converts the Aria's printer port into a full size female plug“,
+tiskárna se zapojí za poslední mechaniku, disky dostanou písmena od E:.
+
 ### 6.8 PCMCIA
 
 `CARDMAN.EXE` (PKLITE); `TRICKSS2.EXE` čte `057Fh`, `ATKBD.COM` `057Eh`.
@@ -370,11 +438,35 @@ Robotronu pro slot Arie. `DLFFSA.EXE` je flash souborový systém k ní
 - Okno karty je režim 3 `INT 69h` (`TRICKSS2.EXE+1497h`, `DLFFSA.EXE+0E92h`).
 - Při dlouhých operacích cvaká `INT 61h AX=0500h` (`DLFFSA.EXE+0EE6h`),
   to je to „tikání“ z README.DOC.
+- **Vzpomínka uživatele:** používaly se dva druhy karet — starší **flash**
+  (pomalejší, menší, data drží napořád) a **SRAM** (větší, rychlejší, data
+  drží vestavěná vyměnitelná baterie). Sedí s hláškami formátování
+  (`IDS_FM_FORMAT_CARD_TYPE_SRAM`, `_FLASH_1`, `_FLASH_2`, `_ROM`), s bity
+  BVD v `0480h` a s hláškami `IDS_KBD_PCCARD_LOW/FLAT` (baterie SRAM
+  karty, 6.4). Volba MODE „old PC card“ by mohla souviset se starším
+  typem flash karet **[předpoklad]**.
+- **Vnější klávesnice:** `ATKBD.COM` je ovladač klávesnice IBM/AT, který
+  čte přes `INT 14h` — tedy přes sériový port, zřejmě s převodníkem;
+  zapíná ho volba MODE „IBM keyboard“ (CMOS `057Eh` = „C“, 6.14).
+  Uživatel ji nikdy nepoužil a neví, jak se připojovala.
 
 ### 6.9 Napájení
 
 `TURNOFF.COM` (16 B): `cli; mov dx,0701h; mov al,0; out dx,al; jmp $` —
 port `0701h` vypíná. Stav baterie zatím neznámý.
+
+**API.DOC (6. 10. 2026):** standby po 5 s nečinnosti (nastavitelné),
+v něm **běží CPU na 1/16 taktu**; napájení sériového portu se zapíná
+a vypíná příkazem (`POWER_SERIAL_ON/OFF`); `K_SLEEPY` dostane program
+před vypnutím. Funkce `Power` mají 20 příkazů (`ARIA-INT.H`). Starší
+nízkoúrovňové API v `ARIACONS.PAS` (INT 60h, dnes v C hlavičce
+nahrazené): `AAPI_SET_VPP` 0100h, `ENABLE_CARD_VCC` 0101h,
+`ENABLE_RS232` 0102h, `RESET_RS232` 0103h, `GET_BATTERY_STATUS` 0104h,
+`ENABLE_CARD` / `ENABLE_FLASH` / **`ENABLE_RAM`** 0105h–0107h,
+`DISABLE_WINDOW` 0108h, `SET/GET_CARD_ADDR`, `SET/GET_FLASH_ADDR`.
+Pojmenovává tedy přesně hardware z 6.2 a 6.8 a říká, že okno umí
+ukázat i **RAM** — režim 1 latche `0580h`, který jsme v kódu neviděli,
+je nejspíš RAM **[předpoklad]**.
 
 ### 6.10 Rozhodnutí: vrstva DOS
 
@@ -597,6 +689,69 @@ zpětné lomítko, proto `GetFullPathNameW`.
 
 **Otevřené k 6.12:** kmitočet CPU Arie není známý (potřebný pro převod
 taktů na reálný čas a pro časovače), patří k 6.5 a fázi 3.
+
+### 6.13 Programy Arie na PC (DOS, DOSBox-X)
+
+Uživatel by rád programy Arie spouštěl i bez emulátoru, v DOSu nebo
+DOSBox-X. Rozbor PC verze `AAPI.EXE` z techmanu (6. 10. 2026):
+
+- „Aria API v1.1b“, (c) 1994–1999, ladicí sestavení Borland C++ (aserce,
+  ladicí `printf`), **nekomprimované**, 1 381 relokací. DGROUP na odstavci
+  `11AEh` (vstup `PCAAPI+0000h`).
+- **Není bez hardwaru.** Stejně jako verze z Arie volá `INT 69h` ×6 (okno
+  flash: kopie `+0A955h`, procházení adresáře `+0AA76h`), `INT 61h` jen
+  ×2 (funkce `0401h`, uživatelský slovník), `INT 64h` ×1 (služba BKB) a
+  sahá na porty RTC (`0501h`–`0505h`, `050Ch`), `0580h`, `0680h`, `0702h`.
+  Na rozdíl od verze z Arie nečte klávesnici `0700h` a nevypíná `0701h`.
+- **Start řeči** (`+0AB80h`): když `INT 61h` chybí, jen vypíše „Warning:
+  Speech not loaded“, ale pak **bezpodmínečně** volá hledání `PT.DAT`
+  v adresáři flash (`+0AAD7h`) přes `INT 69h` a instaluje `INT 62h`. Na
+  PC s obyčejným MS-DOSem je vektor 69h většinou `0000:0000`, takže se
+  vykoná tabulka vektorů jako kód — pád nebo zamrznutí hned při startu;
+  to by vysvětlovalo, proč uživateli AAPI na PC nikdy pořádně nefungovalo.
+  DOSBox a DOSBox-X mají nepoužité vektory nasměrované na IRET, tam by se
+  volání jen vrátilo a hledání nic nenašlo **[předpoklad, ověřit]**.
+- **Řeč na PC = řádek textu.** `+0F2F8h` píše mluvené znaky přes `INT 10h`
+  na **řádek 21** obrazovky s předponou `Speak "`, sloupec v `[1130h]`
+  zalamuje na 78. Je to vždy zapnuté, žádný přepínač.
+
+**Klávesnice na PC:** PC verze AAPI volá `INT 16h` jen se standardními
+funkcemi BIOSu (00h, 02h, 10h, 11h), kdežto verze z Arie rozšíření BKB
+(21h–30h). Robotron tedy klávesnici pro PC záměrně přestavěl na BIOS.
+Aplikace volají rozšíření přímo jen málo: 2Eh (ARIALARM, MAINMENU, ZM),
+2Fh (ARIAMODE), 30h (MAINMENU); AWP, FILEMGR, COMMS jdou přes AAPI.
+Na PC tedy stačí malá náhrada `INT 16h` pro 2Eh, 2Fh, 30h.
+
+Co by programy Arie na PC potřebovaly navíc (rozbor, nic z toho není
+napsané): náhradu `INT 69h` (stub, nebo malý TSR, který stránky obrazu
+flash kopíruje do okna D000h), náhradu `INT 61h` (text místo hlasu, nebo
+předání ven), `INT 64h` a `INT 63h` (klávesnice BKB) a ošetření přímých
+přístupů aplikací na porty (`MAINMENU.EXE` čte `0480h` a `0700h`; na PC
+čtou `FFh`). Funkce `INT 63h`/`64h` a jejich volající v aplikacích jsou
+zatím neznámé (6.1, 6.4).
+
+### 6.14 Technický manuál — co z něj ještě je
+
+Prošlo 6. 10. 2026: `ARIA-INT.H` (API, Speech, **MODE 63h**, **Alarm
+65h**, Power, Printer), `ARIA-API.H` (prototypy, struktury, kódy kláves,
+`GetAriaVersion` vrací verzi flash, sestavení, **verzi boot ROM a sériové
+číslo**), `ARIAKBD.PAS`, `ARIACONS.PAS` (starší nízkoúrovňové API, 6.9),
+`ARIA.C` (vazba na AAPI **podle pořadových čísel** přes `INT 60h AX=0100h`;
+pořadí se nesmí měnit — náhrada AAPI na PC by je musela dodržet),
+`ARIAMSG.H` (čísla hlášek; nastavení MODE končí `IDS_MODE_OLD_PCCARD` a
+`IDS_MODE_IBMKB`), API.DOC (popisy funkcí, kódy kláves s akordy, standby,
+formáty souborů; sekce „Interrupts“ je jen prázdný nadpis).
+
+Výklad CMOS z 6.5 podle hlášek MODE: `057Eh = „C“` ↔ **IBM klávesnice**
+zapnutá (ATKBD je ovladač vnější klávesnice IBM/AT přes `INT 14h`, bez
+„C“ skončí), `057Fh = „R“` ↔ nová podpora karet místo „old PC card“
+(TRICKSS2 bez „R“ odmítne start) **[předpoklad, slabší]**.
+
+Zbytek (`ARIA.PAS`, `SPELL.PAS`, `DEMO.C`, `GLOBAL.C`, `MAINMENU.C`,
+`MSG.C`, `YESNO.C`, `MESSAGES.*`, `MAKEMSG.EXE`) je ukázkový program a
+vazby pro Pascal; o hardwaru nic. `SPEECH.DOC` bude potřeba až pro
+náhradu `INT 61h` na PC (řídicí sekvence `!<..>` odfiltrovat). **Manuál
+je tím pro hardware vyčerpaný**; dál slouží jako reference API.
 
 ## 8. Pořadí
 

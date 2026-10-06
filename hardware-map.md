@@ -93,9 +93,17 @@ zašuměné daty; za doklad se berou jen porty načtené do `DX`.
   `INT 69h`; dřív do něj přímo zapisoval `FLASHDSK.SYS` z boot ROM, který
   VOICE.SYS přepisuje (`VOICE.SYS+0204h`) **[binárka]**; zapisuje i
   `RAMDISK.EXE`
-- `0581h`, `0584h` — čte `BKB.COM`
+- `0581h`, `0582h`, `0584h` — **matice kláves**, jeden adresní bit na řádek
+  (`BKB.COM+02EAh`, `+036Ch`); tři bajty = braillské, funkční, kurzorové
+  klávesy **[binárka]**, formát podle `KbdGetPowerOnState` **[API]**;
+  `0584h` nejspíš kurzorový kříž se Shift uprostřed (maska `0Fh` = šipky,
+  vzpomínka uživatele) **[předpoklad]** (HANDOFF 6.4)
 - `0600h`, `0601h`, `0681h` — `FOSSIL.COM`, nejspíš UART **[předpoklad]**
-- `0700h` — čte `BKB.COM`, nejspíš klávesnice **[předpoklad]**
+- `0700h` — **baterie a nabíjení** (čtení): bit 4 = běh z baterie, bity
+  0–3 úroveň 100/75/50/25 % (nejnižší nastavený), žádný = vybitá; při
+  bitu 4 = 0 bit 5 nabito/udržovací vs. nabíjí se (`BKB.COM+15B5h`, hlášky
+  `IDS_KBD_*` 0C00h–0C1Ah) **[binárka]** **[API]** (HANDOFF 6.4). Dřívější
+  výklad „klávesa/vypínač“ neplatí.
 - `0701h` — zápis 0 vypne stroj, `TURNOFF.COM+0` **[binárka]**
 - `0702h` — zapisují `DLFFSA.EXE`, `TRICKSS2.EXE`; dřívější odhad „flash“
   neplatí, je to napájení slotu karty (výše, HANDOFF 6.8)
@@ -117,6 +125,14 @@ zašuměné daty; za doklad se berou jen porty načtené do `DX`.
   boot ROM, jak se předpokládalo zpočátku (HANDOFF 6.1).
 - `VOICE.SYS` je zároveň znakové zařízení `$VOICE` (atribut 8000h):
   čtení z `INT 16h`, zápis mluví přes `INT 61h AX=0200h` **[binárka]**.
+- `63h` — MODE API (`ARIA-INT.H`) **[API]**, poskytuje `ARIAMODE.EXE`
+- `64h` — vložení klávesy do fronty, poskytuje `BKB.COM+0DA2h`, AAPI ho
+  zachytává **[binárka]** **[API]**
+- `65h` — Alarm API (`ARIA-INT.H`) **[API]**, poskytuje `ARIALARM.EXE`
+- `6Ah` — echo znaku z vnější klávesnice, `BKB.COM+05E8h`, volá ATKBD
+  **[binárka]**
+- `16h` — celé nahrazené v `BKB.COM+0DC5h`, rozšíření Arie 21h–31h, FEh,
+  FFh **[binárka]**
 - `62h` — obsluha v AAPI (`AAPI.EXE+A8D8h`): `AX=0200h` kopie z flash
   oknem, `AX=0201h` adresa kopírovací rutiny **[binárka]**, odpovídá
   `AAPI_MEMCPY_SPEECH` v ARIA-INT.H **[API]**.
