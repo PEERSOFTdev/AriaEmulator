@@ -105,6 +105,9 @@ nekopírují, jen fakta vlastními slovy:
 - **Paměť podle stránky:** 1 MB RAM, „RAMdisk is 1 megabyte“, DOS ve 2MB
   flash. **Rozpor:** VDISK má výchozích 319 KB (6.2) — buď marketingové
   zjednodušení, nebo jiná konfigurace; otevřené.
+  **Rozhodnuto 6. 10. 2026 podle uživatele:** platí 319 KB; „1 MB“ je
+  marketingový údaj o celé RAM — tolik volného místa na RAM disku nikdy
+  nebylo.
 - **Funkční klávesy v hlavní nabídce:** F1 textový editor, F2 hodiny a
   stopky (alarmy, druhé časové pásmo, odbíjení), F3 kalkulačka (virtuální
   obrazovka), F4 komunikace (adresář, modem, **emulace DECtalk** — Aria
@@ -562,11 +565,40 @@ Buď jádro FreeDOS na HLE BIOSu, nebo `INT 21h` v hostiteli. Riziko: ovladače
 na vnitřnostech ROM-DOS (List of Lists, DPB, řetěz ovladačů). Rozhodne
 fáze 2.
 
+**Rozhodnuto uživatelem 6. 10. 2026: jádro FreeDOS.** Důvody: CardTrick
+(„Increase LASTDRIVE“) a ovladače Datalight sahají do vnitřních struktur
+DOSu, takže je potřeba jádro vnitřně kompatibilní s MS-DOS, ne jen
+`INT 21h`; FreeDOS takové struktury napodobuje. Ověřeno 6. 10. 2026 na
+GitHubu (FDOS/kernel): licence **GPL v2 nebo novější**, aktivní vývoj,
+vydání **ke2046** (30. 6. 2026) má sestavení **pro 8086**
+(`ke2046_86f16.zip`, FAT12/16), takže na 80188 nepotřebuje instrukce
+286. Jádro se nebude kompilovat do EXE: poleží vedle emulátoru jako
+samostatný soubor (agregace, licence MIT zůstává čistá), podobně jako
+doplněk NVDA pod GPL. Shell: nejdřív `COMMAND.COM` ROM-DOS z B: (tak
+startuje CONFIG.SYS), FreeCOM jako záloha, kdyby na FreeDOSu nešel.
+
+Otázky k ověření až za běhu: zda ovladače ROM-DOS-specifické
+(`VOICE.SYS` hledá `FLASHDSK.SYS` na pevných segmentech, 6.1) na FreeDOSu
+jen ohlásí, že záplata nenašla cíl (to umí), a zda `COMMAND.COM` ROM-DOS
+(1993) přijme verzi DOSu, kterou FreeDOS hlásí.
+
 ### 6.11 Rozhodnutí: vrstva flash
 
 Buď skutečná emulace flash čipu a jeho okna (nutné, pokud zápis `DLFFSA`
 jde přes `0702h`/`0480h`), nebo disk B: jako HLE blokové zařízení.
 Rozhodne fáze 2.
+
+**Stav po fázi 2 (6. 10. 2026), návrh:** `DLFFSA` je ovladač karty
+(C:), ne flash, takže otázka se týká jen B:. Rozumné rozdělení:
+
+- **Okno D000h emulovat skutečně** (latche `0580h`/`0480h`, režim 2 =
+  stránka obrazu B:, 6.2): čtou z něj AAPI a SPEAK přímo, mimo DOS.
+- **Disk B: obslouží náš vlastní malý ovladač** místo chybějícího
+  `FLASHDSK.SYS`: blokové zařízení pro DOS, které čte sektory z obrazu
+  (oknem, nebo pastí do hostitele). Zápis na B: (aktualizace, nastavení)
+  půjde do překryvného souboru hostitele, ne do obrazu firmwaru.
+- Programování flash čipu (příkazy čipu, Vpp) emulovat netřeba, dokud ho
+  nevolá kód z B:; dosavadní rozbor takový kód nenašel.
 
 ### 6.12 Jádro CPU 80C188 a jeho ověření
 
