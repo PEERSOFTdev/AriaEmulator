@@ -1,6 +1,7 @@
 #include "hle_bios.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 #include "aria_machine.h"
@@ -318,7 +319,14 @@ std::string HleBios::ScreenLine(int row) const {
 
 void HleBios::Disk(Regs& r) {
   const uint8_t drive = r.dl();
+  const Regs in = r;
   auto finish = [&](uint8_t status) {
+    if (disk_log_) {
+      char line[96];
+      std::snprintf(line, sizeof line, "INT 13h AX=%04X CX=%04X DX=%04X ES:BX=%04X:%04X -> AH=%02X AL=%02X",
+                    in.r.ax, in.r.cx, in.r.dx, in.r.es, in.r.bx, status, r.al());
+      disk_log_(line);
+    }
     r.set_ah(status);
     machine_.Poke(kBda + kDiskStatus, status);
     SetCallerCarry(status != 0);
@@ -349,9 +357,14 @@ void HleBios::Disk(Regs& r) {
         uint8_t* sector_data = disk.data.data() + lba * 512;
         if (r.ah() == 0x02) {
           for (int i = 0; i < 512; ++i) machine_.Poke(buffer + i, sector_data[i]);
-          if (lba == 0 && disk.patch_boot_geometry) {
+          if (lba == 0 && disk.patch_boot_record) {
             machine_.PokeWord(buffer + 0x18, disk.sectors_per_track);
             machine_.PokeWord(buffer + 0x1A, disk.heads);
+            // DLRDISK leaves 1FEh-1FFh unprogrammed or random (59h 1Fh in
+            // 7.05, 47h 63h in 7.04); FreeDOS ignores a BPB without 55AAh
+            // (dsk.c getbpb) and would assume a 1.44 MB diskette.
+            machine_.Poke(buffer + 0x1FE, 0x55);
+            machine_.Poke(buffer + 0x1FF, 0xAA);
           }
         } else if (r.ah() == 0x03) {
           for (int i = 0; i < 512; ++i) sector_data[i] = machine_.Peek(buffer + i);

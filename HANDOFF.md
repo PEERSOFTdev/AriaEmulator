@@ -635,6 +635,30 @@ bajtů komprimovaných dat a UPX pak rozbalil díru přesně přes
 `INIT_TEXT` (`026B:9EA0`, podle `kwc8616.map`). Zásobník je proto na
 `0000:0600` a `BP` = 0 (podle `kernel.asm` „žádný příkazový řádek“).
 
+**Druhý start, týž den: CONFIG.SYS i AUTOEXEC.BAT z B: běží.** Výchozí
+shell z prvního startu už neplatí; měl dvě příčiny:
+
+1. Jádro odmítlo zaváděcí záznam B:, protože nemá podpis `55AAh` (6.11),
+   a počítalo s disketou 1,44 MB. Poznalo se to podle záznamu volání
+   `INT 13h` (`boot_test -v`): kořenový adresář četlo na hlavě 1,
+   sektorech 2–15, což je přesně adresář 224 položek za dvěma FAT po
+   9 sektorech.
+2. Tik `INT 08h` vůbec neběžel (chyba hodin CPU, 6.12), takže čekání na
+   F5/F8 („Press F8 to trace or F5 to skip“) neskončilo.
+
+Po obou opravách proběhne celé CONFIG.SYS: `VOICE.SYS` 1.3 (ohlásí
+„Could not find FLASHSK.SYS to patch.“ a pokračuje, jak 6.1
+předpovídala), CardTrick 3.01 s jednotkou C:, Datalight VDISK 5.0 jako
+**D: s 319 KB** (shoduje se se vzpomínkou uživatele), `BACKPACK.SYS`
+a `BPHDDRV.SYS`. **`COMMAND.COM` ROM-DOS na FreeDOSu běží** a vykoná
+AUTOEXEC: `trickss2` (karta E:), `aapi -c` („Aria API v1.1b“), `speak
+-i` („Aria version Cze2/3.0.0 is now installed.“), `bkb` (český ovladač
+1.10, „Segment = 58E1“), `fossil`, `ariamode` a `arialarm`. Za
+`arialarm` se běh zastaví (zatím nezkoumáno). Během toho SPEAK 886×
+přistoupil na port `0401h` (DSP, 6.3) a programy sáhly na neobsloužené
+porty `0402h`, `0581h`, `0680h` a `0682h`. `boot_test` od té doby
+kontroluje šest milníků až po BKB; celý start trvá asi sekundu.
+
 ### 6.11 Rozhodnutí: vrstva flash
 
 Buď skutečná emulace flash čipu a jeho okna (nutné, pokud zápis `DLFFSA`
@@ -664,6 +688,13 @@ hlavami a zaváděcí sektor, který přes `INT 13h` vydá, v těch dvou
 polích opraví; obraz sám se nemění. Zápisy jdou do kopie obrazu
 v paměti (překryvný soubor zatím není). Okno D000h je emulované podle
 6.2 (režim 2 = stránka obrazu, 3 = karta zatím `FFh`, 1 a 0 = RAM).
+
+**Podpis zaváděcího záznamu (6. 10. 2026):** `DLRDISK` nezapisuje
+`55AAh` na `1FEh`; v 7.05 tam je `59h 1Fh`, v 7.04 `47h 63h` a
+`24h`–`3Fh` je `FFh`, tedy nenaprogramovaná flash. `FLASHDSK.SYS`
+z ROM-DOS na podpis zjevně nehleděl, FreeDOS (`dsk.c`, `getbpb`) bez
+něj BPB zahodí. BIOS proto do zaváděcího sektoru, který vydá, kromě
+geometrie doplní i podpis.
 
 ### 6.12 Jádro CPU 80C188 a jeho ověření
 
@@ -874,6 +905,22 @@ zpětné lomítko, proto `GetFullPathNameW`.
 **Otevřené k 6.12:** kmitočet CPU Arie není známý (potřebný pro převod
 taktů na reálný čas a pro časovače), patří k 6.5 a fázi 3.
 
+**Chyba hodin mezi běhy (nalezena a opravena 6. 10. 2026).** MAME
+`m_icount` neinicializuje (jeho plánovač ho nastaví před každým
+úsekem). Naše hodiny taktů ho ale čtou i mimo běh (`UpdateClock`:
+základ + (`m_icount_base` − `m_icount`)), takže časovač naprogramovaný
+před prvním během se naplánoval proti smetí: ve stroji na haldě hodiny
+po zapnutí ukazovaly 1 031 281 408 taktů, a když první běh hodiny
+srovnal, časovač 2 čekal miliardu taktů. Tik BIOSu proto nikdy
+nepřišel. `cpu_selftest` dřív nic neodhalil, protože jeho CPU na
+zásobníku mělo v těch místech náhodou nuly. Oprava je ve fasádě
+(konstruktor `Cpu80188` oba čítače vynuluje), kód MAME zůstal
+nedotčený. Test `TestPrescaledTimer` staví CPU do paměti vyplněné
+`A5h` a programuje časovače přes `OutWord` mimo běh, před dlouhým
+`REP MOVSW` jako ve stubu UPX; bez opravy selže (mutace ověřena), s ní
+projde. Týž test ověřuje i předdělič (bit P, časovač 0 počítá konce
+časovače 2), který tik BIOSu používá.
+
 ### 6.13 Programy Arie na PC (DOS, DOSBox-X)
 
 Uživatel by rád programy Arie spouštěl i bez emulátoru, v DOSu nebo
@@ -949,3 +996,5 @@ je tím pro hardware vyčerpaný**; dál slouží jako reference API.
    text (6.10). Další kroky: proč jádro nečte `CONFIG.SYS` z B:, pak
    `COMMAND.COM` ROM-DOS, ovladače z CONFIG.SYS, AUTOEXEC až po
    `aapi -c` a MAINMENU, se záznamem textu pro řeč z `INT 61h`.
+   Stav týž den večer: CONFIG.SYS a AUTOEXEC proběhnou až po `arialarm`
+   (6.10); další krok je, proč se běh za `arialarm` zastaví.

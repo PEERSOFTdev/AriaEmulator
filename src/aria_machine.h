@@ -22,8 +22,9 @@ struct BiosDisk {
   // Geometry the BIOS reports and uses for CHS; for drive B: it differs
   // from the boot record, which has 61440 sectors per track and would not
   // fit the 6-bit sector field (HANDOFF 6.11). The boot record returned
-  // through INT 13h is patched to match.
-  bool patch_boot_geometry = false;
+  // through INT 13h is patched to match, and gets the 55AAh signature
+  // that DLRDISK never wrote.
+  bool patch_boot_record = false;
 };
 
 // The Aria board around the 80C188 (HANDOFF 2, 6.2-6.9, hardware-map.md):

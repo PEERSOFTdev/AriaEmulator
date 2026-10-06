@@ -162,6 +162,6 @@ BiosDisk AriaMachine::MakeFlashDisk(const FlashImage& flash) const {
   disk.sectors = total ? total : static_cast<uint32_t>(flash.bytes.size() / 512);
   disk.sectors_per_track = 63;
   disk.heads = 16;
-  disk.patch_boot_geometry = true;
+  disk.patch_boot_record = true;
   return disk;
 }

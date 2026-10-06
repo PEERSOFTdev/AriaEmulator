@@ -7,6 +7,12 @@ namespace mame_i86 {
 
 Cpu80188::Cpu80188(CpuBus& bus) {
   bus_ = &bus;
+  // MAME leaves m_icount uninitialised (its scheduler sets it before each
+  // slice). Our cycle clock reads it between runs too, so with garbage
+  // there a timer programmed before the first run (the BIOS's tick) was
+  // scheduled against a wrong clock and never fired (HANDOFF 6.12).
+  m_icount = 0;
+  m_icount_base = 0;
   Reset();
 }
 

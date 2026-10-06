@@ -2,7 +2,9 @@
 // small hand-assembled programs for what the Aria relies on beyond single
 // instructions. Prints PASS on success.
 
+#include <cstring>
 #include <iostream>
+#include <new>
 #include <utility>
 #include <vector>
 
@@ -160,6 +162,68 @@ void TestTimerInterrupt() {
   Check(ticks >= 49 && ticks <= 51, "timer 0 interrupts every 400 cycles");
 }
 
+void TestPrescaledTimer() {
+  // The BIOS tick (hle_bios.cpp): timer 2 counts 10, timer 0 counts timer
+  // 2's terminal counts (P bit) up to 5, so an interrupt every 4 * 10 * 5
+  // = 200 CPU cycles.
+  Bus bus;
+  Cpu80188 cpu(bus);
+  bus.Load(0x01000, Join({kRelocatePcb,
+                          OutWord(0x0062, 10),      // T2 max count
+                          OutWord(0x0066, 0xC001),  // T2 control: EN, INH, CONT
+                          OutWord(0x0052, 5),       // T0 max count A
+                          OutWord(0x0056, 0xE009),  // T0 control: EN, INH, INT, P, CONT
+                          OutWord(0x0032, 0x0000),  // timer interrupt control: unmasked
+                          {0xFB, 0xF4, 0xEB, 0xFD}}));
+  bus.Vector(0x08, 0x0000, 0x0700);
+  bus.Load(0x00700, Join({{0x41},                       // inc cx
+                          OutWord(0x0022, 0x0008),      // specific EOI, type 08h
+                          {0xCF}}));
+  cpu.SetRegisters(At(0x0100, 0x0000));
+  Check(RunUntilHalt(cpu), "prescaled timer program halts");
+  cpu.Run(1000);
+  const uint16_t before = cpu.GetRegisters().cx;
+  cpu.Run(200 * 50);
+  const int ticks = cpu.GetRegisters().cx - before;
+  if (ticks < 49 || ticks > 51) std::cout << "  prescaled timer ticks: " << ticks << "\n";
+  Check(ticks >= 49 && ticks <= 51, "timer 0 prescaled by timer 2 interrupts every 200 cycles");
+
+  // The same set-up from outside a run, as the BIOS's power-on code does
+  // it through Cpu80188::OutWord.
+  // The CPU is built in memory full of garbage, as on the heap inside
+  // AriaMachine: MAME's m_icount is not initialised by MAME, and the cycle
+  // clock between runs depends on it (cpu80188.cpp constructor).
+  Bus bus2;
+  alignas(Cpu80188) static unsigned char storage[sizeof(Cpu80188)];
+  std::memset(storage, 0xA5, sizeof storage);
+  Cpu80188& cpu2 = *new (storage) Cpu80188(bus2);
+  cpu2.OutWord(0xFFFE, 0x0000);
+  cpu2.OutWord(0x0062, 10);
+  cpu2.OutWord(0x0066, 0xC001);
+  cpu2.OutWord(0x0052, 5);
+  cpu2.OutWord(0x0056, 0xE009);
+  cpu2.OutWord(0x0032, 0x0000);
+  // A long REP MOVSW first, like the UPX stub of the FreeDOS kernel (about
+  // 300 000 cycles in one instruction): the timers must catch up after it.
+  bus2.Load(0x01000, {0xB9, 0x00, 0x80,  // mov cx,8000h
+                      0xF3, 0xA5,        // rep movsw
+                      0xFB, 0xF4, 0xEB, 0xFD});
+  bus2.Vector(0x08, 0x0000, 0x0700);
+  bus2.Load(0x00700, Join({{0x41}, OutWord(0x0022, 0x0008), {0xCF}}));
+  auto start = At(0x0100, 0x0000);
+  start.ds = 0x3000;
+  start.es = 0x4000;
+  cpu2.SetRegisters(start);
+  cpu2.Run(1000000);
+  Check(cpu2.GetRegisters().ip == 0x0007 && cpu2.Halted(), "long REP MOVSW done, CPU in the HLT loop");
+  const uint16_t before2 = cpu2.GetRegisters().cx;
+  cpu2.Run(200 * 50);
+  const int ticks2 = cpu2.GetRegisters().cx - before2;
+  if (ticks2 < 49 || ticks2 > 51) std::cout << "  prescaled timer ticks via OutWord: " << ticks2 << "\n";
+  Check(ticks2 >= 49 && ticks2 <= 51, "timer set up through OutWord interrupts every 200 cycles");
+  cpu2.~Cpu80188();
+}
+
 void TestDma() {
   Bus bus;
   Cpu80188 cpu(bus);
@@ -270,6 +334,7 @@ int main() {
   TestProgram();
   TestExternalInterrupt();
   TestTimerInterrupt();
+  TestPrescaledTimer();
   TestDma();
   TestEscapeTrap();
   TestBiosTrap();

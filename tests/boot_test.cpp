@@ -77,8 +77,9 @@ int wmain(int argc, wchar_t** argv) {
 
   // A fixed clock keeps the run deterministic: 1.1.2000 12:00.
   AriaMachine machine(flash, kernel, [] { return int64_t{946728000}; });
-  machine.PowerOn();
-  long long ran = 0;
+  std::vector<std::string> disk_log;
+  if (verbose) machine.bios().SetDiskLog([&](const std::string& line) { disk_log.push_back(line); });
+  machine.PowerOn();  long long ran = 0;
   if (trace) {
     // Instruction by instruction, stopping where execution runs into
     // empty memory (00 00 00 00): the mark of a wild jump. The last
@@ -131,14 +132,37 @@ int wmain(int argc, wchar_t** argv) {
     for (const auto& [port, count] : machine.UnknownPorts()) {
       std::printf("port %04Xh: %d accesses\n", port, count);
     }
-    std::printf("cycles: %lld\n", ran);
+    std::printf("cycles: %lld, BIOS ticks: %u\n", ran,
+                machine.PeekWord(0x46C) | static_cast<unsigned>(machine.PeekWord(0x46E)) << 16);
+    // PCB at I/O 0000h: timers 0 and 2, then the interrupt controller
+    // (mask 28h, in-service 2Ch, request 2Eh, status 30h, timer control 32h).
+    auto& cpu = machine.cpu();
+    std::printf("PCB reloc %04X, T0 max %04X, T2 max %04X\n", cpu.RelocationRegister(), cpu.InWord(0x52),
+                cpu.InWord(0x62));
+    std::printf("PCB T0 count %04X ctl %04X, T2 count %04X ctl %04X, mask %04X isr %04X irr %04X st %04X tcr %04X\n",
+                cpu.InWord(0x50), cpu.InWord(0x56), cpu.InWord(0x60), cpu.InWord(0x66), cpu.InWord(0x28),
+                cpu.InWord(0x2C), cpu.InWord(0x2E), cpu.InWord(0x30), cpu.InWord(0x32));
+    std::printf("INT 13h calls: %zu\n", disk_log.size());
+    for (std::size_t i = 0; i < disk_log.size() && i < 60; ++i) std::printf("  %s\n", disk_log[i].c_str());
   }
 
-  // The kernel prints its version banner once its init has the disks.
-  if (text.find("FreeDOS kernel") == std::string::npos) {
-    std::cout << "FAIL boot: no FreeDOS banner through INT 10h\n";
-    return 1;
+  // Milestones in boot order, by what each stage prints (CC0705): the
+  // kernel, then CONFIG.SYS from B: (VOICE.SYS, VDISK as D:), then
+  // AUTOEXEC.BAT under ROM-DOS COMMAND.COM (AAPI, SPEAK, BKB).
+  const char* milestones[] = {
+      "FreeDOS kernel",
+      "Voice device rev 1.3",
+      "Installed as drive:  D:",
+      "Aria API v1.1b",
+      "is now installed.",
+      "ARIA keyboard driver",
+  };
+  for (const char* milestone : milestones) {
+    if (text.find(milestone) == std::string::npos) {
+      std::cout << "FAIL boot: no \"" << milestone << "\" through INT 10h\n";
+      return 1;
+    }
   }
-  std::cout << "PASS boot_test (FreeDOS kernel banner from drive B:)\n";
+  std::cout << "PASS boot_test (FreeDOS, CONFIG.SYS and AUTOEXEC.BAT from drive B: up to BKB)\n";
   return 0;
 }

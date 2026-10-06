@@ -3,7 +3,9 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 class AriaMachine;
@@ -34,6 +36,9 @@ class HleBios {
   const std::string& Teletype() const { return teletype_; }
   std::string ScreenLine(int row) const;
 
+  // Diagnostics: one line per INT 13h call, for the boot test.
+  void SetDiskLog(std::function<void(const std::string&)> log) { disk_log_ = std::move(log); }
+
   bool RebootRequested() const { return reboot_; }
   void ClearReboot() { reboot_ = false; }
 
@@ -60,6 +65,7 @@ class HleBios {
   uint8_t screen_[25][80][2] = {};
   int cursor_row_ = 0, cursor_col_ = 0;
   bool reboot_ = false;
+  std::function<void(const std::string&)> disk_log_;
 };
 
 #endif
