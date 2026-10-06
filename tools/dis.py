@@ -29,7 +29,7 @@ def main(argv):
         sys.exit(__doc__)
     image, _ = ariafw.load(source)
     volume = ariafw.Fat12(image)
-    code, kind = ariafw.code_of(volume.read(path))
+    code, kind = ariafw.code_of(ariafw.program_bytes(volume, path))
     if kind == 'pklite':
         sys.exit('%s is PKLITE-compressed; unpack it first (phase 1)' % path)
     origin = 0x100 if kind == 'com' else 0

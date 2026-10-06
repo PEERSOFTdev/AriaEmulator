@@ -183,6 +183,37 @@ nekomprimované programy, PKLITE zatím přeskočeny):
   vidět (AAPI je PKLITE, SPEAK nejspíš zapisuje do tabulky vektorů
   přímo).
 
+**Doplněno 6. 10. 2026 s rozbalenými programy PKLITE** (`bin/pklite_unpack`,
+6.12; `tools/ints.py` s `ARIA_UNPACKED`, sken EXE jen pod počátečním SS,
+tedy v kódu). Výsledek pro 7.05, ověřený pohledem do `tools/dis.py`:
+
+- **Kandidáti na služby boot ROM, se skutečným voláním a bez instalace
+  na B:** (hledáno i přímým zápisem do tabulky vektorů na `18Ch`, `194h`,
+  `1A0h`, `1ACh` — nenalezeno, jen vlastní proměnné programů):
+  - `INT 63h` — `BKB.COM` ×5, funkce `AH=2` (`BKB.COM+158F`, výsledek se
+    vypisuje jako číslice) a `AH=3` (`+15A5`);
+  - `INT 65h` — `AAPI.EXE+DBF0`, `AX = (arg << 8) + arg2`;
+  - `INT 68h` — `BACKPACK.SYS+0B07` a `+38FF` (v `DL` číslo disku 0/1),
+    `FORMAT.EXE+1A5C`;
+  - `INT 6Bh` — `BPHDARIA.SYS` ×13 (`+0270`: `AH` a `DL` z proměnných).
+- **BIOS a DOS** (rozsah `00h`–`2Fh`): navíc proti dřívějšku `01h`,
+  `02h`, `0Ah`, `12h`, `14h`, `28h`, `2Fh`, `1Dh`–`1Fh` (tabulky BIOSu)
+  z aplikací. Jádro DOS je celé v boot ROM.
+- **Ne boot ROM:**
+  - `INT 34h`–`3Eh` (CALC, ARIACLK, COMMS, AAPI ×1) — emulace koprocesoru
+    běhového prostředí Borland; instaluje ji runtime sám ve smyčce, proto
+    ji sken nevidí;
+  - `INT 64h` — instaluje `BKB.COM`, AAPI ji volá až za běhu
+    (`AAPI.EXE+A726`), takže „použito před instalací“ je jen artefakt
+    pořadí načtení;
+  - `INT 69h` — `VOICE.SYS` (výše), používá i AAPI ×6.
+- **Šum**: jednotlivá „volání“ `55h`, `6Eh`, `72h`, `77h`, `84h`, `88h`,
+  `94h`, `A5h`, `AEh`, `B4h`, `BFh`, `C3h`, `CAh`, `D6h`, `FFh` jsou data
+  uvnitř kódových segmentů (např. `AAPI.EXE+14ABC` leží v textu).
+
+Pořadí podle načtení je u rezidentních programů jen orientační: TSR volá
+služby až za běhu, ne při instalaci.
+
 ### 6.2 Mapa paměti a stránkování
 
 1 MB NV RAM a 2 MB flash se nevejdou do 1MB adresního prostoru 80C188,
@@ -430,17 +461,30 @@ zalomení segmentu) shodí vždy příslušný test. `tests/cpu_selftest.cpp`
 bez dat ověřuje reset, přesun PCB relokačním registrem, INT, INTR a past
 ESC s obsluhou zkopírovanou z `VOICE.SYS+01C5h`.
 
-**Otevřené k 6.12:** rozbalení PKLITE (zbytek fáze 1). Kmitočet CPU
-Arie není známý (potřebný pro převod taktů na reálný čas a pro časovače),
-patří k 6.5 a fázi 3.
+**Rozbalení PKLITE, 6. 10. 2026.** `tests/pklite_unpack.cpp` spustí stub
+programu na jádru s malým DOSem v hostiteli (`INT 21h` 09h, 25h, 30h,
+35h, 4Ah; vše ostatní je chyba). Všech 17 programů PKLITE 1.14 na B:
+(4 s „extra“ kompresí) má stejný tvar: vstup `FFF0:0100`, stub se
+přesune výš (při velké minimální alokaci *dovnitř* paměti programu, takže
+konec nejde poznat podle adresy) a skočí daleko na původní vstup; konec
+běhu je proto **druhá změna CS**. Tabulka relokací se získá dvěma běhy
+s PSP `1000h` a `2000h`: relokované slovo se liší o `1000h` a projeví se
+jen na vyšším bajtu. Kontrola: relokace > 0, žádný text stubu, autorské
+právo runtime (Borland, u `DLFMT.EXE` Datalight). Projde pro 7.05, 6.87,
+6.99, 7.04 i 6.90; `check-unpack` v testech (7.05). Mutace (konec na
+první změně CS) shodí všech 17. Výstup jen pro analýzu a jen mimo strom
+(nástroj odmítne cíl uvnitř repozitáře), např. `D:\aria\unpacked\705`.
+Cesty UNC z WSL: `fs::weakly_canonical` hází a `fs::absolute` ztratí
+zpětné lomítko, proto `GetFullPathNameW`.
+
+**Otevřené k 6.12:** kmitočet CPU Arie není známý (potřebný pro převod
+taktů na reálný čas a pro časovače), patří k 6.5 a fázi 3.
 
 ## 8. Pořadí
 
 1. Fáze 0: kostra repozitáře — **hotová** 5. 10. 2026: dokumenty,
    Makefile, skripty pro WSL i dávky `.bat`, `.clangd`, načtení disku B:,
    analytické nástroje v `tools/` a beads.
-2. Fáze 1: jádro 80188 **hotové** 5. 10. 2026 (6.12); zbývá rozbalení
-   PKLITE během vlastního stubu programů a pak znovu sken portů jen
-   v kódových segmentech. Periferie PCB patří k fázi 3, ale dají se
-   převzít z `i186.cpp` kdykoli dřív.
+2. Fáze 1 **hotová** 6. 10. 2026: jádro 80188 s periferiemi PCB a
+   rozbalení PKLITE (6.12), tabulka přerušení s rozbalenými programy (6.1).
 3. Fáze 2: 6.1 a 6.2 jako první, protože na nich stojí všechno ostatní.

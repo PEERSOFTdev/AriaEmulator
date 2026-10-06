@@ -1,8 +1,8 @@
 #!/bin/sh
-# Sestavi testy a pusti je naraz. Ocekava se TRINACT radku PASS:
+# Sestavi testy a pusti je naraz. Ocekava se CTRNACT radku PASS:
 #   - tri bez dat: codec_test, flash_selftest, cpu_selftest;
-#   - osm rezimu firmware_test (jedna aktualizace od Robotronu na rezim),
-#     kdyz je firmware (ARIAFW);
+#   - osm rezimu firmware_test (jedna aktualizace od Robotronu na rezim)
+#     a pklite_unpack --check, kdyz je firmware (ARIAFW);
 #   - dva behy cpu_test (8088 a rozsireni 80186 ze sady V20), kdyz jsou data
 #     instrukcnich testu (ARIA_CPUTESTS, HANDOFF 6.12).
 # Co chybi, skript vynecha a rekne to; pocet PASS se podle toho snizi.
@@ -47,13 +47,13 @@ fi
 if [ -z "$ARIAFW" ] || [ ! -d "$ARIAFW/CARD" ]; then
   echo "Nenašel jsem firmware Arie: ${ARIAFW:-(nezadán)}"
   echo "Zadejte složku s podsložkami CARD a SERIAL argumentem nebo proměnnou ARIAFW."
-  echo "Osm testů s firmwarem se vynechá a není to regrese."
+  echo "Devět testů s firmwarem se vynechá a není to regrese."
   SKIP_FIRMWARE=1
   FW_WIN=""
 else
   # EXE dostane windowsovou cestu, s lomitky dopredu (Windows je prijima).
   FW_WIN="$(wslpath -w "$ARIAFW" | tr '\\' '/')"
-  EXPECTED=$((EXPECTED + 8))
+  EXPECTED=$((EXPECTED + 9))
 fi
 export SKIP_FIRMWARE
 

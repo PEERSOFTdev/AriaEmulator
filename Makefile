@@ -34,7 +34,7 @@ CPU_OBJS   := $(BUILD)/cpu80188.o $(I86_OBJS)
 
 EMU        := $(BIN)/AriaEmulator.exe
 TEST_EXES  := $(BIN)/codec_test.exe $(BIN)/flash_selftest.exe $(BIN)/firmware_test.exe \
-              $(BIN)/cpu_test.exe $(BIN)/cpu_selftest.exe
+              $(BIN)/cpu_test.exe $(BIN)/cpu_selftest.exe $(BIN)/pklite_unpack.exe
 
 .PHONY: all tests check clean
 .DEFAULT_GOAL := all
@@ -79,6 +79,11 @@ $(BIN)/firmware_test.exe: $(BUILD)/test_firmware_test.o $(CORE_OBJS) | $(BIN)
 $(BIN)/cpu_test.exe: $(BUILD)/test_cpu_test.o $(CPU_OBJS) $(BUILD)/zip_reader.o | $(BIN)
 	$(CXX) $(STATIC) -municode -o $@ $^
 
+# Rozbaleni programu PKLITE z disku B: behem jejich vlastniho stubu
+# (HANDOFF 6.1); vystup jen pro analyzu. wmain.
+$(BIN)/pklite_unpack.exe: $(BUILD)/test_pklite_unpack.o $(CPU_OBJS) $(CORE_OBJS) | $(BIN)
+	$(CXX) $(STATIC) -municode -o $@ $^
+
 # Jadro CPU bez dat testu: kratke programy (PCB, preruseni, past ESC).
 $(BIN)/cpu_selftest.exe: $(BUILD)/test_cpu_selftest.o $(CPU_OBJS) | $(BIN)
 	$(CXX) $(STATIC) -o $@ $^
@@ -102,6 +107,10 @@ else
 MODES := $(FW_MODES)
 endif
 CHECKS := check-codec check-flash check-cpu $(addprefix check-fw-,$(MODES))
+# Rozbaleni PKLITE potrebuje firmware i jadro; jeden beh na ceskou 7.05.
+ifneq ($(SKIP_FIRMWARE),1)
+CHECKS += check-unpack
+endif
 
 # Data instrukcnich testu (MIT, ale velka) lezi mimo strom v ARIA_CPUTESTS
 # (HANDOFF 6.12). Bez nich run-tests.sh nastavi SKIP_CPU=1.
@@ -123,6 +132,9 @@ check-flash: $(BIN)/flash_selftest.exe
 
 check-cpu: $(BIN)/cpu_selftest.exe
 	$(BIN)/cpu_selftest.exe
+
+check-unpack: $(BIN)/pklite_unpack.exe
+	$(BIN)/pklite_unpack.exe "$(FW)/CARD/CC0705.ZIP" --check
 
 check-cpu-8088: $(BIN)/cpu_test.exe
 	$(BIN)/cpu_test.exe "$(CPUTESTS)" 8088

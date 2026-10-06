@@ -65,7 +65,7 @@ def main(argv):
     events = []  # (position, program, vector, action, offsets)
     skipped = []
     for position, path in enumerate(ariafw.programs(volume)):
-        code, kind = ariafw.code_of(volume.read(path))
+        code, kind = ariafw.code_of(ariafw.program_bytes(volume, path))
         if kind == 'pklite':
             skipped.append(path)
             continue

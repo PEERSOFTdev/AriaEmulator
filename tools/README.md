@@ -29,13 +29,26 @@ Přijme se kartový i sériový ZIP, `FLASHDSK.IMG`, díl `ARIAA4.n` i složka.
   řetězce souboru dekódované kódováním obrazu.
 - `dis.py [OBRAZ] CESTA [--range OD[:DO]]` — výpis instrukcí programu.
 
+## Rozbalené programy PKLITE
+
+Programy komprimované PKLITE (AAPI, MAINMENU, AWP a další) rozbalí
+`bin/pklite_unpack.exe OBRAZ SLOŽKA` (z C++ testů, potřebuje jádro CPU)
+do složky mimo repozitář. Když proměnná `ARIA_UNPACKED` ukazuje na tu
+složku, berou `ports.py`, `ints.py` a `dis.py` program odtud místo
+komprimovaného; bez ní je přeskočí (`dis.py` je odmítne). Složka musí být
+ze stejné verze firmwaru jako obraz.
+
+    bin/pklite_unpack.exe D:/aria/update/CARD/CC0705.ZIP 'D:\aria\unpacked\705'
+    export ARIA_UNPACKED=/mnt/d/aria/unpacked/705
+
 ## Adresy a omezení
 
 Offsety jsou vůči kódu: u EXE za hlavičkou MZ, u COM od `100h`, u SYS od
-nuly. Programy komprimované PKLITE (AAPI, MAINMENU, AWP a další) se
-neskenují a `dis.py` je odmítne, dokud je fáze 1 nerozbalí. Lineární
-průchod dekóduje i data, takže každý nález je nutné ověřit pohledem do
-`dis.py`.
+nuly. U EXE se skenuje jen kód pod počátečním SS (v modelech paměti
+Borlandu a Microsoftu je SS skupina dat), aby se data nečetla jako
+instrukce. Lineární průchod dekóduje i data uvnitř kódu, takže každý
+nález je nutné ověřit pohledem do `dis.py`; jednotlivá „volání“ bývají
+šum.
 
 ## Příklady
 

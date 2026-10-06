@@ -59,8 +59,9 @@ služba musí v komentáři citovat binárku a offset, kde ji někdo používá.
 A **„nikdo to neinstaluje“ se tvrdí až po `tools/ints.py`**, ne po hledání
 jednoho bajtového vzoru. Hledání jen `mov ax,2569h` jednou přisoudilo
 `INT 69h` boot ROM, a přitom ho instaluje `VOICE.SYS` přes `mov ah`/`mov al`
-(HANDOFF 6.1, oprava z 5. 10. 2026). A dokud PKLITE programy nejsou
-rozbalené, je i výsledek `ints.py` jen dolní odhad.
+(HANDOFF 6.1, oprava z 5. 10. 2026). `ints.py` se pouští s rozbalenými
+programy PKLITE (`ARIA_UNPACKED`), jinak je jeho výsledek jen dolní
+odhad; i pak každý nález ověř v `dis.py`, jednotlivá „volání“ bývají data.
 
 ## Dokumentace Arie — podívej se do ní dřív, než začneš odvozovat
 
@@ -111,10 +112,17 @@ z `FlashImage` (`src/flash_image.h`).
 
 Z WSL krosovým mingw-w64: `./build.sh`, `./build-tests.sh`,
 `./run-tests.sh [složka firmwaru]` (jinak z proměnné `ARIAFW`). Výstup
-EXE do `bin/`, mezivýstupy do `build/`. Očekává se **třináct** řádků
-`PASS`: tři bez dat, osm s firmwarem (`ARIAFW`) a dva s daty instrukčních
+EXE do `bin/`, mezivýstupy do `build/`. Očekává se **čtrnáct** řádků
+`PASS`: tři bez dat, devět s firmwarem (`ARIAFW`; osm režimů
+`firmware_test` a `pklite_unpack --check`) a dva s daty instrukčních
 testů CPU (`ARIA_CPUTESTS`, výchozí `D:\aria\cputests`, 562 MB,
 SingleStepTests). Co chybí, skript vynechá, řekne to a počet sníží.
+
+Programy PKLITE (AAPI, MAINMENU, AWP…) se pro analýzu rozbalí
+`bin/pklite_unpack.exe OBRAZ SLOŽKA` do složky **mimo strom** (např.
+`D:\aria\unpacked\705`); nástroje v `tools/` je pak čtou místo
+komprimovaných, když je ta složka v proměnné `ARIA_UNPACKED`. Složka musí
+odpovídat verzi obrazu.
 
 Z Windows s msys2 (`C:\msys64\mingw64`, jinak proměnná `MINGW64`):
 `build.bat`, `build-tests.bat`, `run-tests.bat [složka firmwaru]` (jinak

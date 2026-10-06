@@ -2,9 +2,10 @@
 setlocal
 cd /d "%~dp0"
 
-rem Sestavi testy a pusti je naraz. Ocekava se TRINACT radku PASS: tri bez
+rem Sestavi testy a pusti je naraz. Ocekava se CTRNACT radku PASS: tri bez
 rem dat (codec_test, flash_selftest, cpu_selftest), osm rezimu firmware_test
-rem s firmwarem (ARIAFW) a dva behy cpu_test s daty instrukcnich testu
+rem a pklite_unpack --check s firmwarem (ARIAFW) a dva behy cpu_test s daty
+rem instrukcnich testu
 rem (ARIA_CPUTESTS, jinak D:\aria\cputests; HANDOFF 6.12). Co chybi, se
 rem vynecha. Protejsek run-tests.sh.
 rem
@@ -21,11 +22,11 @@ if "%ARIAFW%"=="" set "ARIAFW=D:\aria\update"
 
 rem SKIP_FIRMWARE jde do make PROSTREDIM, stejne jako z run-tests.sh.
 set "SKIP_FIRMWARE=0"
-set "EXPECTED=13"
+set "EXPECTED=14"
 if not exist "%ARIAFW%\CARD\" (
   echo Nenasel jsem firmware Arie: %ARIAFW%
   echo Zadejte slozku s podslozkami CARD a SERIAL argumentem nebo promennou ARIAFW.
-  echo Osm testu s firmwarem se vynecha a neni to regrese.
+  echo Devet testu s firmwarem se vynecha a neni to regrese.
   set "SKIP_FIRMWARE=1"
 )
 
@@ -39,7 +40,7 @@ if not exist "%ARIA_CPUTESTS%\8088\metadata.json" (
 )
 
 rem Ocekavany pocet podle toho, co je k dispozici.
-if "%SKIP_FIRMWARE%"=="1" set /a EXPECTED-=8
+if "%SKIP_FIRMWARE%"=="1" set /a EXPECTED-=9
 if "%SKIP_CPU%"=="1" set /a EXPECTED-=2
 
 call "%~dp0build-tests.bat"

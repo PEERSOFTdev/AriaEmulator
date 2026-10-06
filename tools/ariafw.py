@@ -268,6 +268,18 @@ def programs(volume):
     return order + rest
 
 
+def program_bytes(volume, path):
+    """A program from B:, or its unpacked form when $ARIA_UNPACKED names a
+    folder written by bin/pklite_unpack.exe and holds that file (HANDOFF
+    6.1). The unpacked folder must match the image's firmware build."""
+    folder = os.environ.get('ARIA_UNPACKED')
+    if folder:
+        candidate = os.path.join(_native(folder), path.rsplit('\\', 1)[-1])
+        if os.path.exists(candidate):
+            return open(candidate, 'rb').read()
+    return volume.read(path)
+
+
 def code_of(data):
     """(code bytes, kind) of a DOS program: MZ header stripped, PKLITE
     detected. kind is 'exe', 'pklite', 'com' or 'sys'."""
@@ -276,7 +288,15 @@ def code_of(data):
         # PKLITE puts 'PK' after its version word at offset 1Ch and its
         # copyright text right behind the header.
         kind = 'pklite' if data[30:32] == b'PK' or b'PKLITE' in data[:0x100] else 'exe'
-        return data[header:], kind
+        code = data[header:]
+        # In the Borland and Microsoft-style memory models the programs on B:
+        # use, the initial SS is DGROUP, the data, which follows the code.
+        # Scanning only below it keeps data bytes from being read as
+        # "int xx" or "in/out" (seen with the unpacked AWP.EXE, HANDOFF 6.1).
+        ss = struct.unpack_from('<H', data, 14)[0]
+        if kind == 'exe' and 0 < ss * 16 < len(code):
+            code = code[:ss * 16]
+        return code, kind
     if data[:4] == b'\xff\xff\xff\xff' or data[:2] == b'\xff\xff':
         return data, 'sys'
     return data, 'com'

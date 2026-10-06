@@ -45,7 +45,7 @@ def main(argv):
     volume = ariafw.Fat12(image)
     by_port = collections.defaultdict(list)
     for path in ariafw.programs(volume):
-        code, kind = ariafw.code_of(volume.read(path))
+        code, kind = ariafw.code_of(ariafw.program_bytes(volume, path))
         if kind == 'pklite':
             print('%-22s PKLITE, skipped' % path)
             continue

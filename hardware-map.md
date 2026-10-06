@@ -43,6 +43,24 @@ Sken portů pochází z `tools/ports.py` (7.05, bez PKLITE programů).
 
 ## Porty desky (předběžně)
 
+Doplněno 6. 10. 2026 s rozbalenými programy PKLITE (`tools/ports.py`
+s `ARIA_UNPACKED`, HANDOFF 6.1). Nové porty a uživatelé:
+
+- `0501h`, `0503h`, `0505h` — `AAPI.EXE+46F3` až `+4719` čte a zapisuje
+  všechny tři; `050Ch` čtou `AAPI.EXE+471D` a `ARIALARM.EXE` (×2) —
+  skupina kolem `0500h`, nejspíš hodiny reálného času **[předpoklad]**
+  (HANDOFF 6.5)
+- `057Ch` — čte i zapisuje `ARIACLK.EXE`, zapisují `ARIADY.EXE`,
+  `ARIALARM.EXE`; `057Eh`, `057Fh` zapisuje i `ARIAMODE.EXE`
+- `0580h` — zapisuje i `AAPI.EXE` (`+48A7`, `+4944`) a `FORMAT.EXE`
+- `0680h` — čte `AAPI.EXE+A017`
+- `0700h` — čtou i `AAPI.EXE+DCC7` a `MAINMENU.EXE`; `0701h` zapisuje i
+  `AAPI.EXE+DE17`; `0702h` zapisují i `AAPI.EXE` a `FORMAT.EXE`
+- `0480h` — čtou i `FORMAT.EXE` a `MAINMENU.EXE`, `FORMAT.EXE` i zapisuje
+
+Porty s pevnou adresou `00h`–`FFh` (`in al,imm`) zůstávají ve výpisu
+zašuměné daty; za doklad se berou jen porty načtené do `DX`.
+
 - `0401h`, `0402h` — zápis z `SPEAK.EXE`, nejspíš DSP **[předpoklad]**
 - `0480h` — čtou `BKB.COM`, `DLFFSA.EXE`, `TRICKSS2.EXE`, zapisuje
   `VOICE.SYS`
