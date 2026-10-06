@@ -169,6 +169,13 @@ To je stejný vzor jako latche Eureky. Boot ROM tedy obsahovala ovladač
 `FLASHDSK.SYS` a zaváděla ho na nízké segmenty kolem `0262h` (HANDOFF
 6.2, 6.10, 6.11).
 
+**Neplatí od 6. 10. 2026:** že `0580h` sdílí i hlasový hardware, kód
+nepodpořil. Rozbor celé obsluhy `INT 69h` (6.2) ukázal, že latch vybírá
+jen režim a stránku okna D000h (flash, karta, vypnuto). Proč je správce
+okna ve `VOICE.SYS`, kód neříká; nejspíš proto, že ten ovladač se
+načítá první a záplatu `FLASHDSK.SYS` potřebuje dřív, než kdokoli jiný
+okno použije.
+
 Kandidáti na služby boot ROM podle `tools/ints.py` (7.05, jen
 nekomprimované programy, PKLITE zatím přeskočeny):
 
@@ -192,10 +199,18 @@ tedy v kódu). Výsledek pro 7.05, ověřený pohledem do `tools/dis.py`:
   `1A0h`, `1ACh` — nenalezeno, jen vlastní proměnné programů):
   - `INT 63h` — `BKB.COM` ×5, funkce `AH=2` (`BKB.COM+158F`, výsledek se
     vypisuje jako číslice) a `AH=3` (`+15A5`);
-  - `INT 65h` — `AAPI.EXE+DBF0`, `AX = (arg << 8) + arg2`;
+  - ~~`INT 65h` — `AAPI.EXE+DBF0`, `AX = (arg << 8) + arg2`~~ —
+    **opraveno 6. 10. 2026: instaluje ho `ARIALARM.EXE`** přes `setvect`
+    Borlandu (sken to nevidí). Doklad je odinstalace
+    `ARIALARM.EXE+21A8h`–`+21E1h`: ověří, že `INT 1Ch` ukazuje na
+    `+211Ah` a `INT 65h` na `+214Dh`, a obnoví je. Obsluha `+214Dh`
+    uloží `AH` (číslo alarmu) a `AL != 0` (zapnout) a nastaví požadavek;
+    to je `EnableAlarm` z API, AAPI ho jen předává;
   - `INT 68h` — `BACKPACK.SYS+0B07` a `+38FF` (v `DL` číslo disku 0/1),
     `FORMAT.EXE+1A5C`;
   - `INT 6Bh` — `BPHDARIA.SYS` ×13 (`+0270`: `AH` a `DL` z proměnných).
+
+  Po opravě `65h` tedy zbývají tři kandidáti: `63h`, `68h`, `6Bh`.
 - **BIOS a DOS** (rozsah `00h`–`2Fh`): navíc proti dřívějšku `01h`,
   `02h`, `0Ah`, `12h`, `14h`, `28h`, `2Fh`, `1Dh`–`1Fh` (tabulky BIOSu)
   z aplikací. Jádro DOS je celé v boot ROM.
@@ -223,6 +238,64 @@ port `00A0h` = UMCS při PCB na 0), porty `0480h`, `0580h`, `0702h`.
 (`FLASHDSK.SYS`) a který po startu spravuje `VOICE.SYS` přes `INT 69h`
 (viz 6.1).
 
+**Rozbor 6. 10. 2026 (7.05, rozbalené programy).**
+
+*Disky.* Uživatel si pamatuje, že COMMAND.COM ROM-DOS se hlásil z disku
+**A:**, což byl ROM disk v boot ROM s BIOSem a programy, které nemáme.
+README.DOC: B: interní flash, C: karta, D: RAM disk, E: a dál Backpack.
+
+*Okno D000h.* Celá flash (i karta) se čte jedním **oknem o 64 KB na
+segmentu D000h**, které vybírají dva latche:
+
+- `INT 69h` ve `VOICE.SYS` (`+0124h`–`+01ABh`) drží stínové slovo
+  `[cs:116h]` (nižší bajt = latch `0580h`, vyšší = `0480h`) a zásobník
+  tří uložených stavů. Funkce podle `CH`:
+  - 0 uloží mapování (`AX=FFFFh`, když je zásobník plný), 1 ho obnoví
+    a zapíše oba latche;
+  - 2 namapuje stránku `DL`: `0580h = (DL << 2) | 2`, vrátí `DX = D000h`
+    a `AX = BX` — tedy rovnou ukazatel `D000:BX`;
+  - 3 namapuje stránku `DX` (10 bitů): bity 0–3 do `0580h` bitů 5–2 s
+    režimem 3, bity 4–9 do `0480h` bitů 5–0, bit 7 latche `0480h` při
+    `CL=0`; vrátí `DX = D000h`;
+  - 4 okno vypne (`0580h = 0`).
+- **Režim 2 = interní flash, režim 3 = karta PCMCIA.** Doklad: režim 2
+  používal `FLASHDSK.SYS` z boot ROM (záplata ve `VOICE.SYS`) a AAPI
+  (`AAPI.EXE+A807h`), režim 3 CardTrick (`DLFFSA.EXE+0E92h`), ovladač
+  disku C:.
+- **Stránka má 64 KB.** `AAPI.EXE+A807h` dostane 32bitovou adresu ve flash
+  v `DX:BX`, `DX` jde jako stránka do `INT 69h CH=2`, `BX` je offset
+  v okně; `AAPI.EXE+A818h` dělí kopii přes hranici 64 KB (`neg ax` =
+  zbytek stránky) a mezi tím znovu mapuje. Šest bitů stránky v režimu 2
+  = 4 MB adresního prostoru, 2 MB flash zabírá stránky 0–31.
+- **Adresa ve flash = offset v obrazu disku B:.** AAPI hledá soubory
+  přímo v FAT obrazu přes okno (`AAPI.EXE+A92Ch`: 256 položek adresáře
+  po 32 B, porovná jméno, vrátí počáteční cluster z `+1Ah`). Emulátor
+  tedy může okno v režimu 2 plnit přímo z `FlashImage`.
+- `INT 62h` je obsluha v AAPI (`AAPI.EXE+A8D8h`): `AX=0200h` kopíruje
+  z flash od základu `[4466h]` (dokumentované `AAPI_MEMCPY_SPEECH`),
+  `AX=0201h` vrací adresu kopírovací rutiny. SPEAK.EXE tak čte fonémová
+  data z flash oknem, ne přes DOS (`SPEAK.EXE+8B5Ch`).
+- Smysl bitu 7 v `0480h` při režimu 3 (`CL=0`) zatím neznámý; u karty
+  PCMCIA by to mohl být výběr atributové/společné paměti (REG#)
+  **[předpoklad]**.
+
+*RAM disk D: pod boot ROM.* `RAMDISK.EXE` je **Datalight VDISK 5.0**
+(rev. 1.56-B) v režimu „static VDISK“ se základem **B000h**
+(`RAMDISK.EXE+01BFh`) a výchozí velikostí **319 KB**, sektor 512 B,
+128 položek adresáře (DGROUP na odstavci C0h, `DS:[0054h]`–`[0058h]`;
+CONFIG.SYS žádné parametry nedává). 319 KB = 4FC00h, takže disk leží na
+**B0000h–FFBFFh**. Při každém přístupu (`RAMDISK.EXE+0372h`–`+03A9h`):
+uloží UMCS (`in ax,0A0h`) a mapování (`INT 69h CH=0`), zakáže přerušení,
+**nastaví UMCS = FFF8h** (horní chip select jen na 1 KB na FFC00h–FFFFFh)
+a **vypne okno** (`out 0580h,0`), zkopíruje, a vše vrátí. RAM pod oblastí
+boot ROM je tedy vidět jen se zmenšeným UCS; okno D000h leží uvnitř a
+musí být vypnuté. Horní 1 KB (resetovací vektor) zůstává ROM vždy.
+
+Otevřené k 6.2: normální hodnota UMCS z boot ROM (velikost oblasti ROM),
+co je na A0000h–AFFFFh a kolik RAM vidí DOS. Stav a napájení slotu karty
+(`0480h`, `0702h`) jsou v 6.8; první verze tohoto odstavce měla hodnoty
+`0702h` obráceně.
+
 ### 6.3 Rozhraní DSP
 
 `SPEAK.EXE` programuje DMA kanál 0 (`C0h`–`CAh`) a zapisuje porty `0401h`
@@ -240,6 +313,32 @@ vede zvukový výstup (sériový port DSP → DAC?).
 API má `AwokenByRTC` a `EnableAlarm`; `ARIALARM.EXE` a `ARIAMODE.EXE`
 přebírají `INT 08h` a `INT 1Bh`. Port RTC zatím neznámý.
 
+**6. 10. 2026: RTC je obvod kompatibilní s MC146818 (DS12887) na I/O
+`0500h` + číslo registru.** Doklady (rozbalená 7.05):
+
+- `AAPI.EXE+46F0h`: čte registry 01h, 03h, 05h (alarm sekund, minut,
+  hodin); jsou-li všechny `C0h` — v MC146818 „nezáleží“, tedy alarm
+  každou sekundu — zapíše je na 0 a přečte registr C (`050Ch`), čímž
+  smaže čekající příznaky.
+- `ARIALARM.EXE+2132h`: v obsluze `INT 1Ch` čte registr C a testuje bit
+  5 = AF (příznak alarmu). Alarm se tedy **dotazuje v každém tiku**,
+  nehlásí se přerušením.
+- `BKB.COM+1613h`: registr D bit 7 = VRT (baterie a RAM v pořádku).
+- `057Ch`, `057Eh`, `057Fh` padají do 128 B paměti CMOS (DS12887): bajty
+  nastavení, které přežijí reset. `ARIAMODE.EXE+1361h`/`+137Bh` do
+  `057Fh` zapíše `52h` („R“) a do `057Eh` `43h` („C“), nebo 0, podle
+  voleb; `TRICKSS2.EXE+06BEh` a `FORMAT.EXE+1E5Fh` se bez „R“ v `057Fh`
+  odmítnou nainstalovat, `ATKBD.COM+0599h` bez „C“ v `057Eh` skončí.
+  TRICKSS2 běží v AUTOEXEC před ARIAMODE, proto hodnota musí být
+  uložená z minula. Význam voleb (karta? klávesnice AT?) zatím neznámý.
+  `057Ch` čtou a zapisují ARIACLK, ARIADY, ARIALARM.
+
+Zbývá: který kmitočet má krystal RTC (MC146818 32,768 kHz), zda RTC
+budí stroj (AwokenByRTC) a přes jaký pin.
+
+Boot ROM navíc musí mít bajt na `FFFF:000Eh` (na PC modelový bajt BIOSu):
+čte ho `AAPI.EXE+46DEh` a přičítá k hodnotě v `[1E68h]`. Hodnota neznámá.
+
 ### 6.6 Sériový port
 
 `FOSSIL.COM` přebírá `INT 14h` a používá porty `0600h`, `0601h`, `0681h`
@@ -252,6 +351,25 @@ a registry PCB `INT0`/`INT1` (`38h`, `3Ah`) a časovač 1 (`5Ah`, `5Eh`).
 ### 6.8 PCMCIA
 
 `CARDMAN.EXE` (PKLITE); `TRICKSS2.EXE` čte `057Fh`, `ATKBD.COM` `057Eh`.
+
+**6. 10. 2026.** `TRICKSS2.EXE` je CardTrick (Datalight 1993–94) se
+**Socket Services 2.01 „SS2OEM v1.1 (c) 1995–1997 Robotron“** — vrstva
+Robotronu pro slot Arie. `DLFFSA.EXE` je flash souborový systém k ní
+(„CardTrick Stack was reentered“). Obě mají stejný kód hardwaru:
+
+- `0480h` při čtení je **stav slotu**: bity 0–1 detekce karty, **aktivní
+  nulou** (`TRICKSS2.EXE+14C1h`: obě 0 = karta zasunutá); bity 2–3
+  nejspíš BVD1/BVD2, napětí baterie karty (`BKB.COM+1622h` porovnává
+  s `0Ch`); bit 5 další stav (`TRICKSS2.EXE+14B3h`; ochrana proti zápisu?).
+  Při zápisu je `0480h` vyšší polovina stránky okna (6.2).
+- `0702h` napájení slotu: obsluha `INT 1Ch` (`TRICKSS2.EXE+14EDh`,
+  `DLFFSA.EXE+0DA3h`) zapíše **6, když je karta zasunutá, a 4, když
+  není** (oprava: dřív zde stálo obráceně); kolem zápisu `7` a pak `6`
+  (`TRICKSS2.EXE+1549h`). Výklad: bit 0 programovací napětí Vpp, bit 1
+  napájení karty VCC, bit 2 vždy 1 **[předpoklad]**.
+- Okno karty je režim 3 `INT 69h` (`TRICKSS2.EXE+1497h`, `DLFFSA.EXE+0E92h`).
+- Při dlouhých operacích cvaká `INT 61h AX=0500h` (`DLFFSA.EXE+0EE6h`),
+  to je to „tikání“ z README.DOC.
 
 ### 6.9 Napájení
 
