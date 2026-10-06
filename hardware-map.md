@@ -135,6 +135,9 @@ zašuměné daty; za doklad se berou jen porty načtené do `DX`.
   **[binárka]**
 - `16h` — celé nahrazené v `BKB.COM+0DC5h`, rozšíření Arie 21h–31h, FEh,
   FFh **[binárka]**
+- `68h` — služba `BACKPACK.SYS` (instaluje přímo do tabulky vektorů,
+  `+318Bh`), `6Bh` — služba `BPHDARIA.SYS` (`+1935h`) **[binárka]**.
+  Žádný vektor nad `2Fh` tedy neposkytuje boot ROM (HANDOFF 6.1).
 - `62h` — obsluha v AAPI (`AAPI.EXE+A8D8h`): `AX=0200h` kopie z flash
   oknem, `AX=0201h` adresa kopírovací rutiny **[binárka]**, odpovídá
   `AAPI_MEMCPY_SPEECH` v ARIA-INT.H **[API]**.

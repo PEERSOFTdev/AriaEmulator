@@ -118,9 +118,15 @@ nekopírují, jen fakta vlastními slovy:
 - **Aktualizace:** flash se programuje sama, novou verzi stačí přenést
   z jiného počítače (sériově) nebo z karty. `ariaware.htm` (1997) nabízel
   starší sestavení: anglické 0627, thajské 0622, **české 0621** (12. 12.
-  1996), na `ftp.robotron.net.au/ariaware/…`; FTP Wayback Machine
-  nejspíš neuložil (dotazy 6. 10. 2026 prázdné nebo „temporarily
-  offline“, zkusit znovu).
+  1996), na `ftp.robotron.net.au/ariaware/…`.
+  **Úplný seznam zveřejněných sestavení** podle deseti verzí stránky
+  `ariaware.htm` v archivu (4/1997–9/2000): česky 0621, 0648, 0687, 0705;
+  anglicky 0627, 0647, 0662, 0689, 0704; thajsky 0622, 0649, 0688.
+  Uživatel má 0687, 0705, 0704, 0690 a 0699; 0690 a 0699 na stránce
+  nikdy nebyly. **Ostatní se nedochovaly** (ověřeno 6. 10. 2026): Wayback
+  Machine má jen stránky, soubory z FTP vrací 404, a dnešní FTP server
+  (stejný hosting jako web) má od 10/2024 prázdnou anonymní oblast a na
+  všechny cesty odpoví 550.
 - **Uživatelská příručka** existovala tištěná, zvuková a v Braillu;
   nikde nenalezena (vyhledávání 6. 10. 2026).
 
@@ -269,6 +275,38 @@ tedy v kódu). Výsledek pro 7.05, ověřený pohledem do `tools/dis.py`:
   `ALARM_INT 0x65` (0 budík, 1–3 alarmy diáře). **Zbývají dva kandidáti,
   `68h` a `6Bh`, a oba používají jen ovladače mechanik Backpack** — je tedy
   možné, že patří jim, ne boot ROM (ověřit).
+
+  **Ověřeno 6. 10. 2026: patří jim.** Oba zapisují do tabulky vektorů
+  přímo (`ES = 0`, sken přes `INT 21h` to nevidí): `BACKPACK.SYS+318Bh`
+  nastaví `INT 68h = CS:2A10h` (a `INT 1Eh`, tabulku parametrů diskety,
+  na `CS:2B6Eh`), `BPHDARIA.SYS+1935h` nastaví `INT 6Bh = CS:0C39h`.
+  Jsou to ovladače Micro Solutions upravené pro Arii: „BP v2.11.AR“
+  (1996, Ron Proesel) a „HD v2.03.DZ“ (BPHDDRV.SYS, 1998, s hesly disků
+  a hláškami anglicky, německy, francouzsky).
+
+**Závěr k 6.1 (6. 10. 2026): boot ROM nemá žádnou službu specifickou pro
+Arii.** Všechny vektory nad `2Fh` instalují programy z B: (60h AAPI, 61h
+SPEAK, 62h AAPI, 63h ARIAMODE, 64h BKB, 65h ARIALARM, 66h tisk, 68h
+BACKPACK, 69h VOICE.SYS, 6Ah BKB, 6Bh BPHDARIA). Boot ROM tedy musí
+poskytnout:
+
+- **BIOS** (volá ho kód z B:): `10h` (výpis `AH=0Eh` — AAPI ho zachytává
+  do řeči — a funkce videa pro virtuální obrazovku), `11h` (vybavení),
+  **`12h` (velikost paměti — čte AAPI, takže z ní plyne, kolik RAM vidí
+  DOS, 6.2)**, `13h` (disky; BACKPACK ji řetězí, volají CARDMAN, DLFMT,
+  FORMAT), `14h` (sériový port, než ho převezme FOSSIL), `15h` (RAMDISK,
+  DLFMT), `16h` (klávesnice, než ji převezme BKB: VOICE.SYS, DLFFSA,
+  BACKPACK, BPHDARIA, TRICKSS2), `17h` (tiskárna), `19h` (restart),
+  `1Ah` (čas; téměř všechny programy), tabulky `1Dh`–`1Fh`, a hardwarové
+  vektory, které TSR řetězí: `08h` (tik), `09h`, `1Bh`, `1Ch`.
+- **Jádro DOS:** `20h`, `21h`, `25h`/`26h`, `28h`, `2Fh` (multiplex),
+  a `2Dh` (AMIS, TRICKSS2). COMMAND.COM z B: je ROM-DOS (6.10).
+- **`FLASHDSK.SYS`** (disk B:, záplatovaný VOICE.SYS) a **ROM disk A:**.
+- **Data:** bajt na `FFFF:000Eh`, verze boot ROM a sériové číslo pro
+  `GetAriaVersion`, kontrolní součet pro `SpeakChecksum` (6.5, 6.14).
+
+Jednotlivé výskyty `01h`, `02h`, `0Ah` (CALC, ARIACLK) jsou z prostředí
+Borland pro plovoucí čárku nebo šum.
 - **BIOS a DOS** (rozsah `00h`–`2Fh`): navíc proti dřívějšku `01h`,
   `02h`, `0Ah`, `12h`, `14h`, `28h`, `2Fh`, `1Dh`–`1Fh` (tabulky BIOSu)
   z aplikací. Jádro DOS je celé v boot ROM.
