@@ -75,6 +75,55 @@ nevolatilní RAM, 2 MB flash, slot PCMCIA typ I, paralelní a sériový port,
 sluchátka, 6 braillských kláves, mezerník, 8 funkčních a 5 kurzorových
 kláves, bez displeje, NiCd akumulátor. Operační systém ROM-DOS 7.
 
+### Popis stroje z roku 1997 (Wayback Machine)
+
+Stránka „guided tour“ Robotronu z 2. 4. 1997
+(`web.archive.org/web/19970402142428/http://www.robotron.net.au:80/aria.htm`)
+je nejúplnější dochovaný popis; fotky `aria1.gif`, `aria3.gif` (1997),
+`aria5.jpg`, `aria200.jpg` (dnešní stránka). Do repozitáře se
+nekopírují, jen fakta vlastními slovy:
+
+- **Rozměry a vzhled:** 222 × 102 × 28 mm, 550 g; uhlově šedý, sametový
+  protiskluzový povrch, **funkční a kurzorové klávesy růžové**, **braillské
+  perleťové**. Rozložení Perkins: šest bodů a mezerník uprostřed, nad nimi
+  řada osmi funkčních kláves, vpravo nahoře křížová skupina — **střed je
+  Shift, kolem šipky** (potvrzuje vzpomínku uživatele, 6.4). Vlevo nahoře
+  nápis „ARIA“ s pruhy. Displej žádný.
+- **Zapnutí:** tlačítko zapuštěné v **levém boku** (on/reset). Pípne,
+  několik sekund startuje, pak zazní **harfa** (`SOUNDS\HARPUP.04`), která
+  ohlašuje hlavní nabídku. **Vypnutí: všechny čtyři šipky naráz v hlavní
+  nabídce**, Aria řekne „off“. Na baterii se po nečinnosti vypne sama,
+  s výstražným zvukem.
+- **Konektory:** zespodu braillské popisky. Vzadu zleva **DC zdířka**,
+  **subminiaturní 9pinový sériový port**, **subminiaturní paralelní
+  port** (oba přes redukce, 6.7); na pravém boku **mono sluchátka** a
+  **slot karty** s vysouvacím tlačítkem (karty do 64 MB plánované, do
+  20 MB existující).
+- **Napájení:** vnitřní NiCd (nabití z vybité za ~3 h, den provozu),
+  samočinně přepínaný adaptér 110/220 V, nabíječ hlásí stav (6.4, `0700h`);
+  **hodiny mají vlastní lithiovou baterii na 10 let** (6.5).
+- **Paměť podle stránky:** 1 MB RAM, „RAMdisk is 1 megabyte“, DOS ve 2MB
+  flash. **Rozpor:** VDISK má výchozích 319 KB (6.2) — buď marketingové
+  zjednodušení, nebo jiná konfigurace; otevřené.
+- **Funkční klávesy v hlavní nabídce:** F1 textový editor, F2 hodiny a
+  stopky (alarmy, druhé časové pásmo, odbíjení), F3 kalkulačka (virtuální
+  obrazovka), F4 komunikace (adresář, modem, **emulace DECtalk** — Aria
+  jako hlasový syntetizér pro jiný počítač), F5 telefonní seznam (tónová
+  volba reproduktorem), F6 diář a kalendář (**Aria se probudí a ohlásí
+  schůzku** — `AwokenByRTC`, 6.5), F7 správce souborů, F8 spuštění
+  programu. Se Shiftem: Shift+F1 datum, Shift+F2 čas, **Shift+F7
+  překladač braillských pravidel** (`LOUIS.EXE`), **Shift+F8 DOS**
+  (`RUNDOS.EXE`). Volby (Mode) jsou dostupné odevšad; schránka mezi
+  funkcemi.
+- **Aktualizace:** flash se programuje sama, novou verzi stačí přenést
+  z jiného počítače (sériově) nebo z karty. `ariaware.htm` (1997) nabízel
+  starší sestavení: anglické 0627, thajské 0622, **české 0621** (12. 12.
+  1996), na `ftp.robotron.net.au/ariaware/…`; FTP Wayback Machine
+  nejspíš neuložil (dotazy 6. 10. 2026 prázdné nebo „temporarily
+  offline“, zkusit znovu).
+- **Uživatelská příručka** existovala tištěná, zvuková a v Braillu;
+  nikde nenalezena (vyhledávání 6. 10. 2026).
+
 ### Disky (README.DOC na disku B:)
 
 - `B:` interní flash, `C:` karta PCMCIA, `D:` RAM disk, `E:` a dál

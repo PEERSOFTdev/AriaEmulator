@@ -48,7 +48,9 @@ Sken portů pochází z `tools/ports.py` (7.05, bez PKLITE programů).
   `VOICE.SYS`, HANDOFF 6.2.
 - **RAM disk D: na B0000h–FFBFFh (319 KB)** pod oblastí boot ROM: vidět
   jen s UMCS = FFF8h, kdy horní chip select pokrývá jen FFC00h–FFFFFh
-  (`RAMDISK.EXE+037Eh`) **[binárka]**.
+  (`RAMDISK.EXE+037Eh`) **[binárka]**. Stránka Robotronu z 1997 uvádí
+  „RAMdisk is 1 megabyte“ **[web]** — rozpor s výchozími 319 KB VDISKu,
+  otevřené (HANDOFF 2, 6.2).
 - Neznámé: normální UMCS (velikost ROM), A0000h–AFFFFh, velikost RAM
   pro DOS.
 
