@@ -112,11 +112,19 @@ z `FlashImage` (`src/flash_image.h`).
 
 Z WSL krosovým mingw-w64: `./build.sh`, `./build-tests.sh`,
 `./run-tests.sh [složka firmwaru]` (jinak z proměnné `ARIAFW`). Výstup
-EXE do `bin/`, mezivýstupy do `build/`. Očekává se **čtrnáct** řádků
+EXE do `bin/`, mezivýstupy do `build/`. Očekává se **patnáct** řádků
 `PASS`: tři bez dat, devět s firmwarem (`ARIAFW`; osm režimů
-`firmware_test` a `pklite_unpack --check`) a dva s daty instrukčních
+`firmware_test` a `pklite_unpack --check`), dva s daty instrukčních
 testů CPU (`ARIA_CPUTESTS`, výchozí `D:\aria\cputests`, 562 MB,
-SingleStepTests). Co chybí, skript vynechá, řekne to a počet sníží.
+SingleStepTests) a `boot_test`, když je firmware i jádro FreeDOS
+(`ARIA_FREEDOS`, výchozí `D:\aria\freedos`, soubor `KERNEL.SYS` ze
+sestavení ke2046 pro 8086; GPL, do repozitáře nepatří). Co chybí,
+skript vynechá, řekne to a počet sníží.
+
+Start stroje se ladí `bin/boot_test.exe ZIP KERNEL.SYS -v [cykly]`
+(výstup `INT 10h`, registry, neznámé porty); `-t` krokuje a zastaví na
+prvním skoku do prázdné paměti s posledními 40 instrukcemi, `-dump
+CESTA` pak uloží adresní prostor — **mimo strom**, obsahuje firmware.
 
 Programy PKLITE (AAPI, MAINMENU, AWP…) se pro analýzu rozbalí
 `bin/pklite_unpack.exe OBRAZ SLOŽKA` do složky **mimo strom** (např.

@@ -655,6 +655,18 @@ void i80186_cpu_device::execute_run()
 				}
 				[[fallthrough]];
 			default:
+				// ARIA: opcode 0Fh followed by a number is the emulator's trap
+				// into its high-level BIOS (HANDOFF 6.1, 6.10). On the 80186 it
+				// is an invalid opcode, so no real program executes it; with no
+				// handler set it still raises INT 6 below. Test: cpu_selftest
+				// TestBiosTrap.
+				if (op == 0x0f && m_trap_handler)
+				{
+					const uint8_t number = fetch();
+					m_trap_handler(number);
+					CLK(NOP);
+					break;
+				}
 				if (!common_op(op))
 				{
 					m_icount -= 10; // UD fault timing?

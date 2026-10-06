@@ -1,10 +1,11 @@
 #!/bin/sh
-# Sestavi testy a pusti je naraz. Ocekava se CTRNACT radku PASS:
+# Sestavi testy a pusti je naraz. Ocekava se PATNACT radku PASS:
 #   - tri bez dat: codec_test, flash_selftest, cpu_selftest;
 #   - osm rezimu firmware_test (jedna aktualizace od Robotronu na rezim)
 #     a pklite_unpack --check, kdyz je firmware (ARIAFW);
 #   - dva behy cpu_test (8088 a rozsireni 80186 ze sady V20), kdyz jsou data
-#     instrukcnich testu (ARIA_CPUTESTS, HANDOFF 6.12).
+#     instrukcnich testu (ARIA_CPUTESTS, HANDOFF 6.12);
+#   - boot_test, kdyz je firmware i jadro FreeDOS (ARIA_FREEDOS, ar-4cu).
 # Co chybi, skript vynecha a rekne to; pocet PASS se podle toho snizi.
 #
 # Volani:  ./run-tests.sh                    (firmware z promenne ARIAFW)
@@ -75,6 +76,27 @@ else
 fi
 export SKIP_CPU
 
+# Jadro FreeDOS pro start stroje, mimo strom (HANDOFF 6.10). Bez firmwaru
+# nema z ceho startovat, takze se vynecha i tak.
+ARIA_FREEDOS="${ARIA_FREEDOS:-}"
+SKIP_FREEDOS=0
+if [ -n "$ARIA_FREEDOS" ]; then
+  ARIA_FREEDOS="$(to_unix "$ARIA_FREEDOS")"
+fi
+if [ -z "$ARIA_FREEDOS" ] || [ ! -f "$ARIA_FREEDOS/KERNEL.SYS" ]; then
+  echo "Nenašel jsem jádro FreeDOS: ${ARIA_FREEDOS:-(nezadáno)}/KERNEL.SYS"
+  echo "Zadejte složku s KERNEL.SYS (ke2046, sestavení 8086) proměnnou ARIA_FREEDOS."
+  echo "Test startu stroje se vynechá a není to regrese."
+  SKIP_FREEDOS=1
+  FREEDOS_WIN=""
+else
+  FREEDOS_WIN="$(wslpath -w "$ARIA_FREEDOS" | tr '\\' '/')"
+  if [ "$SKIP_FIRMWARE" -eq 0 ]; then
+    EXPECTED=$((EXPECTED + 1))
+  fi
+fi
+export SKIP_FREEDOS
+
 ./build-tests.sh
 
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
@@ -90,6 +112,7 @@ if make -j"$JOBS" -k --output-sync=target \
      RC="${TOOLPREFIX}windres" \
      FW="$FW_WIN" \
      CPUTESTS="$CPU_WIN" \
+     FREEDOS="$FREEDOS_WIN" \
      check 2>&1 | tee "$LOG"; then
   :
 fi

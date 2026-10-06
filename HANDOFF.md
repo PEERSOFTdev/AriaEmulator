@@ -181,6 +181,14 @@ Od 5. 10. 2026 je i jádro CPU 80C188 (`src/i86/`, `src/cpu80188.*`,
 podrobnosti v 6.12) s testy `cpu_selftest` (bez dat) a `cpu_test` ve
 dvou bězích nad daty SingleStepTests; celkem 13 PASS.
 
+Počet 13 už neplatí: od 6. 10. 2026 přibyl `pklite_unpack --check` a pak
+`boot_test`, celkem **15 PASS**. Fáze 3 začala 6. 10. 2026 (`ar-4cu`):
+stroj `src/aria_machine.*` (dekódování paměti s oknem D000h, latche,
+RTC `src/rtc146818.*`, matice kláves, baterie, vypnutí) a BIOS
+emulátoru `src/hle_bios.*` (podrobnosti v 6.10 a 6.11). Na něm
+nabootuje jádro FreeDOS z disku B: české 7.05 až po svůj úvodní text;
+dál zatím ne, viz 6.10.
+
 Plán fází: 0 kostra
 repozitáře, 1 jádro CPU a rozbalení PKLITE, 2 reverzní inženýrství
 (rozhodovací brána pro 6.10 a 6.11), 3 bezhlavý stroj nabootuje do
@@ -327,6 +335,34 @@ Borland pro plovoucí čárku nebo šum.
 
 Pořadí podle načtení je u rezidentních programů jen orientační: TSR volá
 služby až za běhu, ne při instalaci.
+
+**BIOS emulátoru, první verze 6. 10. 2026** (`src/hle_bios.*`). Pahýl ROM
+leží v horním 1 KB (`FFC00h`), který zůstává ROM při každé velikosti
+UCS, i po `UMCS = FFF8h` z RAMDISK.EXE (6.2). Každý vektor služby ukazuje
+na `STI; 0Fh nn; IRET`; opkód `0Fh` je na 80186 neplatný, takže ho
+žádný skutečný program nevykoná, a jádro (`i186.cpp`, komentář `ARIA:`)
+ho s nastavenou obsluhou předá do C++ s číslem `nn`. Čekající volání
+(`INT 16h` bez klávesy, `INT 19h`) vrátí IP na `STI`, takže se opakuje
+s povolenými přerušeními a tik běží dál. Obsluhy: `10h` (textová
+obrazovka 80×25, kterou nikdo nevidí, a záznam výstupu `AH=0Eh`), `11h`,
+`12h` (640 KB), `13h` (6.11), `14h` (bez linky, dokud ji nepřevezme
+FOSSIL), `15h` (jen `88h`, `90h`, `91h`), `16h` (fronta, dokud ji
+nepřevezme BKB), `17h` (tiskárna „připravena“), `19h`, `1Ah` (tiky a RTC
+z 6.5), `08h` (tik, `INT 1Ch`, EOI typu 8 na `0022h`), tabulka disket
+`1Eh`. Ostatní vektory vedou na `IRET`.
+
+Předpoklady, které nic na B: nedokládá, a proto se mají ověřit:
+
+- **takt CPU 8 MHz** (`AriaMachine::kCpuHz`, 6.12): časovač 2 dělí 61,
+  časovač 0 počítá 1 801, takže tik je 18,2 Hz jen při tomto taktu;
+- **modelový bajt `FCh`** na `FFFF:000Eh` (čte ho `AAPI.EXE+46DEh`;
+  hodnota Arie neznámá, 6.5);
+- **past ESC zapnutá** (bit 15 relokačního registru): `VOICE.SYS+01CEh`
+  instaluje obsluhu `INT 7`, což má smysl, jen když ji boot ROM zapnula;
+  BIOS do té doby ESC přeskakuje stejně (posun o 2);
+- **výchozí CMOS** `7Fh` = „R“ (nová podpora karet zapnutá), `7Eh` bez
+  „C“ (bez externí klávesnice), 6.5;
+- **adaptér připojen, baterie nabitá** (`0700h` = `2Fh`, 6.9).
 
 ### 6.2 Mapa paměti a stránkování
 
@@ -582,6 +618,23 @@ Otázky k ověření až za běhu: zda ovladače ROM-DOS-specifické
 jen ohlásí, že záplata nenašla cíl (to umí), a zda `COMMAND.COM` ROM-DOS
 (1993) přijme verzi DOSu, kterou FreeDOS hlásí.
 
+**První start, 6. 10. 2026 (`boot_test`, CC0705, ke2046 pro 8086).**
+BIOS emulátoru (`src/hle_bios.cpp`) nahradí zavaděč: `KERNEL.SYS` vloží
+celý na `0060:0000` a skočí na něj s jednotkou startu v `BL` = 1 (B:),
+jak to dělá `boot.asm` FreeDOSu. Jádro je zabalené UPX; rozbalí se samo
+(rozbalovač běží na `12E5h`, výstup sahá do `12E1Ch`), vypíše stopovací
+znaky „123“ a úvodní text verze 2046, pak „no hard disks detected“, „No
+supported partitions found.“ a **„Bad or missing Command Interpreter:
+command.com /P /E:256“**. Výchozí shell znamená, že `CONFIG.SYS` z B:
+nepřečetlo (tam je `shell=b:\command.com`); proč, je další krok.
+
+Poučení z prvního pokusu: zaváděcí sektor ani zásobník nesmí ležet na
+`0000:7C00`. Jádro (zabalené `0600h`–`BEDAh`) to místo překrývá a jeho
+vstup ukládá `BP` na zásobník volajícího; kopie sektoru tam prohnala 512
+bajtů komprimovaných dat a UPX pak rozbalil díru přesně přes
+`INIT_TEXT` (`026B:9EA0`, podle `kwc8616.map`). Zásobník je proto na
+`0000:0600` a `BP` = 0 (podle `kernel.asm` „žádný příkazový řádek“).
+
 ### 6.11 Rozhodnutí: vrstva flash
 
 Buď skutečná emulace flash čipu a jeho okna (nutné, pokud zápis `DLFFSA`
@@ -599,6 +652,18 @@ Rozhodne fáze 2.
   půjde do překryvného souboru hostitele, ne do obrazu firmwaru.
 - Programování flash čipu (příkazy čipu, Vpp) emulovat netřeba, dokud ho
   nevolá kód z B:; dosavadní rozbor takový kód nenašel.
+
+**Upřesnění 6. 10. 2026:** „vlastní ovladač“ pro B: je nakonec
+`INT 13h` BIOSu emulátoru, ne ovladač v CONFIG.SYS. BIOS hlásí dvě
+disketové jednotky (slovo vybavení `0261h`): 0 = A:, malý prázdný
+svazek FAT12 místo ztraceného ROM disku (FreeDOS by jinak z B: udělal
+fantom A:), 1 = B: z obrazu. Zaváděcí záznam B: (`DLRDISK`) udává 61 440
+sektorů na stopu a 1 hlavu na 2 465 sektorech, což se do 6bitového pole
+sektoru v `INT 13h` nevejde. BIOS proto počítá s 63 sektory a 16
+hlavami a zaváděcí sektor, který přes `INT 13h` vydá, v těch dvou
+polích opraví; obraz sám se nemění. Zápisy jdou do kopie obrazu
+v paměti (překryvný soubor zatím není). Okno D000h je emulované podle
+6.2 (režim 2 = stránka obrazu, 3 = karta zatím `FFh`, 1 a 0 = RAM).
 
 ### 6.12 Jádro CPU 80C188 a jeho ověření
 
@@ -880,3 +945,7 @@ je tím pro hardware vyčerpaný**; dál slouží jako reference API.
 2. Fáze 1 **hotová** 6. 10. 2026: jádro 80188 s periferiemi PCB a
    rozbalení PKLITE (6.12), tabulka přerušení s rozbalenými programy (6.1).
 3. Fáze 2: 6.1 a 6.2 jako první, protože na nich stojí všechno ostatní.
+4. Fáze 3 (`ar-4cu`) začala 6. 10. 2026: jádro FreeDOS nabootuje po úvodní
+   text (6.10). Další kroky: proč jádro nečte `CONFIG.SYS` z B:, pak
+   `COMMAND.COM` ROM-DOS, ovladače z CONFIG.SYS, AUTOEXEC až po
+   `aapi -c` a MAINMENU, se záznamem textu pro řeč z `INT 61h`.

@@ -228,6 +228,41 @@ void TestEscapeTrap() {
   Check(r.si == 1 && r.ip == 0x000A, "ESC traps once to INT 7 and VOICE.SYS's handler skips it");
 }
 
+void TestBiosTrap() {
+  // Opcode 0Fh nn is the emulator's trap into its BIOS (HANDOFF 6.1): with
+  // a handler it calls it with nn, which may change the registers, and
+  // execution continues after the two bytes; without one it stays the
+  // 80186's invalid opcode, INT 6.
+  const std::vector<uint8_t> code = {0x0F, 0x10, 0xF4};  // trap 10h; hlt
+  {
+    Bus bus;
+    Cpu80188 cpu(bus);
+    bus.Load(0x01000, code);
+    int seen = -1;
+    cpu.SetTrapHandler([&](uint8_t number) {
+      seen = number;
+      auto r = cpu.GetRegisters();
+      r.ax = 0x1234;
+      cpu.SetRegisters(r);
+    });
+    cpu.SetRegisters(At(0x0100, 0x0000));
+    Check(RunUntilHalt(cpu), "trap program halts");
+    const auto r = cpu.GetRegisters();
+    Check(seen == 0x10 && r.ax == 0x1234 && r.ip == 0x0003, "0Fh 10h calls the handler with 10h and continues");
+  }
+  {
+    Bus bus;
+    Cpu80188 cpu(bus);
+    bus.Load(0x01000, code);
+    bus.Vector(6, 0x0000, 0x0600);
+    bus.Load(0x00600, {0xF4});  // hlt
+    cpu.SetRegisters(At(0x0100, 0x0000));
+    Check(RunUntilHalt(cpu), "invalid-opcode program halts");
+    const auto r = cpu.GetRegisters();
+    Check(r.cs == 0x0000 && r.ip == 0x0601, "0Fh without a handler raises INT 6");
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -237,6 +272,7 @@ int main() {
   TestTimerInterrupt();
   TestDma();
   TestEscapeTrap();
+  TestBiosTrap();
   std::cout << (failures == 0 ? "PASS" : "FAIL") << " cpu_selftest\n";
   return failures == 0 ? 0 : 1;
 }

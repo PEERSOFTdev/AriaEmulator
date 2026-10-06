@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <functional>
 
 namespace mame_i86 {
 
@@ -516,6 +517,9 @@ protected:
 	// ARIA: stop after one whole instruction (prefixes included), for the
 	// instruction tests and for stepping.
 	bool m_single_step = false;
+
+	// ARIA: called for the trap opcode 0Fh nn with nn (see execute_run).
+	std::function<void(uint8_t)> m_trap_handler;
 
 	// ARIA: opcode fetch, MAME's opcode cache reduced to the bus.
 	uint8_t m_or8(uint32_t address) { return m_opcodes->read_byte(address); }

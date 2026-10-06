@@ -31,10 +31,14 @@ EMU_OBJS   := $(addprefix $(BUILD)/,$(addsuffix .o,$(EMU_NAMES))) $(I86_OBJS)
 CORE_OBJS  := $(BUILD)/text_codec.o $(BUILD)/zip_reader.o $(BUILD)/fat12.o \
               $(BUILD)/flash_image.o
 CPU_OBJS   := $(BUILD)/cpu80188.o $(I86_OBJS)
+# Stroj Arie s BIOSem emulatoru (HANDOFF 6.10, 6.11).
+MACHINE_OBJS := $(BUILD)/aria_machine.o $(BUILD)/hle_bios.o $(BUILD)/rtc146818.o \
+                $(CPU_OBJS) $(CORE_OBJS)
 
 EMU        := $(BIN)/AriaEmulator.exe
 TEST_EXES  := $(BIN)/codec_test.exe $(BIN)/flash_selftest.exe $(BIN)/firmware_test.exe \
-              $(BIN)/cpu_test.exe $(BIN)/cpu_selftest.exe $(BIN)/pklite_unpack.exe
+              $(BIN)/cpu_test.exe $(BIN)/cpu_selftest.exe $(BIN)/pklite_unpack.exe \
+              $(BIN)/boot_test.exe
 
 .PHONY: all tests check clean
 .DEFAULT_GOAL := all
@@ -84,6 +88,10 @@ $(BIN)/cpu_test.exe: $(BUILD)/test_cpu_test.o $(CPU_OBJS) $(BUILD)/zip_reader.o 
 $(BIN)/pklite_unpack.exe: $(BUILD)/test_pklite_unpack.o $(CPU_OBJS) $(CORE_OBJS) | $(BIN)
 	$(CXX) $(STATIC) -municode -o $@ $^
 
+# Start jadra FreeDOS z disku B: na BIOSu emulatoru (ar-4cu). wmain.
+$(BIN)/boot_test.exe: $(BUILD)/test_boot_test.o $(MACHINE_OBJS) | $(BIN)
+	$(CXX) $(STATIC) -municode -o $@ $^
+
 # Jadro CPU bez dat testu: kratke programy (PCB, preruseni, past ESC).
 $(BIN)/cpu_selftest.exe: $(BUILD)/test_cpu_selftest.o $(CPU_OBJS) | $(BIN)
 	$(CXX) $(STATIC) -o $@ $^
@@ -120,6 +128,17 @@ ifneq ($(SKIP_CPU),1)
 CHECKS += check-cpu-8088 check-cpu-v20
 endif
 
+# Jadro FreeDOS (GPL, samostatny soubor vedle emulatoru, HANDOFF 6.10) lezi
+# mimo strom v ARIA_FREEDOS. Bez nej nebo bez firmwaru run-tests.sh nastavi
+# SKIP_FREEDOS=1.
+ARIA_FREEDOS ?= D:/aria/freedos
+FREEDOS      ?= $(ARIA_FREEDOS)
+ifneq ($(SKIP_FREEDOS),1)
+ifneq ($(SKIP_FIRMWARE),1)
+CHECKS += check-boot
+endif
+endif
+
 .PHONY: $(CHECKS)
 
 check: $(CHECKS)
@@ -135,6 +154,9 @@ check-cpu: $(BIN)/cpu_selftest.exe
 
 check-unpack: $(BIN)/pklite_unpack.exe
 	$(BIN)/pklite_unpack.exe "$(FW)/CARD/CC0705.ZIP" --check
+
+check-boot: $(BIN)/boot_test.exe
+	$(BIN)/boot_test.exe "$(FW)/CARD/CC0705.ZIP" "$(FREEDOS)/KERNEL.SYS"
 
 check-cpu-8088: $(BIN)/cpu_test.exe
 	$(BIN)/cpu_test.exe "$(CPUTESTS)" 8088

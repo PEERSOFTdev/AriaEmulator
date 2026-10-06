@@ -1,0 +1,167 @@
+#include "aria_machine.h"
+
+#include <algorithm>
+#include <cstring>
+
+#include "hle_bios.h"
+
+namespace {
+
+constexpr uint32_t kWindowBase = 0xD0000;  // Segment D000h, 64 KB (HANDOFF 6.2).
+constexpr uint32_t kWindowSize = 0x10000;
+
+}  // namespace
+
+AriaMachine::AriaMachine(const FlashImage& flash, std::vector<uint8_t> kernel, Rtc146818::Clock clock)
+    : ram_(1 << 20, 0),
+      flash_(flash.bytes),
+      kernel_(std::move(kernel)),
+      rtc_(std::move(clock)),
+      cpu_(*this),
+      bios_(std::make_unique<HleBios>(*this)) {
+  disks_[0] = MakeRomDisk();
+  disks_[1] = MakeFlashDisk(flash);
+  cpu_.SetTrapHandler([this](uint8_t number) { bios_->Trap(number); });
+}
+
+AriaMachine::~AriaMachine() = default;
+
+void AriaMachine::PowerOn() {
+  std::fill(ram_.begin(), ram_.end(), 0);
+  latch_580_ = latch_480_ = 0;
+  powered_off_ = false;
+  ucs_start_ = 0xFFC00;
+  cpu_.Reset();
+  bios_->PowerOn(kernel_);
+}
+
+void AriaMachine::Run(int cycles) {
+  if (powered_off_) return;
+  cpu_.Run(cycles);
+}
+
+// ---- Memory ----
+
+bool AriaMachine::WindowMapped(uint32_t address) const {
+  // 0580h bits 1-0: 0 off, 2 internal flash, 3 card (HANDOFF 6.2). Mode 1
+  // is probably RAM (ARIACONS.PAS ENABLE_RAM); nothing seen uses it yet, so
+  // it falls through to RAM, which is what "RAM in the window" would show.
+  const uint8_t mode = latch_580_ & 0x03;
+  return (mode == 2 || mode == 3) && address >= kWindowBase && address < kWindowBase + kWindowSize;
+}
+
+uint8_t AriaMachine::ReadWindow(uint32_t address) const {
+  if ((latch_580_ & 0x03) == 3) return 0xFF;  // Card: none inserted yet (HANDOFF 6.8).
+  // Flash page = 0580h bits 7-2; flash address = offset in the B: image.
+  const uint32_t page = latch_580_ >> 2;
+  const std::size_t flat = static_cast<std::size_t>(page) * kWindowSize + (address - kWindowBase);
+  return flat < flash_.size() ? flash_[flat] : 0xFF;
+}
+
+uint8_t AriaMachine::ReadMemory(uint32_t address) {
+  if (WindowMapped(address)) return ReadWindow(address);
+  if (address >= ucs_start_) {
+    // Upper chip select: the boot ROM. Only the top 1 KB is ours; below
+    // it, inside a larger UCS, the original ROM disk A: would have been.
+    return address >= kRomStub ? rom_stub_[address - kRomStub] : 0xFF;
+  }
+  return ram_[address];
+}
+
+void AriaMachine::WriteMemory(uint32_t address, uint8_t value) {
+  if (WindowMapped(address)) return;  // Flash programming is not emulated (HANDOFF 6.11).
+  if (address >= ucs_start_) return;  // ROM.
+  ram_[address] = value;
+}
+
+void AriaMachine::ChipSelect(int which, uint16_t value) {
+  // UMCS: bits 15-6 give the start address in 1 KB units (80186 manual);
+  // RAMDISK.EXE writes FFF8h to shrink it to FFC00h (HANDOFF 6.2).
+  if (which == 0) ucs_start_ = static_cast<uint32_t>(value & 0xFFC0) << 4;
+}
+
+// ---- I/O ----
+
+uint8_t AriaMachine::ReadIo(uint16_t port) {
+  if (port >= 0x0500 && port <= 0x057F) return rtc_.Read(static_cast<uint8_t>(port - 0x0500));
+  switch (port) {
+    case 0x0480:
+      // Card slot status: bits 0-1 card detect, active low; both high = no
+      // card (HANDOFF 6.8). Bits 2-3 (BVD) high = battery good.
+      return 0x0F;
+    case 0x0581: return key_rows_[0];
+    case 0x0582: return key_rows_[1];
+    case 0x0584: return key_rows_[2];
+    case 0x0700: return battery_;
+    default:
+      ++unknown_ports_[port];
+      return 0xFF;
+  }
+}
+
+void AriaMachine::WriteIo(uint16_t port, uint8_t value) {
+  if (port >= 0x0500 && port <= 0x057F) {
+    rtc_.Write(static_cast<uint8_t>(port - 0x0500), value);
+    return;
+  }
+  switch (port) {
+    case 0x0480: latch_480_ = value; return;
+    case 0x0580: latch_580_ = value; return;
+    case 0x0701:
+      // TURNOFF.COM writes 0 here and halts (HANDOFF 6.9).
+      if (value == 0) powered_off_ = true;
+      return;
+    case 0x0702: slot_power_ = value; return;
+    default:
+      ++unknown_ports_[port];
+      return;
+  }
+}
+
+// ---- Disks ----
+
+BiosDisk AriaMachine::MakeRomDisk() const {
+  // A small empty FAT12 volume standing in for the ROM disk A: of the boot
+  // ROM, whose contents are lost (HANDOFF 2). FreeDOS needs two floppy-type
+  // drives, or it makes B: a phantom of A:.
+  BiosDisk disk;
+  disk.sectors_per_track = 8;
+  disk.heads = 2;
+  disk.sectors = 128;  // 64 KB.
+  disk.data.assign(disk.sectors * 512, 0);
+  uint8_t* boot = disk.data.data();
+  const uint8_t header[] = {0xEB, 0x3C, 0x90, 'A', 'R', 'I', 'A', 'R', 'O', 'M', ' ',
+                            0x00, 0x02,   // 512 bytes per sector
+                            0x01,         // 1 sector per cluster
+                            0x01, 0x00,   // 1 reserved
+                            0x02,         // 2 FATs
+                            0x10, 0x00,   // 16 root entries
+                            0x80, 0x00,   // 128 sectors
+                            0xF8,         // media
+                            0x01, 0x00,   // 1 sector per FAT
+                            0x08, 0x00,   // sectors per track
+                            0x02, 0x00};  // heads
+  std::memcpy(boot, header, sizeof header);
+  boot[510] = 0x55;
+  boot[511] = 0xAA;
+  for (int fat = 0; fat < 2; ++fat) {
+    uint8_t* table = disk.data.data() + (1 + fat) * 512;
+    table[0] = 0xF8;
+    table[1] = table[2] = 0xFF;
+  }
+  uint8_t* root = disk.data.data() + 3 * 512;
+  std::memcpy(root, "ARIA ROM   ", 11);
+  root[11] = 0x08;  // Volume label.
+  return disk;
+}
+
+BiosDisk AriaMachine::MakeFlashDisk(const FlashImage& flash) const {
+  BiosDisk disk;
+  disk.data = flash.bytes;
+  const uint16_t total = static_cast<uint16_t>(flash.bytes[19] | flash.bytes[20] << 8);
+  disk.sectors = total ? total : static_cast<uint32_t>(flash.bytes.size() / 512);
+  disk.sectors_per_track = 63;
+  disk.heads = 16;
+  disk.patch_boot_geometry = true;
+  return disk;
+}

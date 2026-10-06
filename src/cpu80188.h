@@ -2,6 +2,8 @@
 #define ARIA_CPU80188_H
 
 #include <cstdint>
+#include <functional>
+#include <utility>
 
 #include "i86/i86.h"
 
@@ -48,6 +50,16 @@ class Cpu80188 : private mame_i86::i80186_cpu_device {
 
   bool Halted() const { return m_halt; }
   uint16_t RelocationRegister() const { return m_reloc; }
+
+  // The emulator's BIOS trap: opcode 0Fh nn calls `handler(nn)` in the
+  // middle of the instruction stream; the handler may read and change the
+  // registers. Without a handler 0Fh stays an invalid opcode (INT 6).
+  void SetTrapHandler(std::function<void(uint8_t)> handler) { m_trap_handler = std::move(handler); }
+
+  // Word I/O as if executed by the CPU, so that the PCB is reached at its
+  // current relocation (for the emulator's power-on code).
+  void OutWord(uint16_t port, uint16_t value) { UpdateClock(); write_port_word(port, value); }
+  uint16_t InWord(uint16_t port) { UpdateClock(); return read_port_word(port); }
 };
 
 #endif
