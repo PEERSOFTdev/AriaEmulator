@@ -187,7 +187,9 @@ ARIA:`, ne smazané, aby soubory šly porovnat s MAME řádek po řádku i při
 přechodu na novější verzi. Paměti čipu, řídicí registry a zavádění nejsou
 součást jádra (ani v MAME), jsou v `src/adsp2105.*`. Instrukční testy
 jako u 80188 pro tento DSP neexistují; ověřuje se podle manuálu
-(*ADSP-2100 Family User's Manual*, HANDOFF 6.3) a výsledkem.
+(*ADSP-2100 Family User's Manual*, HANDOFF 6.3) a výsledkem. Program DSP
+se čte `bin/dsp_disasm.exe SOUBOR.DSP [OD [DO]]` (disasembler MAME,
+`2100dasm.cpp` stejně doslovný); výpis je firmware, patří mimo strom.
 
 ## Režim, který není slyšet, je chyba
 

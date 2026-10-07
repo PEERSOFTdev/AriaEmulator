@@ -1,7 +1,7 @@
-The files 2100ops.hxx and adsp2100.cpp in this folder contain code taken from
-MAME (https://github.com/mamedev/mame, commit
+The files 2100ops.hxx, adsp2100.cpp and 2100dasm.cpp in this folder contain
+code taken from MAME (https://github.com/mamedev/mame, commit
 2aa75c509dca2bebd8cbb3c0e27b9e75d3dcb597, src/devices/cpu/adsp2100/), and
-adsp2100.h declares it. The code is kept verbatim; changes for this project
+adsp2100.h and 2100dasm.h declare it. The code is kept verbatim; changes for this project
 are marked with "ARIA:" comments, and parts that belong to the MAME framework
 are switched off with "#if 0 // ARIA:" blocks rather than deleted. That code
 is under the BSD 3-Clause licence below, not under the MIT licence of the

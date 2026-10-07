@@ -41,7 +41,7 @@ MACHINE_OBJS := $(BUILD)/aria_machine.o $(BUILD)/hle_bios.o $(BUILD)/rtc146818.o
 EMU        := $(BIN)/AriaEmulator.exe
 TEST_EXES  := $(BIN)/codec_test.exe $(BIN)/flash_selftest.exe $(BIN)/firmware_test.exe \
               $(BIN)/cpu_test.exe $(BIN)/cpu_selftest.exe $(BIN)/pklite_unpack.exe \
-              $(BIN)/boot_test.exe $(BIN)/dsp_selftest.exe
+              $(BIN)/boot_test.exe $(BIN)/dsp_selftest.exe $(BIN)/dsp_disasm.exe
 
 .PHONY: all tests check clean
 .DEFAULT_GOAL := all
@@ -103,6 +103,11 @@ $(BIN)/boot_test.exe: $(BUILD)/test_boot_test.o $(MACHINE_OBJS) | $(BIN)
 # Jadro DSP bez firmwaru: poradi bajtu zavadeci stranky a kratky program.
 $(BIN)/dsp_selftest.exe: $(BUILD)/test_dsp_selftest.o $(DSP_OBJS) | $(BIN)
 	$(CXX) $(STATIC) -o $@ $^
+
+# Disasembler programu DSP (zavadeci stranka, napr. LPC.DSP) pro analyzu;
+# disasembler je z MAME. wmain.
+$(BIN)/dsp_disasm.exe: $(BUILD)/test_dsp_disasm.o $(BUILD)/adsp_2100dasm.o | $(BIN)
+	$(CXX) $(STATIC) -municode -o $@ $^
 
 # Jadro CPU bez dat testu: kratke programy (PCB, preruseni, past ESC).
 $(BIN)/cpu_selftest.exe: $(BUILD)/test_cpu_selftest.o $(CPU_OBJS) | $(BIN)

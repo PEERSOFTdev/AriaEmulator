@@ -563,6 +563,32 @@ bit 14 = ISCLK, takže **sériové hodiny generuje DSP**, a to CLKOUT /
 Ostatní bity (rámcová synchronizace, autobuffer v `3FEFh`) a odkud DSP
 bere bajty z `0402h` (přerušení? vnější datová paměť?) jsou další krok.
 
+**Kód `LPC.DSP` (7. 10. 2026, disasembler MAME `bin/dsp_disasm.exe`,
+výpis jen mimo strom):** vektory 2105 jsou po čtyřech slovech od `0004h`
+(MAME `adsp2101_device::generate_irq`):
+
+- `0004h` IRQ2: `CALL 005Ah; RTI`. Rutina čte **`AX0 = DM($3000)`**
+  (`005Fh`, `0082h`) a stavovým automatem hledá bajty `53h 79h 6Eh 63h`
+  = **„Sync“** (`0062h`–`0077h`), pak čte rámec. Bajty z portu `0402h`
+  tedy DSP vidí na **vnější datové adrese `3000h`** a IRQ2 je „bajt
+  čeká“. Jiný vnější přístup program nemá a nic nezapisuje ven.
+- `0010h` SPORT1 vysílání: další vzorek. Když fronta dojde, skok na
+  `010Eh` smaže bit 11 systémového řídicího registru `3FFFh` (podle
+  manuálu povolení SPORT1), takže DSP v tichu vzorky neposílá.
+- Nastavení (`003Bh`–`0043h`): SPORT1 jako výše, `ICNTL = 14h` (IRQ2 na
+  hranu, vnořování), `IMASK = 24h` (povolené jen IRQ2 a vysílání SPORT1).
+- `FL1`/`FL2` „zásahy“ na `0313h`–`0339h` jsou data (tabulky od `0300h`),
+  ne kód: program **žádný vlastní výstupní pin nepoužívá**.
+
+**Výklad: jednobajtová schránka (latch) na desce.** 80188 zapíše bajt do
+`0402h` → latch je plný a dává DSP hranu na IRQ2; DSP přečte `DM($3000)`
+→ latch je prázdný a hlásí 80188 „další“ (DRQ0 pro DMA, INT3 pro
+jednotlivé příkazové bajty, 6.3 výše). Při zavádění tentýž latch slouží
+jako zaváděcí paměť: zaváděcí logika DSP čte bajt po bajtu a adresa je
+jedno. Zda DRQ0 a INT3 jsou jeden signál, nebo dva, se z kódu nepozná;
+model je oba drží „připraveno“, když je latch prázdný. **[odvozeno, ne
+doloženo schématem]**
+
 Aria tedy zavádí DSP standardní zaváděcí stránkou 0 a 80188 hraje roli
 EPROM. Zápis `0401h` ← 0 a pak 8 kolem zavádění (výše) je nejspíš reset
 DSP; zda bit 3 je reset, nebo vstup MMAP či BMODE, se ukáže z kódu, až
