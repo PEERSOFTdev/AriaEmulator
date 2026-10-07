@@ -129,9 +129,33 @@ int wmain(int argc, wchar_t** argv) {
     }
   }
   constexpr int kSlice = 100'000;
+  // Emulated seconds at which each stage first printed, for -v.
+  const char* stages[] = {"FreeDOS kernel", "Voice device", "Installed as drive:  D:", "BACKPACK.SYS", "BPHDDRV.SYS",
+                          ">rem", "CardTrick v1.04d", ">aapi", "Aria API v1.1", "is now installed.", ">bkb",
+                          "Aria Alarm Scheduler", ">mainmenu"};
+  std::vector<double> stage_seconds(std::size(stages), -1.0);
+  double first_sound = -1.0;
   while (ran < budget && !machine.PoweredOff() && !machine.bios().RebootRequested()) {
     machine.Run(kSlice);
     ran += kSlice;
+    if (!verbose) continue;
+    const double now = static_cast<double>(ran) / AriaMachine::kCpuHz;
+    for (std::size_t s = 0; s < std::size(stages); ++s) {
+      if (stage_seconds[s] < 0 && machine.bios().Teletype().find(stages[s]) != std::string::npos) stage_seconds[s] = now;
+    }
+    if (first_sound < 0) {
+      for (int16_t v : machine.Samples()) {
+        if (v != 0) {
+          first_sound = now;
+          break;
+        }
+      }
+    }
+  }
+  if (verbose) {
+    std::printf("emulated seconds to:");
+    for (std::size_t s = 0; s < std::size(stages); ++s) std::printf(" [%s] %.1f", stages[s], stage_seconds[s]);
+    std::printf(" [first sound] %.1f\n", first_sound);
   }
   if (!wav_path.empty()) {
     // 16-bit mono PCM at 44.1 kHz. The Aria's sample rate is unknown
@@ -197,6 +221,15 @@ int wmain(int argc, wchar_t** argv) {
     for (const auto& [d, n] : per_divider) std::printf(" %d:%zu", d, n);
     std::printf("\n");
     for (const std::string& line : machine.DspLog()) std::printf("  %s", line.c_str());
+    // Where the program changes (SCLKDIV changes), the samples around it.
+    const auto& all = machine.Samples();
+    const auto& divs = machine.SampleDividers();
+    for (std::size_t i = 1; i < all.size(); ++i) {
+      if (divs[i] == divs[i - 1]) continue;
+      std::printf("SCLKDIV %d -> %d at sample %zu:", divs[i - 1], divs[i], i);
+      for (std::size_t k = i >= 8 ? i - 8 : 0; k < all.size() && k < i + 72; ++k) std::printf(" %d", all[k]);
+      std::printf("\n");
+    }
     std::printf("cycles: %lld, BIOS ticks: %u\n", ran,
                 machine.PeekWord(0x46C) | static_cast<unsigned>(machine.PeekWord(0x46E)) << 16);
     // PCB at I/O 0000h: timers 0 and 2, then the interrupt controller

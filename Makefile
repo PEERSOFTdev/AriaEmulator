@@ -22,11 +22,12 @@ SECTIONS := -ffunction-sections -fdata-sections
 CXXFLAGS  := -std=c++20 -O2 $(WARN) $(SECTIONS) -Isrc -DWINVER=0x0A00 -D_WIN32_WINNT=0x0A00
 TESTFLAGS := -std=c++20 -O2 $(WARN) -Isrc -DWINVER=0x0A00 -D_WIN32_WINNT=0x0A00
 
-EMU_NAMES  := main text_codec zip_reader fat12 flash_image cpu80188
+EMU_NAMES  := main text_codec zip_reader fat12 flash_image cpu80188 aria_machine hle_bios \
+              rtc146818 dac_renderer adsp2105 audio_player emulator_thread
 # Jadro CPU prevzate z MAME (src/i86/LICENSE.mame-i86.txt, HANDOFF 6.12).
 I86_NAMES  := i86 i186
 I86_OBJS   := $(addprefix $(BUILD)/i86_,$(addsuffix .o,$(I86_NAMES)))
-EMU_OBJS   := $(addprefix $(BUILD)/,$(addsuffix .o,$(EMU_NAMES))) $(I86_OBJS)
+EMU_OBJS   := $(addprefix $(BUILD)/,$(addsuffix .o,$(EMU_NAMES))) $(I86_OBJS) $(BUILD)/adsp_adsp2100.o
 # Objekty, proti kterym se linkuji testy. Bez main.o (ma vlastni wWinMain).
 CORE_OBJS  := $(BUILD)/text_codec.o $(BUILD)/zip_reader.o $(BUILD)/fat12.o \
               $(BUILD)/flash_image.o
@@ -36,7 +37,7 @@ CPU_OBJS   := $(BUILD)/cpu80188.o $(I86_OBJS)
 DSP_OBJS   := $(BUILD)/adsp2105.o $(BUILD)/adsp_adsp2100.o
 # Stroj Arie s BIOSem emulatoru (HANDOFF 6.10, 6.11).
 MACHINE_OBJS := $(BUILD)/aria_machine.o $(BUILD)/hle_bios.o $(BUILD)/rtc146818.o \
-                $(CPU_OBJS) $(DSP_OBJS) $(CORE_OBJS)
+                $(BUILD)/dac_renderer.o $(CPU_OBJS) $(DSP_OBJS) $(CORE_OBJS)
 
 EMU        := $(BIN)/AriaEmulator.exe
 TEST_EXES  := $(BIN)/codec_test.exe $(BIN)/flash_selftest.exe $(BIN)/firmware_test.exe \
@@ -73,9 +74,9 @@ $(BUILD)/adsp_%.o: src/adsp2100/%.cpp Makefile | $(BUILD)
 	$(CXX) $(CXXFLAGS) -Wno-sign-compare $(DEPFLAGS) -c $< -o $@
 
 # -municode: vstupni bod je sirokoznakovy. -mwindows: GUI subsystem, bez okna
-# konzole. shell32 kvuli CommandLineToArgvW.
+# konzole. shell32 kvuli CommandLineToArgvW, winmm kvuli zvuku (waveOut).
 $(EMU): $(EMU_OBJS) | $(BIN)
-	$(CXX) -municode -mwindows $(STATIC) -Wl,--gc-sections -s -o $@ $(EMU_OBJS) -lshell32
+	$(CXX) -municode -mwindows $(STATIC) -Wl,--gc-sections -s -o $@ $(EMU_OBJS) -lshell32 -lwinmm
 
 $(BIN)/codec_test.exe: $(BUILD)/test_codec_test.o $(BUILD)/text_codec.o | $(BIN)
 	$(CXX) $(STATIC) -o $@ $^

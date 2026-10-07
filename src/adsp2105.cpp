@@ -85,12 +85,14 @@ bool Adsp2105::Sport1Enabled() const {
 }
 
 int Adsp2105::SportWordCycles() const {
-  // SCLK = CLKOUT / (2 * (SCLKDIV + 1)) with the internal clock (5.5);
-  // SLEN + 1 bits per word (figure 5.3, bits 3-0). The Aria's transmit frame
-  // sync is external (4C8Fh: ITFS = 0, HANDOFF 6.3), so the real word rate
-  // may be lower; this models back-to-back words on the bit clock.
-  const int bits = (control_[kSport1Control] & 0x0F) + 1;
-  return bits * 2 * (control_[kSport1ClockDiv] + 1);
+  // SCLK = CLKOUT / (2 * (SCLKDIV + 1)) with the internal clock (5.5). The
+  // Aria's transmit frame sync is external (4C8Fh: ITFS = 0), so the board
+  // decides how many SCLK periods a frame lasts. Assumption: 32, a 16-bit
+  // sample and 16 idle bits; with the 10.24 MHz clock that makes Czech
+  // speech (SCLKDIV 4) 32 kHz and the harp (19) 8 kHz, which is what
+  // listening chose (HANDOFF 6.3).
+  constexpr int kBitsPerFrame = 32;
+  return kBitsPerFrame * 2 * (control_[kSport1ClockDiv] + 1);
 }
 
 void Adsp2105::SportTransmit(int port, uint16_t data) {
@@ -159,6 +161,7 @@ int Adsp2105::Run(int cycles) {
       busy_cycles_ += ran;
     }
     used += ran;
+    cycles_ += ran;
     if (shifting_) {
       shift_left_ -= ran;
       if (shift_left_ <= 0) SportWordDone();

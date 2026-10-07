@@ -11,7 +11,8 @@ namespace {
 // Layout of the 1 KB ROM stub at FFC0:0000 (FFC00h-FFFFFh).
 constexpr uint16_t kIret = 0x0000;         // Default handler: IRET.
 constexpr uint16_t kStubs = 0x0010;        // 4 bytes each: STI; 0Fh nn; IRET.
-constexpr uint16_t kTick = 0x0100;         // INT 08h, the timer tick.
+constexpr uint16_t kTick = 0x0100;         // INT 08h, the tick as software calls it.
+constexpr uint16_t kTickIrq = 0x0120;      // INT 0Eh (INT2): the hardware tick.
 constexpr uint16_t kDiskTable = 0x0180;    // INT 1Eh: diskette parameters.
 constexpr uint16_t kResetVector = 0x03F0;  // FFFF:0000.
 constexpr uint16_t kModelByte = 0x03FE;    // FFFF:000Eh, read by AAPI.EXE+46DEh.
@@ -23,6 +24,7 @@ constexpr uint8_t kHandled[] = {0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 
 constexpr uint16_t kPcbRelocation = 0x00FE;  // Offset 7Fh at its new base.
 constexpr uint16_t kTimer0MaxA = 0x0052, kTimer0Control = 0x0056;
 constexpr uint16_t kTimerIntControl = 0x0032;
+constexpr uint16_t kInt2Control = 0x003C;
 
 // BIOS data area at 0040:0000.
 constexpr uint32_t kBda = 0x400;
@@ -67,15 +69,31 @@ void HleBios::PowerOn(const std::vector<uint8_t>& kernel) {
     stub[2] = kHandled[i];
     stub[3] = 0xCF;
   }
-  // INT 08h: count the tick in C++, call the user hook INT 1Ch, then a
-  // specific EOI for type 08h to the PCB at 0022h (offset 11h).
+  // The tick reaches the INT 08h chain only after the hardware interrupt is
+  // acknowledged. SPEAK hooks INT 08h and synthesises speech inside it with
+  // interrupts on (SPEAK.EXE resident 8A6Ch -> 8A05h -> 7FF0h), where it can
+  // wait for its DMA 0 interrupt (62A0h); SPEAK gives that interrupt
+  // priority 7 (+0F86h, +62BBh, +780Eh), so a timer interrupt still in
+  // service would block it for good, at any timer priority. Hence the
+  // hardware tick comes in on INT2 (vector 0Eh, used by nothing on B:,
+  // tools/ints.py), whose handler acknowledges it and then calls INT 08h
+  // in software (HANDOFF 6.1). Assumption: the board wires timer 0's
+  // output to INT2; the Aria's real wiring is unknown.
+  //
+  // INT 0Eh: trap 0Eh (clears the board's tick latch), specific EOI for
+  // type 0Eh to the PCB at 0022h (offset 11h), INT 08h.
+  const uint8_t tick_irq[] = {0x0F, 0x0E,                // trap 0Eh
+                              0x50, 0x52,                // push ax, dx
+                              0xBA, 0x22, 0x00,          // mov dx,0022h
+                              0xB8, 0x0E, 0x00,          // mov ax,000Eh
+                              0xEF,                      // out dx,ax
+                              0x5A, 0x58,                // pop dx, ax
+                              0xCD, 0x08,                // int 08h
+                              0xCF};                     // iret
+  std::memcpy(rom + kTickIrq, tick_irq, sizeof tick_irq);
+  // INT 08h: count the tick in C++, then the user hook INT 1Ch.
   const uint8_t tick[] = {0x0F, 0x08,                    // trap 08h
                           0xCD, 0x1C,                    // int 1Ch
-                          0x50, 0x52,                    // push ax, dx
-                          0xBA, 0x22, 0x00,              // mov dx,0022h
-                          0xB8, 0x08, 0x00,              // mov ax,0008h
-                          0xEF,                          // out dx,ax
-                          0x5A, 0x58,                    // pop dx, ax
                           0xCF};                         // iret
   std::memcpy(rom + kTick, tick, sizeof tick);
   // 1.44 MB diskette parameters (IBM); FreeDOS patches byte 4, sectors per
@@ -94,17 +112,18 @@ void HleBios::PowerOn(const std::vector<uint8_t>& kernel) {
   // INT 07h does the same until it loads. FF00h is where the PCB sits at
   // reset.
   cpu.OutWord(0xFFFE, 0x8000);
-  // The tick, INT 08h (timer 0 is type 08h on the 80186), from timer 0
-  // alone, counting the full 65536: at the assumed 4.77 MHz the timers
-  // count 1.19318 MHz, the PC's timer clock, so this is the PC's 18.2 Hz
-  // (HANDOFF 6.1). Timer 2 stays free: AAPI's INT 13h hook loads its
-  // maximum and reads its count to time disk calls (AAPI.EXE+9F20), and
-  // timer 1 is FOSSIL's (FOSSIL.COM+07EB). AAPI's delay loop waits for
-  // timer 0's count to pass 753h (AAPI.EXE+10B35), so its maximum is
-  // larger than that.
+  // The tick from timer 0 alone, counting the full 65536: at the assumed
+  // 4.77 MHz the timers count 1.19318 MHz, the PC's timer clock, so this is
+  // the PC's 18.2 Hz (HANDOFF 6.1). Its own interrupt (type 08h) is off;
+  // its output pin drives INT2 (above). Timer 2 stays free: AAPI's INT 13h
+  // hook loads its maximum and reads its count to time disk calls
+  // (AAPI.EXE+9F20), and timer 1 is FOSSIL's (FOSSIL.COM+07EB). AAPI's
+  // delay loop waits for timer 0's count to pass 753h (AAPI.EXE+10B35), so
+  // its maximum is larger than that.
   cpu.OutWord(kTimer0MaxA, 0);            // 0 = 65536.
-  cpu.OutWord(kTimer0Control, 0xE001);    // EN, INH, INT, CONT.
-  cpu.OutWord(kTimerIntControl, 0x0000);  // Unmasked, priority 0.
+  cpu.OutWord(kTimer0Control, 0xC001);    // EN, INH, CONT; no interrupt.
+  cpu.OutWord(kTimerIntControl, 0x0008);  // Timer interrupts masked.
+  cpu.OutWord(kInt2Control, 0x0000);      // INT2: unmasked, edge, priority 0.
 
   // Vector table: everything to IRET, then the handlers.
   for (int n = 0; n < 256; ++n) {
@@ -115,6 +134,7 @@ void HleBios::PowerOn(const std::vector<uint8_t>& kernel) {
     machine_.PokeWord(kHandled[i] * 4u, static_cast<uint16_t>(kStubs + i * 4));
   }
   machine_.PokeWord(0x08 * 4u, kTick);
+  machine_.PokeWord(0x0E * 4u, kTickIrq);
   machine_.PokeWord(0x1E * 4u, kDiskTable);
 
   // BIOS data area.
@@ -147,6 +167,13 @@ void HleBios::PowerOn(const std::vector<uint8_t>& kernel) {
   // (kernel.asm initialise_command_line_buffer).
   for (std::size_t i = 0; i < kernel.size() && 0x600 + i < 0xA0000; ++i) {
     machine_.Poke(static_cast<uint32_t>(0x600 + i), kernel[i]);
+  }
+  // The kernel's configuration block ("CONFIG" at offset 2, kernel.asm
+  // _LowKernelConfig, the fields FreeDOS's SYS CONFIG sets): SkipConfigSeconds
+  // at offset 12 is the "Press F8 to trace or F5 to skip" pause, 2 s by
+  // default. No key can answer it here, so the copy in memory gets 0.
+  if (kernel.size() > 16 && std::memcmp(kernel.data() + 2, "CONFIG", 6) == 0) {
+    machine_.Poke(0x600 + 12, 0);
   }
   Cpu80188::Registers r;
   r.cs = 0x0060;
@@ -189,6 +216,7 @@ void HleBios::Trap(uint8_t number) {
       return;
     }
     case 0x08: TimerTick(); return;
+    case 0x0E: machine_.AcknowledgeTick(); return;
     case 0x10: Video(regs); break;
     case 0x11: regs.r.ax = machine_.PeekWord(kBda + kEquipment); break;
     case 0x12: regs.r.ax = machine_.PeekWord(kBda + kMemorySize); break;

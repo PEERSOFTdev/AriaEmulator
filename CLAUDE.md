@@ -123,7 +123,8 @@ sestavení ke2046 pro 8086; GPL, do repozitáře nepatří). Co chybí,
 skript vynechá, řekne to a počet sníží.
 
 Start stroje se ladí `bin/boot_test.exe ZIP KERNEL.SYS -v [cykly]`
-(výstup `INT 10h`, registry, neznámé porty, stav a log DSP); `-dsp
+(výstup `INT 10h`, emulované sekundy jednotlivých fází startu, registry,
+neznámé porty, stav a log DSP, vzorky kolem přepnutí programu DSP); `-dsp
 CESTA` uloží proud bajtů poslaných DSP (mimo strom), `-wav CESTA
 FREKVENCE` zvuk ze SPORT1 jako WAV (frekvence pro SCLKDIV 4, HANDOFF
 6.3); `-t` krokuje a zastaví na

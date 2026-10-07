@@ -42,6 +42,8 @@ void AriaMachine::PowerOn() {
   dsp_boots_ = 0;
   mailbox_full_ = false;
   dsp_debt_ = 0;
+  dac_ = DacRenderer(static_cast<double>(kDspHz), kAudioHz, 3000);
+  audio_time_ = 0;
   dsp_.Reset();
   cpu_.Reset();
   bios_->PowerOn(kernel_);
@@ -57,13 +59,19 @@ void AriaMachine::Run(int cycles) {
   for (int done = 0; done < cycles && !powered_off_;) {
     const int used = cpu_.Run(std::min(kSlice, cycles - done));
     done += used;
-    if (dsp_state_ != DspState::kRunning) continue;
     dsp_debt_ += static_cast<int64_t>(used) * kDspHz;
     const int dsp_cycles = static_cast<int>(dsp_debt_ / kCpuHz);
-    if (dsp_cycles > 0) {
-      dsp_debt_ -= static_cast<int64_t>(dsp_.Run(dsp_cycles)) * kCpuHz;
+    if (dsp_cycles <= 0) continue;
+    int ran = dsp_cycles;
+    if (dsp_state_ == DspState::kRunning) {
+      slice_base_ = audio_time_;
+      slice_dsp_start_ = dsp_.Cycles();
+      ran = dsp_.Run(dsp_cycles);
     }
+    dsp_debt_ -= static_cast<int64_t>(ran) * kCpuHz;
+    audio_time_ += ran;
   }
+  dac_.AdvanceTo(audio_time_);
 }
 
 // ---- The DSP's host interface (HANDOFF 6.3) ----
@@ -168,6 +176,15 @@ void AriaMachine::ChipSelect(int which, uint16_t value) {
   // RAMDISK.EXE writes FFF8h to shrink it to FFC00h (HANDOFF 6.2).
   if (which == 0) ucs_start_ = static_cast<uint32_t>(value & 0xFFC0) << 4;
 }
+
+void AriaMachine::TimerOutput(int timer, int state) {
+  // MAME reports a pulse at each terminal count as state 1 (i186.cpp
+  // timer_elapsed); a latch holds it until the BIOS takes the tick, because
+  // MAME drops an external request as soon as its line falls.
+  if (timer == 0 && state) cpu_.SetInterruptPin(2, true);
+}
+
+void AriaMachine::AcknowledgeTick() { cpu_.SetInterruptPin(2, false); }
 
 // ---- I/O ----
 

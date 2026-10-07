@@ -368,6 +368,20 @@ Předpoklady, které nic na B: nedokládá, a proto se mají ověřit:
   takže jeho maximum je větší. Tik je proto jen z časovače 0 s maximem
   65 536, a aby to bylo 18,2 Hz, předpokládá se **takt 4,77 MHz** (čítač
   1,19318 MHz jako časovač PC). Je to odvození, ne doklad;
+
+  **Doplněno 7. 10. 2026: tik přichází přes INT2, ne jako přerušení
+  časovače.** SPEAK přebírá `INT 08h` a uvnitř syntetizuje řeč se
+  zapnutými přerušeními (rezidentně `8A6Ch` → `8A05h` → `7FF0h`), kde
+  čeká na své přerušení DMA0 (`62A0h`); to má vždy prioritu 7
+  (`SPEAK.EXE+0F86h`, `+62BBh`, `+780Eh`). Přerušení časovače, které je
+  ještě obsluhované, by ho podle pravidel 80186 (a MAME) zablokovalo
+  napořád, ať má časovač prioritu jakoukoli; při řeči v reálném tempu se
+  to stalo (stroj stál za ARIALARM). Řetěz `INT 08h` tedy na Arii běžel
+  až po potvrzení hardwarového přerušení. Emulátor proto vede výstup
+  časovače 0 na INT2 (vektor `0Eh`, nikdo na B: ho nepoužívá,
+  `tools/ints.py`); obsluha v ROM smaže západku tiku, pošle EOI a zavolá
+  `INT 08h` softwarově; vlastní přerušení časovače 0 je vypnuté.
+  Skutečné zapojení desky je neznámé **[předpoklad]**;
 - **modelový bajt `FCh`** na `FFFF:000Eh` (čte ho `AAPI.EXE+46DEh`;
   hodnota Arie neznámá, 6.5);
 - **past ESC zapnutá** (bit 15 relokačního registru): `VOICE.SYS+01CEh`
@@ -642,7 +656,46 @@ harfa při ní (8 kHz) „zní docela věrně“. Pracovní hodnota je tedy
 rámcovou synchronizaci každých 32 period sériových hodin (16bitový
 vzorek a 16 volných bitů), takže frekvence = takt DSP / (2 × (SCLKDIV
 + 1) × 32); při 10 MHz to je 31,25 kHz pro řeč a 7,8 kHz pro harfu,
-při o něco rychlejším krystalu o kousek víc. **[hypotéza]** Další neznámé: význam zápisů do vnější
+při o něco rychlejším krystalu o kousek víc. **[hypotéza]**
+
+**Zvuk v reálném čase (7. 10. 2026).** Emulátor tu hypotézu přijal:
+SPORT1 posílá slovo za 32 period sériových hodin a takt DSP je
+**10,24 MHz** (`AriaMachine::kDspHz`), takže česká řeč má přesně 32 kHz
+a harfa 8 kHz. Dřívější model (slova hned za sebou, 62,5 kHz) už
+neplatí. `DacRenderer` převádí slova se značkou času v taktech DSP na
+44,1 kHz (lineárně mezi blízkými slovy, ticho, když SPORT mlčí) a
+`EmulatorThread` (vzor Eureka) pouští stroj v reálném čase do
+`AudioPlayer` (z Eureky beze změny) s latencí kolem 30 ms. Při tomto
+tempu se ukázalo, že tik musí jít přes INT2 (6.1).
+
+**První poslech aplikace, 7. 10. 2026 (uživatel):** start trvá dlouho
+(„Aria tak dlouho nestartovala, ale okamžitě to nebylo“), po harfě je
+před řečí **tvrdé lupnutí**, v řeči jen drobné špičky.
+
+- **Lupnutí:** `PLAY.DSP` ukončí harfu osmi vzorky `2007` (plný rozsah:
+  µ-law maximum 8031 posunuté o 2 bity doprava, dekodér `009Bh`), pak
+  ticho a přepnutí na `LPC.DSP`. Zvuky chodí v blocích „**Play**“:
+  „Play“, kontrolní součet, počet bajtů (`80h` = 128) a formát (`04h`),
+  pak data (parser `00E6h`–`0118h`, stavy `[3908h]`); program bajty
+  ukládá surové do bufferů v programové paměti `180h`–`27Fh`, za koncem
+  vlastního obrazu (328 slov), a dekóduje je až při přehrávání. Než je
+  naplní, leží v nich zbytky kódu `LPC.DSP` (RAM přežije reset i na
+  skutečném čipu); na konci harfy jich pár přehraje, než SPEAK DSP
+  resetuje. Zda Aria lupala také, závisí na časování (jak brzy SPEAK
+  resetuje), a takty CPU i DSP jsou předpoklady; otevřené.
+- **Rozsah vzorků:** všechny vzorky startu jsou v −1 498 až +2 007, tedy
+  ve 12 bitech, a `PLAY.DSP` posouvá o 4 bity doprava (`005Ah`): převodník
+  je nejspíš **12bitový** **[předpoklad]**. Emulátor posílá hodnoty tak,
+  jak jsou, takže hraje o 24 dB tišeji, než by mohl.
+- **Doba startu** (`boot_test -v`, sekundy emulovaného času od zapnutí):
+  jádro FreeDOS 1,8; VOICE.SYS 3,8; disk D: 4,7; Backpack 4,9–5,1;
+  `aapi` 7,2 → hotovo 9,4; SPEAK 10,7; BKB 10,9; ARIALARM 15,0; MAINMENU
+  16,9; **první zvuk 18,9**. Žádné čekání na časový limit, čas se
+  rozkládá na zavádění a rozbalování programů: start je vázán na takt CPU
+  (předpoklad 4,77 MHz kvůli tiku, 6.1). Ušetřené 2 s: BIOS v kopii jádra
+  v paměti nuluje `SkipConfigSeconds` (konfigurační blok „CONFIG“ na
+  offsetu 2, pole na offsetu 12, `kernel.asm`), takže FreeDOS nečeká na
+  F5/F8, na které stejně nemá kdo odpovědět. Další neznámé: význam zápisů do vnější
 programové paměti `2000h` (PX = 1 v `LPC.DSP` `001Eh`, `0115h`; PX = 3
 v `PLAY.DSP` `0073h`), nejspíš latch na desce (výstup? frekvence?).
 
@@ -1236,4 +1289,5 @@ je tím pro hardware vyčerpaný**; dál slouží jako reference API.
 5. Fáze 4 (`ar-6uh`) začala 7. 10. 2026: skutečný ADSP-2105 ve stroji,
    `LPC.DSP` a `PLAY.DSP` vydávají řeč a harfu (6.3). Otevřené:
    vzorkovací frekvence (poslech), latch `2000h`, bity `0401h`; pak
-   výstup zvuku v aplikaci.
+   výstup zvuku v aplikaci. Týž den: aplikace hraje start živě
+   (`EmulatorThread`, 6.3); další krok jsou klávesy do BKB.

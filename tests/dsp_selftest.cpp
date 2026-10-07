@@ -120,7 +120,7 @@ void TestSportAutobuffer() {
   Adsp2105 dsp(board);
   dsp.BootPage(page.data(), page.size());
   dsp.Reset();
-  dsp.Run(2000);  // About 60 words of 32 cycles (16 bits, SCLKDIV 0).
+  dsp.Run(2000);  // About 30 words of 64 cycles (32-clock frame, SCLKDIV 0).
   const std::vector<uint16_t> expected = {0x1555, 0x1111, 0x2222, 0x3333, 0x4444, 0x1111, 0x2222};
   const bool order = board.samples.size() >= expected.size() &&
                      std::equal(expected.begin(), expected.end(), board.samples.begin());

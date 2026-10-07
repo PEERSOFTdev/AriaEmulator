@@ -9,6 +9,7 @@
 
 #include "adsp2105.h"
 #include "cpu80188.h"
+#include "dac_renderer.h"
 #include "flash_image.h"
 #include "rtc146818.h"
 
@@ -38,9 +39,10 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   // Assumption: the PC's 4.77 MHz, so that timer 0 alone gives the 18.2 Hz
   // tick (HANDOFF 6.1, 6.12); the Aria's real clock is unknown.
   static constexpr int kCpuHz = 4'772'727;
-  // Assumption: the DSP's instruction rate. 10 MHz is a common ADSP-2105
-  // grade; the Aria's crystal is unknown (HANDOFF 6.3).
-  static constexpr int kDspHz = 10'000'000;
+  // Assumption: the DSP's instruction rate. The Aria's crystal is unknown;
+  // 10.24 MHz is a 2105 speed grade's range and, with a frame of 32 serial
+  // clocks, gives Czech speech the 32 kHz listening chose (HANDOFF 6.3).
+  static constexpr int kDspHz = 10'240'000;
 
   AriaMachine(const FlashImage& flash, std::vector<uint8_t> kernel, Rtc146818::Clock clock = {});
   ~AriaMachine() override;
@@ -79,6 +81,12 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   const std::vector<uint8_t>& DspBytes() const { return dsp_bytes_; }
   int DspControlWrites() const { return dsp_control_writes_; }
   uint8_t DspControl() const { return dsp_control_; }
+  // The sound the machine made since the last call, at kAudioHz.
+  std::vector<int16_t> TakeAudio() { return dac_.Take(); }
+  static constexpr int kAudioHz = 44100;
+  // Keep every SPORT1 word for tests and WAV dumps (off in the application,
+  // where the stream would grow without end).
+  void KeepSamples(bool keep) { keep_samples_ = keep; }
   const std::vector<int16_t>& Samples() const { return samples_; }
   // SPORT1's SCLKDIV for each sample: 4 for LPC.DSP speech, 6-19 for
   // PLAY.DSP sounds; the sample's duration is proportional to it + 1.
@@ -97,12 +105,19 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   uint8_t ReadIo(uint16_t port) override;
   void WriteIo(uint16_t port, uint8_t value) override;
   void ChipSelect(int which, uint16_t value) override;
+  // Timer 0's output sets the board's tick latch, which drives INT2; the
+  // BIOS's INT 0Eh handler clears it (HANDOFF 6.1, hle_bios.cpp).
+  void TimerOutput(int timer, int state) override;
+  void AcknowledgeTick();
 
  private:
   // Adsp2105Board.
   void SportOutput(uint16_t sample, uint16_t clock_divider) override {
-    samples_.push_back(static_cast<int16_t>(sample));
-    sample_dividers_.push_back(clock_divider);
+    if (keep_samples_) {
+      samples_.push_back(static_cast<int16_t>(sample));
+      sample_dividers_.push_back(clock_divider);
+    }
+    dac_.Sample(slice_base_ + (dsp_.Cycles() - slice_dsp_start_), static_cast<int16_t>(sample));
   }
   uint16_t ReadExternalData(uint32_t address) override;
   void Log(const char* text) override {
@@ -144,6 +159,13 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   std::vector<uint8_t> dsp_bytes_;
   std::vector<int16_t> samples_;
   std::vector<uint16_t> sample_dividers_;
+  bool keep_samples_ = true;
+  // The sound's timeline in DSP cycles; it runs on while the DSP is held in
+  // reset. A slice's samples are placed from where it started.
+  DacRenderer dac_{static_cast<double>(kDspHz), kAudioHz, 3000};
+  int64_t audio_time_ = 0;
+  int64_t slice_base_ = 0;
+  int64_t slice_dsp_start_ = 0;
   std::vector<std::string> dsp_log_;
   uint8_t dsp_control_ = 0;
   int dsp_control_writes_ = 0;

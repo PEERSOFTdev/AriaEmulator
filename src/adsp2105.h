@@ -67,6 +67,8 @@ class Adsp2105 : private mame_adsp::adsp2101_device, private mame_adsp::DspBus {
   int SportWordCycles() const;
   // Cycles spent executing rather than waiting in IDLE, since construction.
   int64_t BusyCycles() const { return busy_cycles_; }
+  // All cycles run since construction: the DSP's clock, for timing samples.
+  int64_t Cycles() const { return cycles_; }
 
  private:
   // DspBus.
@@ -91,6 +93,7 @@ class Adsp2105 : private mame_adsp::adsp2101_device, private mame_adsp::DspBus {
   uint16_t control_[0x400] = {};
   int out_of_range_ = 0;
   int64_t busy_cycles_ = 0;
+  int64_t cycles_ = 0;
 
   // Boot loading state.
   bool boot_expect_length_ = false;
