@@ -69,6 +69,12 @@ class AriaMachine : public CpuBus {
   void SetBatteryStatus(uint8_t value) { battery_ = value; }
   bool PoweredOff() const { return powered_off_; }
 
+  // The DSP stand-in (HANDOFF 6.3): every byte SPEAK sends to the data
+  // port 0402h, by DMA or by hand, and the control latch 0401h.
+  const std::vector<uint8_t>& DspBytes() const { return dsp_bytes_; }
+  int DspControlWrites() const { return dsp_control_writes_; }
+  uint8_t DspControl() const { return dsp_control_; }
+
   // Ports the model does not implement, with access counts.
   const std::map<uint16_t, int>& UnknownPorts() const { return unknown_ports_; }
 
@@ -101,6 +107,9 @@ class AriaMachine : public CpuBus {
   uint8_t battery_ = 0x2F;        // Adapter connected, fully charged (HANDOFF 6.4).
   uint8_t slot_power_ = 0;
   bool powered_off_ = false;
+  std::vector<uint8_t> dsp_bytes_;
+  uint8_t dsp_control_ = 0;
+  int dsp_control_writes_ = 0;
   std::map<uint16_t, int> unknown_ports_;
 };
 

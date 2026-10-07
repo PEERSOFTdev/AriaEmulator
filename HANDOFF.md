@@ -471,6 +471,46 @@ která drží DRQ0, dokud je DMA0 zapnuté, a bajty si zapisuje; řeč bude
 tichá, ale SPEAK neuvázne. Dál je třeba zjistit význam `0402h` a zda
 SPEAK něco z DSP čte zpět.
 
+**Rozhraní hostitel–DSP, 7. 10. 2026** (rozbor `SPEAK.EXE` 7.05, který
+není PKLITE, a běh s jímkou):
+
+- **`0401h` je řídicí latch.** SPEAK drží stínovou kopii na `DS:561Ch`,
+  bity nastavuje a maže pomocníky `+897Eh` (OR) a `+898Dh` (AND) a zapíše
+  vždy `(kopie XOR 7) OR 8` (`+896Ah`). Za běhu startu 3 580 zápisů.
+  Sekvence `+89BEh` (nastav 5, smaž 1, smaž 2, prodleva, nastav 2,
+  prodleva, nastav 1) vypadá na řízení resetu a výběru, význam bitů
+  zatím neznámý.
+- **`0402h` je datový port DSP a jediná cesta dat.** Žádný program na B:
+  z `0401h` ani `0402h` nečte; DSP hostiteli odpovídá jen dvěma linkami.
+- **Zavedení programu DSP (`+09EAh`):** `0401h` ← 0, `0402h` ← bajt
+  (`[53BAh]` nebo `[53BBh]`), prodleva, `0401h` ← 8, pak DMA0 z
+  `DS:4186h` nebo `DS:47B6h` (délka `[53B6h]`/`[53B8h]`) na port `0402h`,
+  řídicí slovo `76A6h`: bajty, paměť → I/O, synchronizace cílem (DRQ0),
+  stop na konci, bez přerušení. **Ověřeno během:** proud do `0402h`
+  začíná bajt po bajtu celým `SYSTEM\LPC.DSP` (2 834 B). ADSP-2105 nemá
+  hostitelský port a zavádí se z bajtové boot paměti; na Arii ji
+  zjevně hraje 80188, který program DSP vysype DMA kanálem do `0402h`.
+- **Příkazy:** před každým bajtem SPEAK zapíše do řízení INT3 (`3Eh`)
+  `1Fh` (maskováno, úrovňově) a čte žádosti (`2Eh`), dokud bit 7 (INT3)
+  nehlásí připravenost DSP (`+0A78h`, `+67A1h`, `+68C8h`). INT3 je tedy
+  linka „DSP připraven na bajt“.
+- **Rámce řeči:** obsluha `INT 0Ah` (`+0B62h` v souboru, rezidentně
+  `4732:0B62`) pošle DMA0 další rámec z kruhové fronty do `0402h`,
+  řídicí slovo `77A6h` (jako zavedení, navíc přerušení na konci).
+- **Obsah proudu za start 7.05 (32 261 B):** `LPC.DSP` (0–2 833), pak
+  3 582 B rámců řeči, které začínají slovem „Sync“ (asi 19 B na rámec,
+  kolem 188 rámců), pak od bajtu 6 416 celý `PLAY.DSP` (985 B), krátká
+  hlavička se slovem „Play“ a za ní **`SYSTEM\SOUNDS\HARPUP.04`**, harfa
+  ze startu, kterou popisuje prohlídka Robotronu z roku 1997 (2).
+
+**Jímka v emulátoru (`AriaMachine`, 7. 10. 2026):** DRQ0 a INT3 drží
+trvale aktivní, bajty z `0402h` ukládá (`DspBytes()`, `boot_test -dsp`),
+zápisy do `0401h` počítá. Řeč je tichá; s jímkou start doběhne až do
+MAINMENU (6.10). `boot_test` ověřuje, že DSP dostal nejdřív celý
+`LPC.DSP` a později `HARPUP.04`, oboje čtené z načteného obrazu. Pro
+skutečnou řeč (fáze 4) zbývá: jádro ADSP-2105, význam bitů `0401h`,
+formát zaváděcího proudu a rámců „Sync“/„Play“ a cesta zvuku z DSP.
+
 ### 6.4 Klávesnice
 
 `BKB.COM` čte `0700h` (5×), `0480h`, `050Dh`, `0581h`, `0584h`; instaluje
@@ -702,6 +742,15 @@ příznak `[cs:44h]` je nastavený, spustí přímo z přerušení svou rutinu
 neodpoví (6.3). Stroj tak stojí uvnitř přerušení časovače (řadič hlásí
 in-service bit 0). Proč ARIALARM po startu mluví, není zjištěné. Další
 krok: jímka DSP podle 6.3, aby SPEAK neuvázl.
+
+**S jímkou DSP (týž den) AUTOEXEC doběhne až do `mainmenu`:** za
+ARIALARM následuje `rundos` („Aria RunDOS Utility v1.1“), `prompt
+$p$g`, `path=b:\system;b:\dos`, `atkbd.com` (externí klávesnice
+„Disabled.“, protože CMOS `57Eh` nemá „C“) a `mainmenu`. Totéž platí pro
+7.04 anglicky, 6.99 a **6.87 v Kamenických** (AAPI 1.1a, řeč
+„Cze1/3.0.0“, ARIALARM 1.07). `boot_test` běží v sadě na 7.05 i 6.87
+a kontroluje devět milníků až po `mainmenu`. Zda MAINMENU čeká na
+klávesu a co řekl, je další krok (záznam textu z `INT 61h`).
 
 ### 6.11 Rozhodnutí: vrstva flash
 
@@ -1042,3 +1091,5 @@ je tím pro hardware vyčerpaný**; dál slouží jako reference API.
    `aapi -c` a MAINMENU, se záznamem textu pro řeč z `INT 61h`.
    Stav týž den večer: CONFIG.SYS a AUTOEXEC proběhnou až po `arialarm`
    (6.10); další krok je, proč se běh za `arialarm` zastaví.
+   7. 10. 2026: s jímkou DSP (6.3) start doběhne do MAINMENU na 7.05,
+   7.04, 6.99 i 6.87. Další: záznam řeči z `INT 61h`, klávesy do BKB.

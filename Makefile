@@ -135,7 +135,7 @@ ARIA_FREEDOS ?= D:/aria/freedos
 FREEDOS      ?= $(ARIA_FREEDOS)
 ifneq ($(SKIP_FREEDOS),1)
 ifneq ($(SKIP_FIRMWARE),1)
-CHECKS += check-boot
+CHECKS += check-boot check-boot-687
 endif
 endif
 
@@ -157,6 +157,10 @@ check-unpack: $(BIN)/pklite_unpack.exe
 
 check-boot: $(BIN)/boot_test.exe
 	$(BIN)/boot_test.exe "$(FW)/CARD/CC0705.ZIP" "$(FREEDOS)/KERNEL.SYS"
+
+# 6.87 v Kamenickych, kvuli ktere je disk B: volitelny (README).
+check-boot-687: $(BIN)/boot_test.exe
+	$(BIN)/boot_test.exe "$(FW)/SERIAL/CSR0687.ZIP" "$(FREEDOS)/KERNEL.SYS"
 
 check-cpu-8088: $(BIN)/cpu_test.exe
 	$(BIN)/cpu_test.exe "$(CPUTESTS)" 8088

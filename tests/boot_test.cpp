@@ -9,8 +9,9 @@
 // instruction and stops at the first jump into empty memory, listing the
 // 40 instructions before it. -dump PATH saves the address space there, or
 // at the end of the run without -t (it holds firmware, so never inside the
-// repository).
+// repository); -dsp PATH saves the bytes sent to the DSP, likewise.
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -49,6 +50,7 @@ int wmain(int argc, wchar_t** argv) {
   }
   bool verbose = false;
   bool trace = false;
+  std::wstring dsp_path;   // Bytes sent to the DSP (0402h); outside the repository too.
   std::wstring dump_path;  // The 1 MB address space at the stop (-t) or the end, for analysis outside the repository.
   long long budget = 400'000'000;  // 84 s of the assumed 4.77 MHz.
   for (int i = 3; i < argc; ++i) {
@@ -58,6 +60,8 @@ int wmain(int argc, wchar_t** argv) {
       verbose = trace = true;
     } else if (std::wstring(argv[i]) == L"-dump" && i + 1 < argc) {
       dump_path = argv[++i];
+    } else if (std::wstring(argv[i]) == L"-dsp" && i + 1 < argc) {
+      dsp_path = argv[++i];
     } else {
       budget = std::wcstoll(argv[i], nullptr, 10);
     }
@@ -122,6 +126,11 @@ int wmain(int argc, wchar_t** argv) {
     machine.Run(kSlice);
     ran += kSlice;
   }
+  if (!dsp_path.empty()) {
+    std::ofstream out(std::filesystem::path(dsp_path), std::ios::binary);
+    out.write(reinterpret_cast<const char*>(machine.DspBytes().data()),
+              static_cast<std::streamsize>(machine.DspBytes().size()));
+  }
   if (!trace && !dump_path.empty()) {
     std::ofstream out(std::filesystem::path(dump_path), std::ios::binary);
     for (uint32_t a = 0; a < 0x100000; ++a) out.put(static_cast<char>(machine.Peek(a)));
@@ -137,6 +146,11 @@ int wmain(int argc, wchar_t** argv) {
     for (const auto& [port, count] : machine.UnknownPorts()) {
       std::printf("port %04Xh: %d accesses\n", port, count);
     }
+    const auto& dsp = machine.DspBytes();
+    std::printf("DSP: %zu bytes to 0402h, %d writes to 0401h (last %02Xh); first bytes:", dsp.size(),
+                machine.DspControlWrites(), machine.DspControl());
+    for (std::size_t i = 0; i < dsp.size() && i < 32; ++i) std::printf(" %02X", dsp[i]);
+    std::printf("\n");
     std::printf("cycles: %lld, BIOS ticks: %u\n", ran,
                 machine.PeekWord(0x46C) | static_cast<unsigned>(machine.PeekWord(0x46E)) << 16);
     // PCB at I/O 0000h: timers 0 and 2, then the interrupt controller
@@ -151,16 +165,20 @@ int wmain(int argc, wchar_t** argv) {
     for (std::size_t i = 0; i < disk_log.size() && i < 60; ++i) std::printf("  %s\n", disk_log[i].c_str());
   }
 
-  // Milestones in boot order, by what each stage prints (CC0705): the
+  // Milestones in boot order, by what each stage prints (7.05, 7.04, 6.99
+  // and 6.87 alike): the
   // kernel, then CONFIG.SYS from B: (VOICE.SYS, VDISK as D:), then
   // AUTOEXEC.BAT under ROM-DOS COMMAND.COM (AAPI, SPEAK, BKB).
   const char* milestones[] = {
       "FreeDOS kernel",
       "Voice device rev 1.3",
       "Installed as drive:  D:",
-      "Aria API v1.1b",
+      "Aria API v1.1",  // 1.1b in 7.05, 1.1a in 6.87 and 6.99.
       "is now installed.",
       "ARIA keyboard driver",
+      "Aria Alarm Scheduler",
+      "Aria RunDOS Utility",
+      ">mainmenu",
   };
   for (const char* milestone : milestones) {
     if (text.find(milestone) == std::string::npos) {
@@ -168,6 +186,27 @@ int wmain(int argc, wchar_t** argv) {
       return 1;
     }
   }
-  std::cout << "PASS boot_test (FreeDOS, CONFIG.SYS and AUTOEXEC.BAT from drive B: up to BKB)\n";
+
+  // The DSP stand-in (HANDOFF 6.3): SPEAK boots the ADSP-2105 by streaming
+  // LPC.DSP into 0402h, and the start-up harp (SYSTEM\SOUNDS\HARPUP.04)
+  // follows after PLAY.DSP. Both are read from the loaded image, so the
+  // check holds for any firmware build.
+  Fat12Volume volume;
+  std::vector<uint8_t> lpc, harp;
+  if (!volume.Open(flash.bytes, error) || !volume.ReadFile("SYSTEM\\LPC.DSP", lpc) ||
+      !volume.ReadFile("SYSTEM\\SOUNDS\\HARPUP.04", harp) || harp.size() < 64) {
+    std::cout << "FAIL boot: cannot read LPC.DSP or HARPUP.04 from drive B:\n";
+    return 1;
+  }
+  const auto& dsp = machine.DspBytes();
+  if (dsp.size() < lpc.size() || !std::equal(lpc.begin(), lpc.end(), dsp.begin())) {
+    std::cout << "FAIL boot: the DSP did not receive LPC.DSP first\n";
+    return 1;
+  }
+  if (std::search(dsp.begin(), dsp.end(), harp.begin(), harp.begin() + 64) == dsp.end()) {
+    std::cout << "FAIL boot: the DSP did not receive HARPUP.04\n";
+    return 1;
+  }
+  std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, LPC.DSP and harp to the DSP)\n";
   return 0;
 }

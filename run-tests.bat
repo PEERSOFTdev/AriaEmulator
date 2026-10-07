@@ -2,12 +2,12 @@
 setlocal
 cd /d "%~dp0"
 
-rem Sestavi testy a pusti je naraz. Ocekava se PATNACT radku PASS: tri bez
+rem Sestavi testy a pusti je naraz. Ocekava se SESTNACT radku PASS: tri bez
 rem dat (codec_test, flash_selftest, cpu_selftest), osm rezimu firmware_test
 rem a pklite_unpack --check s firmwarem (ARIAFW), dva behy cpu_test s daty
 rem instrukcnich testu
-rem (ARIA_CPUTESTS, jinak D:\aria\cputests; HANDOFF 6.12) a boot_test
-rem s firmwarem a jadrem FreeDOS (ARIA_FREEDOS, jinak D:\aria\freedos). Co
+rem (ARIA_CPUTESTS, jinak D:\aria\cputests; HANDOFF 6.12) a dva behy
+rem boot_test (7.05 a 6.87) s firmwarem a jadrem FreeDOS (ARIA_FREEDOS, jinak D:\aria\freedos). Co
 rem chybi, se vynecha. Protejsek run-tests.sh.
 rem
 rem Volani:  run-tests.bat                    (firmware z %ARIAFW%, jinak D:\aria\update)
@@ -23,7 +23,7 @@ if "%ARIAFW%"=="" set "ARIAFW=D:\aria\update"
 
 rem SKIP_FIRMWARE jde do make PROSTREDIM, stejne jako z run-tests.sh.
 set "SKIP_FIRMWARE=0"
-set "EXPECTED=15"
+set "EXPECTED=16"
 if not exist "%ARIAFW%\CARD\" (
   echo Nenasel jsem firmware Arie: %ARIAFW%
   echo Zadejte slozku s podslozkami CARD a SERIAL argumentem nebo promennou ARIAFW.
@@ -51,8 +51,8 @@ if not exist "%ARIA_FREEDOS%\KERNEL.SYS" (
 
 rem Ocekavany pocet podle toho, co je k dispozici. Start stroje potrebuje
 rem firmware i jadro, proto se odecita jen jednou.
-if "%SKIP_FIRMWARE%"=="1" set /a EXPECTED-=10
-if not "%SKIP_FIRMWARE%"=="1" if "%SKIP_FREEDOS%"=="1" set /a EXPECTED-=1
+if "%SKIP_FIRMWARE%"=="1" set /a EXPECTED-=11
+if not "%SKIP_FIRMWARE%"=="1" if "%SKIP_FREEDOS%"=="1" set /a EXPECTED-=2
 if "%SKIP_CPU%"=="1" set /a EXPECTED-=2
 
 call "%~dp0build-tests.bat"

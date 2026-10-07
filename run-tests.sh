@@ -1,11 +1,12 @@
 #!/bin/sh
-# Sestavi testy a pusti je naraz. Ocekava se PATNACT radku PASS:
+# Sestavi testy a pusti je naraz. Ocekava se SESTNACT radku PASS:
 #   - tri bez dat: codec_test, flash_selftest, cpu_selftest;
 #   - osm rezimu firmware_test (jedna aktualizace od Robotronu na rezim)
 #     a pklite_unpack --check, kdyz je firmware (ARIAFW);
 #   - dva behy cpu_test (8088 a rozsireni 80186 ze sady V20), kdyz jsou data
 #     instrukcnich testu (ARIA_CPUTESTS, HANDOFF 6.12);
-#   - boot_test, kdyz je firmware i jadro FreeDOS (ARIA_FREEDOS, ar-4cu).
+#   - dva behy boot_test (7.05 a 6.87), kdyz je firmware i jadro FreeDOS
+#     (ARIA_FREEDOS, ar-4cu).
 # Co chybi, skript vynecha a rekne to; pocet PASS se podle toho snizi.
 #
 # Volani:  ./run-tests.sh                    (firmware z promenne ARIAFW)
@@ -92,7 +93,7 @@ if [ -z "$ARIA_FREEDOS" ] || [ ! -f "$ARIA_FREEDOS/KERNEL.SYS" ]; then
 else
   FREEDOS_WIN="$(wslpath -w "$ARIA_FREEDOS" | tr '\\' '/')"
   if [ "$SKIP_FIRMWARE" -eq 0 ]; then
-    EXPECTED=$((EXPECTED + 1))
+    EXPECTED=$((EXPECTED + 2))
   fi
 fi
 export SKIP_FREEDOS

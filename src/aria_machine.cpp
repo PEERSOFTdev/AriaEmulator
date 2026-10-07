@@ -31,8 +31,20 @@ void AriaMachine::PowerOn() {
   latch_580_ = latch_480_ = 0;
   powered_off_ = false;
   ucs_start_ = 0xFFC00;
+  dsp_bytes_.clear();
+  dsp_control_ = 0;
+  dsp_control_writes_ = 0;
   cpu_.Reset();
   bios_->PowerOn(kernel_);
+  // DSP stand-in until the ADSP-2105 is emulated (HANDOFF 6.3): it is
+  // always ready. DRQ0 paces SPEAK's DMA channel 0 into 0402h, both the
+  // boot image (SPEAK.EXE+0A1Eh, control 76A6h) and the speech frames
+  // (+0F61h, 77A6h, interrupt at terminal count); INT3 is the "ready for
+  // a command byte" line SPEAK polls in the request register before each
+  // byte (+0A7Bh, bit 7 of 2Eh, with INT3 masked and level-triggered by
+  // writing 1Fh to 3Eh, +6792h). Nothing on B: reads the DSP back.
+  cpu_.SetDmaRequest(0, true);
+  cpu_.SetInterruptPin(3, true);
 }
 
 void AriaMachine::Run(int cycles) {
@@ -107,6 +119,17 @@ void AriaMachine::WriteIo(uint16_t port, uint8_t value) {
   switch (port) {
     case 0x0480: latch_480_ = value; return;
     case 0x0580: latch_580_ = value; return;
+    case 0x0401:
+      // DSP control latch: SPEAK writes (shadow XOR 7) OR 8 from its copy
+      // at DS:561Ch (SPEAK.EXE+896Ah); 0 then 8 around the boot looks like
+      // reset and release (+09F9h, +0A14h).
+      dsp_control_ = value;
+      ++dsp_control_writes_;
+      return;
+    case 0x0402:
+      // DSP data port: boot image, command bytes and speech frames.
+      dsp_bytes_.push_back(value);
+      return;
     case 0x0701:
       // TURNOFF.COM writes 0 here and halts (HANDOFF 6.9).
       if (value == 0) powered_off_ = true;
