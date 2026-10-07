@@ -112,8 +112,8 @@ z `FlashImage` (`src/flash_image.h`).
 
 Z WSL krosovým mingw-w64: `./build.sh`, `./build-tests.sh`,
 `./run-tests.sh [složka firmwaru]` (jinak z proměnné `ARIAFW`). Výstup
-EXE do `bin/`, mezivýstupy do `build/`. Očekává se **šestnáct** řádků
-`PASS`: tři bez dat, devět s firmwarem (`ARIAFW`; osm režimů
+EXE do `bin/`, mezivýstupy do `build/`. Očekává se **sedmnáct** řádků
+`PASS`: čtyři bez dat, devět s firmwarem (`ARIAFW`; osm režimů
 `firmware_test` a `pklite_unpack --check`), dva s daty instrukčních
 testů CPU (`ARIA_CPUTESTS`, výchozí `D:\aria\cputests`, 562 MB,
 SingleStepTests) a dva běhy `boot_test` (7.05 a 6.87 v Kamenických),
@@ -177,6 +177,17 @@ Pravidla (HANDOFF 6.12):
   (`-Wno-sign-compare`), ne úpravou kódu.
 - Ladění jednoho opkódu: `bin/cpu_test.exe D:/aria/cputests 8088 7C -v`
   vypíše vstupní stav a všechny rozdíly prvních selhání.
+
+### Jádro DSP z MAME (`src/adsp2100/`)
+
+Totéž pro ADSP-2105 (`src/adsp2100/LICENSE.mame-adsp2100.txt`, HANDOFF
+6.3), commit MAME `2aa75c50`. `2100ops.hxx` a `adsp2100.cpp` jsou kopie
+souborů MAME; co patří jen frameworku MAME, je vypnuté bloky `#if 0 //
+ARIA:`, ne smazané, aby soubory šly porovnat s MAME řádek po řádku i při
+přechodu na novější verzi. Paměti čipu, řídicí registry a zavádění nejsou
+součást jádra (ani v MAME), jsou v `src/adsp2105.*`. Instrukční testy
+jako u 80188 pro tento DSP neexistují; ověřuje se podle manuálu
+(*ADSP-2100 Family User's Manual*, HANDOFF 6.3) a výsledkem.
 
 ## Režim, který není slyšet, je chyba
 

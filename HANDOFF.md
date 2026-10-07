@@ -511,6 +511,63 @@ MAINMENU (6.10). `boot_test` ověřuje, že DSP dostal nejdřív celý
 skutečnou řeč (fáze 4) zbývá: jádro ADSP-2105, význam bitů `0401h`,
 formát zaváděcího proudu a rámců „Sync“/„Play“ a cesta zvuku z DSP.
 
+**Zdroje k ADSP-2105 (7. 10. 2026):**
+
+- *ADSP-2100 Family User's Manual*, 3. vydání, září 1995 (Analog
+  Devices; kopie na Bitsavers,
+  `components/analogDevices/dsp/ADSP-2100_Users_Manual_3ed_Sep95.pdf`,
+  492 stran). Mimo repozitář, jako techman. Kapitola 10.4 popisuje
+  zavádění, kapitoly o instrukcích, SPORT a časovači zbývá přečíst.
+- **Jádro MAME** `src/devices/cpu/adsp2100/` na commitu `2aa75c50`
+  (tentýž jako jádro 80188): `adsp2100.cpp`, `adsp2100.h`, `2100ops.hxx`,
+  `2100dasm.cpp`/`.h`, licence **BSD-3-Clause** (Aaron Giles), model
+  `adsp2105_device` s vlastními přerušeními (IRQ0–2, SPORT1 příjem a
+  vysílání, časovač). Jeho `load_boot_data` ale čte rozložení desek
+  automatů (4 bajty na slovo), ne bajtový proud Arie; zavádění si
+  emulátor udělá sám podle manuálu.
+
+**Formát zaváděcího proudu, ověřeno 7. 10. 2026** (manuál 10.4.1 a
+10.4.4, který výslovně zmiňuje případ, kdy data místo EPROM dává
+latch): DSP nejdřív přečte bajt délky stránky, stránka má
+(délka + 1) × 8 slov; pak načítá slova **od posledního k nultému**,
+každé jako tři bajty v pořadí **horní, dolní, prostřední**. Stránka má
+tedy 1 + 3 × slova bajtů a program začíná na adrese 0, až dorazí slovo 0.
+
+- `PLAY.DSP`: délka `28h` → 328 slov → 985 B, přesně velikost souboru.
+- `LPC.DSP`: délka `75h` → 944 slov → 2 833 B; soubor má o jeden nulový
+  bajt víc a i ten SPEAK pošle (v proudu bajt 2 833); nejspíš výplň.
+- Dekódovaná slova jsou smysluplný kód ADSP-2100: `PLAY.DSP` slovo 0 =
+  `1801CFh` = „JUMP 001Ch“ (vektor resetu přeskakuje tabulku
+  vektorů), slovo 4 = `180C6Fh` = „JUMP 00C6h“ (další vektor po čtyřech
+  slovech); `LPC.DSP` začíná `340004h`, `340015h`, `340036h` (načtení
+  registrů), `1801CFh` (JUMP 001Ch), `1C05AFh` (CALL), `0A001Fh` (návrat).
+
+**Jádro v emulátoru (7. 10. 2026):** `src/adsp2100/` je jádro MAME
+(kopie `2100ops.hxx` a `adsp2100.cpp`, framework vypnutý bloky `#if 0
+// ARIA:`, deklarace přepsané v `adsp2100.h`), `src/adsp2105.*` k němu
+dodává paměti čipu (program 1K slov `0000h`–`03FFh`, data 512 slov
+`3800h`–`39FFh`, řídicí registry `3C00h`–`3FFFh` zatím jen uložené)
+a zavádění stránky podle 10.4.4. `dsp_selftest` (bez firmwaru) ověřuje
+pořadí bajtů zaváděcí stránky a krátký program (5 + 3 = 8 do datové
+paměti). Historie MAME: poslední změny chování jádra jsou z roku 2023,
+změny z roku 2026 jen úklid frameworku a disasembler; přechod na novější
+MAME je proto levný.
+
+**První běh `LPC.DSP` (pokus mimo strom, 7. 10. 2026):** zavedení spotřebuje
+přesně 2 833 bajtů; během prvních 42 instrukcí program zapíše tři řídicí
+registry: `3FF2h` (řízení SPORT1) ← `4C8Fh`, `3FF1h` (SCLKDIV SPORT1) ←
+`0004h`, `3FEFh` (autobuffer SPORT1) ← `0E82h`; pošle SPORT1 jedno slovo
+`0000h` a pak čeká v IDLE na `0043h`–`0044h`. Podle manuálu (kapitola 5)
+bit 14 = ISCLK, takže **sériové hodiny generuje DSP**, a to CLKOUT /
+(2 × (4 + 1)) = CLKOUT / 10; spodní čtyři bity `Fh` = **16bitová slova**.
+Ostatní bity (rámcová synchronizace, autobuffer v `3FEFh`) a odkud DSP
+bere bajty z `0402h` (přerušení? vnější datová paměť?) jsou další krok.
+
+Aria tedy zavádí DSP standardní zaváděcí stránkou 0 a 80188 hraje roli
+EPROM. Zápis `0401h` ← 0 a pak 8 kolem zavádění (výše) je nejspíš reset
+DSP; zda bit 3 je reset, nebo vstup MMAP či BMODE, se ukáže z kódu, až
+poběží jádro.
+
 ### 6.4 Klávesnice
 
 `BKB.COM` čte `0700h` (5×), `0480h`, `050Dh`, `0581h`, `0584h`; instaluje

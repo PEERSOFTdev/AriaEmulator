@@ -31,6 +31,9 @@ EMU_OBJS   := $(addprefix $(BUILD)/,$(addsuffix .o,$(EMU_NAMES))) $(I86_OBJS)
 CORE_OBJS  := $(BUILD)/text_codec.o $(BUILD)/zip_reader.o $(BUILD)/fat12.o \
               $(BUILD)/flash_image.o
 CPU_OBJS   := $(BUILD)/cpu80188.o $(I86_OBJS)
+# Jadro DSP ADSP-2105 prevzate z MAME (src/adsp2100/LICENSE.mame-adsp2100.txt,
+# HANDOFF 6.3) a jeho obal s pameti cipu a zavadenim.
+DSP_OBJS   := $(BUILD)/adsp2105.o $(BUILD)/adsp_adsp2100.o
 # Stroj Arie s BIOSem emulatoru (HANDOFF 6.10, 6.11).
 MACHINE_OBJS := $(BUILD)/aria_machine.o $(BUILD)/hle_bios.o $(BUILD)/rtc146818.o \
                 $(CPU_OBJS) $(CORE_OBJS)
@@ -38,7 +41,7 @@ MACHINE_OBJS := $(BUILD)/aria_machine.o $(BUILD)/hle_bios.o $(BUILD)/rtc146818.o
 EMU        := $(BIN)/AriaEmulator.exe
 TEST_EXES  := $(BIN)/codec_test.exe $(BIN)/flash_selftest.exe $(BIN)/firmware_test.exe \
               $(BIN)/cpu_test.exe $(BIN)/cpu_selftest.exe $(BIN)/pklite_unpack.exe \
-              $(BIN)/boot_test.exe
+              $(BIN)/boot_test.exe $(BIN)/dsp_selftest.exe
 
 .PHONY: all tests check clean
 .DEFAULT_GOAL := all
@@ -62,6 +65,11 @@ $(BUILD)/test_%.o: tests/%.cpp Makefile | $(BUILD)
 # varovani, ktere v nem GCC hlasi (int proti uint32_t ve smycce ENTER,
 # i186.cpp), se proto vypina jen tady, ne opravou kodu.
 $(BUILD)/i86_%.o: src/i86/%.cpp Makefile | $(BUILD)
+	$(CXX) $(CXXFLAGS) -Wno-sign-compare $(DEPFLAGS) -c $< -o $@
+
+# Totez pro jadro DSP z MAME (porovnani uint32_t s int v shift_op_imm,
+# 2100ops.hxx).
+$(BUILD)/adsp_%.o: src/adsp2100/%.cpp Makefile | $(BUILD)
 	$(CXX) $(CXXFLAGS) -Wno-sign-compare $(DEPFLAGS) -c $< -o $@
 
 # -municode: vstupni bod je sirokoznakovy. -mwindows: GUI subsystem, bez okna
@@ -92,6 +100,10 @@ $(BIN)/pklite_unpack.exe: $(BUILD)/test_pklite_unpack.o $(CPU_OBJS) $(CORE_OBJS)
 $(BIN)/boot_test.exe: $(BUILD)/test_boot_test.o $(MACHINE_OBJS) | $(BIN)
 	$(CXX) $(STATIC) -municode -o $@ $^
 
+# Jadro DSP bez firmwaru: poradi bajtu zavadeci stranky a kratky program.
+$(BIN)/dsp_selftest.exe: $(BUILD)/test_dsp_selftest.o $(DSP_OBJS) | $(BIN)
+	$(CXX) $(STATIC) -o $@ $^
+
 # Jadro CPU bez dat testu: kratke programy (PCB, preruseni, past ESC).
 $(BIN)/cpu_selftest.exe: $(BUILD)/test_cpu_selftest.o $(CPU_OBJS) | $(BIN)
 	$(CXX) $(STATIC) -o $@ $^
@@ -114,7 +126,7 @@ MODES :=
 else
 MODES := $(FW_MODES)
 endif
-CHECKS := check-codec check-flash check-cpu $(addprefix check-fw-,$(MODES))
+CHECKS := check-codec check-flash check-cpu check-dsp $(addprefix check-fw-,$(MODES))
 # Rozbaleni PKLITE potrebuje firmware i jadro; jeden beh na ceskou 7.05.
 ifneq ($(SKIP_FIRMWARE),1)
 CHECKS += check-unpack
@@ -148,6 +160,9 @@ check-codec: $(BIN)/codec_test.exe
 
 check-flash: $(BIN)/flash_selftest.exe
 	$(BIN)/flash_selftest.exe
+
+check-dsp: $(BIN)/dsp_selftest.exe
+	$(BIN)/dsp_selftest.exe
 
 check-cpu: $(BIN)/cpu_selftest.exe
 	$(BIN)/cpu_selftest.exe

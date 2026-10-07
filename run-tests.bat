@@ -2,8 +2,9 @@
 setlocal
 cd /d "%~dp0"
 
-rem Sestavi testy a pusti je naraz. Ocekava se SESTNACT radku PASS: tri bez
-rem dat (codec_test, flash_selftest, cpu_selftest), osm rezimu firmware_test
+rem Sestavi testy a pusti je naraz. Ocekava se SEDMNACT radku PASS: ctyri bez
+rem dat (codec_test, flash_selftest, cpu_selftest, dsp_selftest), osm rezimu
+rem firmware_test
 rem a pklite_unpack --check s firmwarem (ARIAFW), dva behy cpu_test s daty
 rem instrukcnich testu
 rem (ARIA_CPUTESTS, jinak D:\aria\cputests; HANDOFF 6.12) a dva behy
@@ -23,7 +24,7 @@ if "%ARIAFW%"=="" set "ARIAFW=D:\aria\update"
 
 rem SKIP_FIRMWARE jde do make PROSTREDIM, stejne jako z run-tests.sh.
 set "SKIP_FIRMWARE=0"
-set "EXPECTED=16"
+set "EXPECTED=17"
 if not exist "%ARIAFW%\CARD\" (
   echo Nenasel jsem firmware Arie: %ARIAFW%
   echo Zadejte slozku s podslozkami CARD a SERIAL argumentem nebo promennou ARIAFW.
