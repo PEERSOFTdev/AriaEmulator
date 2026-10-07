@@ -7,8 +7,9 @@
 // -v prints the whole teletype output, the final registers and the ports
 // the board model does not implement. -t also steps instruction by
 // instruction and stops at the first jump into empty memory, listing the
-// 40 instructions before it; with -dump PATH it then saves the address
-// space (it holds firmware, so never inside the repository).
+// 40 instructions before it. -dump PATH saves the address space there, or
+// at the end of the run without -t (it holds firmware, so never inside the
+// repository).
 
 #include <cstdio>
 #include <cstdlib>
@@ -48,8 +49,8 @@ int wmain(int argc, wchar_t** argv) {
   }
   bool verbose = false;
   bool trace = false;
-  std::wstring dump_path;  // -t: the 1 MB address space at the stop, for analysis outside the repository.
-  long long budget = 400'000'000;  // 50 s of the assumed 8 MHz.
+  std::wstring dump_path;  // The 1 MB address space at the stop (-t) or the end, for analysis outside the repository.
+  long long budget = 400'000'000;  // 84 s of the assumed 4.77 MHz.
   for (int i = 3; i < argc; ++i) {
     if (std::wstring(argv[i]) == L"-v") {
       verbose = true;
@@ -120,6 +121,10 @@ int wmain(int argc, wchar_t** argv) {
   while (ran < budget && !machine.PoweredOff() && !machine.bios().RebootRequested()) {
     machine.Run(kSlice);
     ran += kSlice;
+  }
+  if (!trace && !dump_path.empty()) {
+    std::ofstream out(std::filesystem::path(dump_path), std::ios::binary);
+    for (uint32_t a = 0; a < 0x100000; ++a) out.put(static_cast<char>(machine.Peek(a)));
   }
 
   const std::string text = machine.bios().Teletype();

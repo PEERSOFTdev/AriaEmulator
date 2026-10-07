@@ -34,7 +34,9 @@ struct BiosDisk {
 class AriaMachine : public CpuBus {
  public:
   static constexpr uint32_t kRomStub = 0xFFC00;  // Top 1 KB, ROM under any UMCS.
-  static constexpr int kCpuHz = 8'000'000;       // Assumption: real clock unknown (HANDOFF 6.12).
+  // Assumption: the PC's 4.77 MHz, so that timer 0 alone gives the 18.2 Hz
+  // tick (HANDOFF 6.1, 6.12); the Aria's real clock is unknown.
+  static constexpr int kCpuHz = 4'772'727;
 
   AriaMachine(const FlashImage& flash, std::vector<uint8_t> kernel, Rtc146818::Clock clock = {});
   ~AriaMachine() override;

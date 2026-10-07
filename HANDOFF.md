@@ -355,6 +355,19 @@ Předpoklady, které nic na B: nedokládá, a proto se mají ověřit:
 
 - **takt CPU 8 MHz** (`AriaMachine::kCpuHz`, 6.12): časovač 2 dělí 61,
   časovač 0 počítá 1 801, takže tik je 18,2 Hz jen při tomto taktu;
+
+  **Neplatí od 7. 10. 2026:** časovač 2 tik dělat nesmí. AAPI si ho
+  bere: hák `INT 13h` na `AAPI.EXE+9F20` před každým voláním disku
+  nahraje jeho maximum (`out 62h`) a po něm čte jeho stav (`in 60h`),
+  měří tak délku diskových operací. Na Arii šlo B: přes okno a
+  `FLASHDSK.SYS`, takže hák běžel zřídka; u nás každý sektor B: jde
+  přes `INT 13h`, hák maximum přepsal na `C925h` a tik se zastavil
+  (zachyceno krokováním: zápis na `3189:0015` po `INT 13h` jádra).
+  Časovač 1 je FOSSILu (`FOSSIL.COM+07EB`). Zpožďovací smyčka
+  `AAPI.EXE+10B35` čte stav **časovače 0** a čeká, až překročí `753h`,
+  takže jeho maximum je větší. Tik je proto jen z časovače 0 s maximem
+  65 536, a aby to bylo 18,2 Hz, předpokládá se **takt 4,77 MHz** (čítač
+  1,19318 MHz jako časovač PC). Je to odvození, ne doklad;
 - **modelový bajt `FCh`** na `FFFF:000Eh` (čte ho `AAPI.EXE+46DEh`;
   hodnota Arie neznámá, 6.5);
 - **past ESC zapnutá** (bit 15 relokačního registru): `VOICE.SYS+01CEh`
@@ -437,6 +450,26 @@ co je na A0000h–AFFFFh a kolik RAM vidí DOS. Stav a napájení slotu karty
 a `0402h`. Neznámé: jak se do ADSP-2105 nahraje `LPC.DSP` (2105 nemá
 host port, bootuje z byte-wide boot paměti), jak se předávají rámce a kam
 vede zvukový výstup (sériový port DSP → DAC?).
+
+**Z běhu, 7. 10. 2026** (rezidentní SPEAK na segmentu `4732h`, data
+`5237h`, CC0705):
+
+- SPEAK přebírá **`INT 0Ah` = přerušení DMA kanálu 0** (typ 0Ah na
+  80186), obsluha `4732:0B62`. Je to pumpa řeči: z kruhové fronty rámců
+  (8 KB na `DS:1B72h`, ukazatele `1B6Eh`/`1B70h`) pošle další rámec,
+  zvláštní kódy rámců `50h`, `FAh`, `FBh`, `FCh` mají vlastní větve.
+  Příznaky `[F2h]`, `[F4h]`, `[F6h]` řídí stav.
+- Čekací smyčka `4732:62A0` čeká, až čítač času (`call 0774h`) dosáhne
+  zadané hodnoty, nebo až se nastaví `[F0h]`/`[F4h]`; mezitím čte
+  řízení přerušení DMA0 (`in 34h`) a při bitu 3 (maska) ho přepíše na 7.
+- DMA kanál 0 jde na port `0401h` synchronizovaný požadavkem DRQ0, který
+  musí dávat DSP. Bez DSP se nic nepohne. Při startu SPEAK zapíše na
+  `0401h` 886 bajtů (nejspíš zavedení `LPC.DSP`) a na `0402h` jeden.
+
+Co z toho je pro emulaci: dokud DSP není, stačí na straně DSP **jímka**,
+která drží DRQ0, dokud je DMA0 zapnuté, a bajty si zapisuje; řeč bude
+tichá, ale SPEAK neuvázne. Dál je třeba zjistit význam `0402h` a zda
+SPEAK něco z DSP čte zpět.
 
 ### 6.4 Klávesnice
 
@@ -658,6 +691,17 @@ AUTOEXEC: `trickss2` (karta E:), `aapi -c` („Aria API v1.1b“), `speak
 přistoupil na port `0401h` (DSP, 6.3) a programy sáhly na neobsloužené
 porty `0402h`, `0581h`, `0680h` a `0682h`. `boot_test` od té doby
 kontroluje šest milníků až po BKB; celý start trvá asi sekundu.
+
+**Za `arialarm`, 7. 10. 2026.** Zastavení mělo dvě vrstvy. První: tik
+stál, protože AAPI přeprogramoval časovač 2, kterým BIOS dělil tik
+(6.1); po přechodu na samotný časovač 0 ARIALARM vypíše „Aria Alarm
+Scheduler v1.08“. Druhá: ARIALARM v háku `INT 08h` (`67A9:0345`, segment
+ARIALARM) zavolá předchozí obsluhu, a když DOS není zaneprázdněný a jeho
+příznak `[cs:44h]` je nastavený, spustí přímo z přerušení svou rutinu
+`67A9:0217`. Ta chce mluvit a SPEAK pak v `4732:62A0` čeká na DSP, které
+neodpoví (6.3). Stroj tak stojí uvnitř přerušení časovače (řadič hlásí
+in-service bit 0). Proč ARIALARM po startu mluví, není zjištěné. Další
+krok: jímka DSP podle 6.3, aby SPEAK neuvázl.
 
 ### 6.11 Rozhodnutí: vrstva flash
 

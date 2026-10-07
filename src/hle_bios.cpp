@@ -22,7 +22,6 @@ constexpr uint8_t kHandled[] = {0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 
 // The PCB after the BIOS moved it to I/O 0000h, as on the Aria (HANDOFF 6.1).
 constexpr uint16_t kPcbRelocation = 0x00FE;  // Offset 7Fh at its new base.
 constexpr uint16_t kTimer0MaxA = 0x0052, kTimer0Control = 0x0056;
-constexpr uint16_t kTimer2MaxA = 0x0062, kTimer2Control = 0x0066;
 constexpr uint16_t kTimerIntControl = 0x0032;
 
 // BIOS data area at 0040:0000.
@@ -95,13 +94,16 @@ void HleBios::PowerOn(const std::vector<uint8_t>& kernel) {
   // INT 07h does the same until it loads. FF00h is where the PCB sits at
   // reset.
   cpu.OutWord(0xFFFE, 0x8000);
-  // Timer 0 at 18.2 Hz for INT 08h (timer 0 is type 08h on the 80186):
-  // timers count CPU/4 = 2 MHz at the assumed 8 MHz; timer 2 prescales by
-  // 61, timer 0 counts 1801 of those: 2e6 / 61 / 1801 = 18.205 Hz.
-  cpu.OutWord(kTimer2MaxA, 61);
-  cpu.OutWord(kTimer2Control, 0xC001);  // EN, INH, CONT.
-  cpu.OutWord(kTimer0MaxA, 1801);
-  cpu.OutWord(kTimer0Control, 0xE009);  // EN, INH, INT, P (prescaled by timer 2), CONT.
+  // The tick, INT 08h (timer 0 is type 08h on the 80186), from timer 0
+  // alone, counting the full 65536: at the assumed 4.77 MHz the timers
+  // count 1.19318 MHz, the PC's timer clock, so this is the PC's 18.2 Hz
+  // (HANDOFF 6.1). Timer 2 stays free: AAPI's INT 13h hook loads its
+  // maximum and reads its count to time disk calls (AAPI.EXE+9F20), and
+  // timer 1 is FOSSIL's (FOSSIL.COM+07EB). AAPI's delay loop waits for
+  // timer 0's count to pass 753h (AAPI.EXE+10B35), so its maximum is
+  // larger than that.
+  cpu.OutWord(kTimer0MaxA, 0);            // 0 = 65536.
+  cpu.OutWord(kTimer0Control, 0xE001);    // EN, INH, INT, CONT.
   cpu.OutWord(kTimerIntControl, 0x0000);  // Unmasked, priority 0.
 
   // Vector table: everything to IRET, then the handlers.
