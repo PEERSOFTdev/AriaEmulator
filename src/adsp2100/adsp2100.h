@@ -188,6 +188,8 @@ protected:
 	void device_reset();
 	void execute_run();
 	void execute_set_input(int inputnum, int state);
+	// ARIA: for SPORT autobuffering in the board model (end of adsp2100.cpp).
+	uint16_t autobuffer_read(int ireg, int mreg, bool &wrapped);
 
 	// ARIA: MAME's logerror, routed to DspBus::Log.
 	template <typename... Args>
@@ -379,6 +381,7 @@ protected:
 
 	// other internal states
 	int                 m_icount;
+	int                 m_idle_icount = 0;  // ARIA: cycles left when IDLE ended the slice.
 	int                 m_mstat_mask;
 	int                 m_imask_mask;
 

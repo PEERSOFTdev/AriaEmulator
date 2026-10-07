@@ -18,7 +18,8 @@ AriaMachine::AriaMachine(const FlashImage& flash, std::vector<uint8_t> kernel, R
       kernel_(std::move(kernel)),
       rtc_(std::move(clock)),
       cpu_(*this),
-      bios_(std::make_unique<HleBios>(*this)) {
+      bios_(std::make_unique<HleBios>(*this)),
+      dsp_(*this) {
   disks_[0] = MakeRomDisk();
   disks_[1] = MakeFlashDisk(flash);
   cpu_.SetTrapHandler([this](uint8_t number) { bios_->Trap(number); });
@@ -32,24 +33,100 @@ void AriaMachine::PowerOn() {
   powered_off_ = false;
   ucs_start_ = 0xFFC00;
   dsp_bytes_.clear();
+  samples_.clear();
+  sample_dividers_.clear();
+  dsp_log_.clear();
   dsp_control_ = 0;
   dsp_control_writes_ = 0;
+  dsp_state_ = DspState::kReset;
+  dsp_boots_ = 0;
+  mailbox_full_ = false;
+  dsp_debt_ = 0;
+  dsp_.Reset();
   cpu_.Reset();
   bios_->PowerOn(kernel_);
-  // DSP stand-in until the ADSP-2105 is emulated (HANDOFF 6.3): it is
-  // always ready. DRQ0 paces SPEAK's DMA channel 0 into 0402h, both the
-  // boot image (SPEAK.EXE+0A1Eh, control 76A6h) and the speech frames
-  // (+0F61h, 77A6h, interrupt at terminal count); INT3 is the "ready for
-  // a command byte" line SPEAK polls in the request register before each
-  // byte (+0A7Bh, bit 7 of 2Eh, with INT3 masked and level-triggered by
-  // writing 1Fh to 3Eh, +6792h). Nothing on B: reads the DSP back.
-  cpu_.SetDmaRequest(0, true);
-  cpu_.SetInterruptPin(3, true);
+  UpdateHostLines();
 }
 
 void AriaMachine::Run(int cycles) {
   if (powered_off_) return;
-  cpu_.Run(cycles);
+  // The CPU and the DSP in short alternating slices: a byte through the
+  // host mailbox needs the DSP to read it before the CPU's DMA sends the
+  // next one, so long slices would throttle SPEAK's stream.
+  constexpr int kSlice = 64;
+  for (int done = 0; done < cycles && !powered_off_;) {
+    const int used = cpu_.Run(std::min(kSlice, cycles - done));
+    done += used;
+    if (dsp_state_ != DspState::kRunning) continue;
+    dsp_debt_ += static_cast<int64_t>(used) * kDspHz;
+    const int dsp_cycles = static_cast<int>(dsp_debt_ / kCpuHz);
+    if (dsp_cycles > 0) {
+      dsp_debt_ -= static_cast<int64_t>(dsp_.Run(dsp_cycles)) * kCpuHz;
+    }
+  }
+}
+
+// ---- The DSP's host interface (HANDOFF 6.3) ----
+
+void AriaMachine::UpdateHostLines() {
+  // An empty mailbox says "next byte" to the CPU in two ways: DRQ0 paces
+  // SPEAK's DMA channel 0 into 0402h, both the boot image (SPEAK.EXE+0A1Eh,
+  // control 76A6h) and the speech frames (+0F61h, 77A6h); INT3 is the line
+  // SPEAK polls in the request register before each command byte (+0A7Bh,
+  // bit 7 of 2Eh, with INT3 masked and level-triggered by writing 1Fh to
+  // 3Eh, +6792h). Whether the board has one signal or two is unknown.
+  const bool ready = !mailbox_full_;
+  cpu_.SetDmaRequest(0, ready);
+  cpu_.SetInterruptPin(3, ready);
+}
+
+void AriaMachine::WriteDspControl(uint8_t value) {
+  // SPEAK writes (shadow XOR 7) OR 8 from its copy at DS:561Ch
+  // (SPEAK.EXE+896Ah), so bit 3 is set in every write except the plain 0
+  // before booting (+09F9h) and the 8 after it (+0A14h): bit 3 releases
+  // the DSP's reset. The meaning of bits 0-2 is unknown.
+  const bool was_running = (dsp_control_ & 0x08) != 0;
+  dsp_control_ = value;
+  ++dsp_control_writes_;
+  const bool run = (value & 0x08) != 0;
+  if (!run) {
+    dsp_state_ = DspState::kReset;
+  } else if (!was_running) {
+    // Out of reset with MMAP = 0: the DSP boots page 0 from its boot
+    // memory, which on the Aria is the host mailbox (HANDOFF 6.3).
+    dsp_.Reset();
+    dsp_.BeginBoot();
+    dsp_state_ = DspState::kBooting;
+    ++dsp_boots_;
+    if (mailbox_full_) WriteDspData(mailbox_);
+  }
+}
+
+void AriaMachine::WriteDspData(uint8_t value) {
+  mailbox_ = value;
+  mailbox_full_ = true;
+  if (dsp_state_ == DspState::kBooting) {
+    // The boot sequencer reads each byte as soon as it is there.
+    mailbox_full_ = false;
+    if (dsp_.BootByte(value)) dsp_state_ = DspState::kRunning;
+  } else if (dsp_state_ == DspState::kRunning) {
+    // IRQ2, set to edge-triggered by LPC.DSP (ICNTL = 14h at 0042h).
+    dsp_.SetInterrupt(Adsp2105::kIrq2, true);
+  }
+  UpdateHostLines();
+}
+
+uint16_t AriaMachine::ReadExternalData(uint32_t address) {
+  // LPC.DSP and PLAY.DSP read the mailbox at DM(3000h) and nothing else
+  // outside the chip (LPC.DSP 005Fh, 0082h; PLAY.DSP 00C9h).
+  if (address != 0x3000) {
+    ++unknown_ports_[static_cast<uint16_t>(0xD000 | (address & 0x0FFF))];
+    return 0xFFFF;
+  }
+  mailbox_full_ = false;
+  dsp_.SetInterrupt(Adsp2105::kIrq2, false);
+  UpdateHostLines();
+  return mailbox_;
 }
 
 // ---- Memory ----
@@ -119,16 +196,11 @@ void AriaMachine::WriteIo(uint16_t port, uint8_t value) {
   switch (port) {
     case 0x0480: latch_480_ = value; return;
     case 0x0580: latch_580_ = value; return;
-    case 0x0401:
-      // DSP control latch: SPEAK writes (shadow XOR 7) OR 8 from its copy
-      // at DS:561Ch (SPEAK.EXE+896Ah); 0 then 8 around the boot looks like
-      // reset and release (+09F9h, +0A14h).
-      dsp_control_ = value;
-      ++dsp_control_writes_;
-      return;
+    case 0x0401: WriteDspControl(value); return;
     case 0x0402:
       // DSP data port: boot image, command bytes and speech frames.
       dsp_bytes_.push_back(value);
+      WriteDspData(value);
       return;
     case 0x0701:
       // TURNOFF.COM writes 0 here and halts (HANDOFF 6.9).

@@ -9,7 +9,8 @@
 // instruction and stops at the first jump into empty memory, listing the
 // 40 instructions before it. -dump PATH saves the address space there, or
 // at the end of the run without -t (it holds firmware, so never inside the
-// repository); -dsp PATH saves the bytes sent to the DSP, likewise.
+// repository); -dsp PATH saves the bytes sent to the DSP, likewise, and
+// -wav PATH RATE the samples the DSP shifted out, as a WAV file.
 
 #include <algorithm>
 #include <cstdio>
@@ -18,6 +19,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -51,6 +53,8 @@ int wmain(int argc, wchar_t** argv) {
   bool verbose = false;
   bool trace = false;
   std::wstring dsp_path;   // Bytes sent to the DSP (0402h); outside the repository too.
+  std::wstring wav_path;   // SPORT1 samples as a WAV file at `wav_rate`.
+  uint32_t wav_rate = 8000;
   std::wstring dump_path;  // The 1 MB address space at the stop (-t) or the end, for analysis outside the repository.
   long long budget = 400'000'000;  // 84 s of the assumed 4.77 MHz.
   for (int i = 3; i < argc; ++i) {
@@ -62,6 +66,9 @@ int wmain(int argc, wchar_t** argv) {
       dump_path = argv[++i];
     } else if (std::wstring(argv[i]) == L"-dsp" && i + 1 < argc) {
       dsp_path = argv[++i];
+    } else if (std::wstring(argv[i]) == L"-wav" && i + 2 < argc) {
+      wav_path = argv[++i];
+      wav_rate = static_cast<uint32_t>(std::wcstoul(argv[++i], nullptr, 10));
     } else {
       budget = std::wcstoll(argv[i], nullptr, 10);
     }
@@ -126,6 +133,30 @@ int wmain(int argc, wchar_t** argv) {
     machine.Run(kSlice);
     ran += kSlice;
   }
+  if (!wav_path.empty()) {
+    // 16-bit mono PCM at 44.1 kHz. The Aria's sample rate is unknown
+    // (HANDOFF 6.3); `wav_rate` is the assumed rate at SCLKDIV 4 (Czech
+    // LPC.DSP speech), and every sample lasts in proportion to its SCLKDIV + 1,
+    // because the board derives the frame sync from the serial clock.
+    // Sample-and-hold resampling: good enough to listen and compare.
+    constexpr uint32_t kOutRate = 44100;
+    const auto& samples = machine.Samples();
+    const auto& dividers = machine.SampleDividers();
+    std::vector<int16_t> rendered;
+    double t_end = 0.0, t_out = 0.0;
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+      t_end += (dividers[i] + 1) / 5.0 / wav_rate;
+      for (; t_out < t_end; t_out += 1.0 / kOutRate) rendered.push_back(samples[i]);
+    }
+    const uint32_t data_bytes = static_cast<uint32_t>(rendered.size() * 2);
+    std::ofstream out(std::filesystem::path(wav_path), std::ios::binary);
+    auto u32 = [&](uint32_t v) { for (int i = 0; i < 4; ++i) out.put(static_cast<char>(v >> (8 * i))); };
+    auto u16 = [&](uint16_t v) { out.put(static_cast<char>(v)); out.put(static_cast<char>(v >> 8)); };
+    out.write("RIFF", 4); u32(36 + data_bytes); out.write("WAVEfmt ", 8);
+    u32(16); u16(1); u16(1); u32(kOutRate); u32(kOutRate * 2); u16(2); u16(16);
+    out.write("data", 4); u32(data_bytes);
+    for (int16_t s : rendered) u16(static_cast<uint16_t>(s));
+  }
   if (!dsp_path.empty()) {
     std::ofstream out(std::filesystem::path(dsp_path), std::ios::binary);
     out.write(reinterpret_cast<const char*>(machine.DspBytes().data()),
@@ -151,6 +182,21 @@ int wmain(int argc, wchar_t** argv) {
                 machine.DspControlWrites(), machine.DspControl());
     for (std::size_t i = 0; i < dsp.size() && i < 32; ++i) std::printf(" %02X", dsp[i]);
     std::printf("\n");
+    const auto& samples = machine.Samples();
+    int peak = 0;
+    for (int16_t s : samples) peak = std::max(peak, std::abs(static_cast<int>(s)));
+    std::printf("DSP: %d boots, PC %04X%s, %zu samples out of SPORT1, peak %d, outside accesses %d\n",
+                machine.DspBoots(), machine.dsp().Pc(), machine.dsp().Idle() ? " (IDLE)" : "", samples.size(), peak,
+                machine.dsp().OutOfRangeAccesses());
+    std::printf("DSP control: system 3FFFh %04X, SPORT1 3FF2h %04X, SCLKDIV 3FF1h %04X, autobuffer 3FEFh %04X\n",
+                machine.dsp().ControlRegister(0x3FFF), machine.dsp().ControlRegister(0x3FF2),
+                machine.dsp().ControlRegister(0x3FF1), machine.dsp().ControlRegister(0x3FEF));
+    std::map<int, std::size_t> per_divider;
+    for (uint16_t d : machine.SampleDividers()) ++per_divider[d];
+    std::printf("DSP busy cycles %lld; samples per SCLKDIV:", static_cast<long long>(machine.dsp().BusyCycles()));
+    for (const auto& [d, n] : per_divider) std::printf(" %d:%zu", d, n);
+    std::printf("\n");
+    for (const std::string& line : machine.DspLog()) std::printf("  %s", line.c_str());
     std::printf("cycles: %lld, BIOS ticks: %u\n", ran,
                 machine.PeekWord(0x46C) | static_cast<unsigned>(machine.PeekWord(0x46E)) << 16);
     // PCB at I/O 0000h: timers 0 and 2, then the interrupt controller
@@ -207,6 +253,22 @@ int wmain(int argc, wchar_t** argv) {
     std::cout << "FAIL boot: the DSP did not receive HARPUP.04\n";
     return 1;
   }
-  std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, LPC.DSP and harp to the DSP)\n";
+  // The emulated ADSP-2105 runs both programs, and they use different
+  // serial clock dividers: LPC.DSP speech (4 in the Czech builds, 6 in the
+  // English 7.04) and PLAY.DSP's harp (19). So non-silent output at two
+  // dividers means speech and a sound both came out of SPORT1.
+  std::map<int, std::size_t> audible;
+  for (std::size_t i = 0; i < machine.Samples().size(); ++i) {
+    if (std::abs(static_cast<int>(machine.Samples()[i])) >= 16) ++audible[machine.SampleDividers()[i]];
+  }
+  int programs = 0;
+  for (const auto& [divider, count] : audible) programs += count >= 1000;
+  if (programs < 2) {
+    std::cout << "FAIL boot: audible DSP output at fewer than two clock dividers:";
+    for (const auto& [divider, count] : audible) std::cout << " " << divider << ":" << count;
+    std::cout << "\n";
+    return 1;
+  }
+  std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, speech and harp from the DSP)\n";
   return 0;
 }

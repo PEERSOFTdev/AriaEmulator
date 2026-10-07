@@ -1270,6 +1270,10 @@ void adsp21xx_device::execute_run()
 				if (BIT(op, 15))
 				{
 					m_idle = 1;
+					// ARIA: keep the cycles left in the slice, so that the board
+					// model can run its SPORT while the DSP idles (adsp2105.cpp,
+					// dsp_selftest TestSportAutobuffer).
+					m_idle_icount = m_icount - 1;
 					m_icount = 0;
 				}
 				else
@@ -1942,6 +1946,19 @@ void adsp21xx_device::execute_run()
 
 		m_icount--;
 	} while (m_icount > 0);
+}
+
+// ARIA: SPORT autobuffering for the board model (adsp2105.cpp): one data
+// memory read through I/M with MAME's own circular addressing, out of line
+// because data_read and modify_address are inline in this file. Returns
+// the word; `wrapped` tells whether the I register wrapped (manual 5.11).
+uint16_t adsp21xx_device::autobuffer_read(int ireg, int mreg, bool &wrapped)
+{
+	const uint32_t before = m_i[ireg];
+	const uint16_t data = data_read(before);
+	modify_address(ireg, mreg);
+	wrapped = m_l[ireg] != 0 && (m_m[mreg] >= 0 ? m_i[ireg] <= before : m_i[ireg] >= before);
+	return data;
 }
 
 }  // namespace mame_adsp

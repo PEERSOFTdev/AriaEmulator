@@ -589,6 +589,63 @@ jedno. Zda DRQ0 a INT3 jsou jeden signál, nebo dva, se z kódu nepozná;
 model je oba drží „připraveno“, když je latch prázdný. **[odvozeno, ne
 doloženo schématem]**
 
+**DSP ve stroji (7. 10. 2026).** Jímka výše (DRQ0 a INT3 trvale aktivní)
+už neplatí: `AriaMachine` má skutečný ADSP-2105 a schránku. Zápis do
+`0402h` naplní schránku; během zavádění ji zaváděcí logika hned
+vyprázdní, za běhu dá DSP hranu na IRQ2 a DSP ji vyprázdní čtením
+`DM($3000)`. Prázdná schránka dává 80188 DRQ0 i INT3. `0401h` bit 3
+z 0 na 1 resetuje DSP a spustí zavádění stránky 0 ze schránky, 0 drží
+reset. CPU a DSP se střídají po 64 taktech CPU. `Adsp2105` přidal podle
+manuálu: SPORT1 vysílání s autobufferem (5.11; TX1 → posuvný registr,
+další slovo z `DM(I,M)` s kruhovým adresováním MAME, přerušení při
+přetočení), IDLE, které opravdu čeká na přerušení (MAME jen ukončí
+úsek; malá změna `ARIA:` v jádře si pamatuje zbylé takty), a vnitřní
+přerušení SPORT1, které se při převzetí maže. `dsp_selftest` to ověřuje
+programem s autobufferem čtyř slov.
+
+Předpoklady, které nic nedokládá:
+
+- **Takt DSP 10 MHz** (`AriaMachine::kDspHz`), běžný stupeň 2105.
+- **ICNTL = 0 po resetu.** Manuál (3.4.2.1): „undefined after a
+  processor reset“, MAME ho resetem nemění. `PLAY.DSP` ICNTL nenastavuje,
+  a přitom obě jeho obsluhy přerušení používají sekundární banku
+  registrů (`ENA SEC_REG` na `00C6h` a `011Bh`), což je bezpečné jen bez
+  vnořování. S ICNTL = 14h, které zůstalo po `LPC.DSP`, se IRQ2 vnořilo
+  do obsluhy SPORT1 a přepsalo AR mezi `0120h` a `0123h`: systémový
+  registr dostal `0059h` (SPORT1 přepnutý na piny) a vše se zaseklo.
+  S nulou start doběhne.
+- **Délka slova SPORT1** = (SLEN + 1) × 2 × (SCLKDIV + 1) taktů, slova
+  za sebou. Rámcová synchronizace je ale vnější (4C8Fh: ITFS = 0), takže
+  skutečná vzorkovací frekvence je dána deskou.
+
+**Výsledek startu 7.05:** pět zavedení (`LPC.DSP`, `PLAY.DSP`…), celý
+proud 32 261 B projde schránkou, stroj dojde do MAINMENU a čeká na
+klávesu v `INT 16h` BIOSu. Ze SPORT1 vyjde 197 833 vzorků: 188 361 při
+SCLKDIV 4 (řeč z `LPC.DSP`, z asi 188 rámců „Sync“) a 9 472 při
+SCLKDIV 19 (harfa; `HARPUP.04` má 9 431 B, tedy vzorek na bajt). Totéž
+na 6.87 a 6.99; anglická 7.04 má `LPC.DSP` se **SCLKDIV 6** (`004Ch`),
+mluví tedy 5/7 frekvencí české řeči. `LPC.DSP` potřebuje v průměru asi
+210 instrukcí na vzorek (včetně ticha), při 10 MHz tedy nejvýš asi
+47 000 vzorků za sekundu.
+
+**Vzorkovací frekvence zůstává otevřená.** Poměry jsou jisté (trvání
+vzorku ∝ SCLKDIV + 1, protože deska odvozuje rámcovou synchronizaci ze
+sériových hodin; tabulka `PLAY.DSP` na `0142h` = 19, 19, 13, 9, 6),
+absolutní hodnota ne. `boot_test -wav CESTA FREKVENCE` vykreslí výstup
+do WAV 44,1 kHz s danou frekvencí pro SCLKDIV 4; rozhodne poslech
+(uživatel PeterTalk zná).
+
+**Poslech, 7. 10. 2026:** ze tří variant (16 000, 22 050 a 32 000 Hz pro
+SCLKDIV 4) zní nejvěrněji **32 000 Hz**, „možná ještě o kousek výš“;
+harfa při ní (8 kHz) „zní docela věrně“. Pracovní hodnota je tedy
+32 kHz pro českou řeč. Hypotéza, která k tomu sedí: deska dává
+rámcovou synchronizaci každých 32 period sériových hodin (16bitový
+vzorek a 16 volných bitů), takže frekvence = takt DSP / (2 × (SCLKDIV
++ 1) × 32); při 10 MHz to je 31,25 kHz pro řeč a 7,8 kHz pro harfu,
+při o něco rychlejším krystalu o kousek víc. **[hypotéza]** Další neznámé: význam zápisů do vnější
+programové paměti `2000h` (PX = 1 v `LPC.DSP` `001Eh`, `0115h`; PX = 3
+v `PLAY.DSP` `0073h`), nejspíš latch na desce (výstup? frekvence?).
+
 Aria tedy zavádí DSP standardní zaváděcí stránkou 0 a 80188 hraje roli
 EPROM. Zápis `0401h` ← 0 a pak 8 kolem zavádění (výše) je nejspíš reset
 DSP; zda bit 3 je reset, nebo vstup MMAP či BMODE, se ukáže z kódu, až
@@ -1176,3 +1233,7 @@ je tím pro hardware vyčerpaný**; dál slouží jako reference API.
    (6.10); další krok je, proč se běh za `arialarm` zastaví.
    7. 10. 2026: s jímkou DSP (6.3) start doběhne do MAINMENU na 7.05,
    7.04, 6.99 i 6.87. Další: záznam řeči z `INT 61h`, klávesy do BKB.
+5. Fáze 4 (`ar-6uh`) začala 7. 10. 2026: skutečný ADSP-2105 ve stroji,
+   `LPC.DSP` a `PLAY.DSP` vydávají řeč a harfu (6.3). Otevřené:
+   vzorkovací frekvence (poslech), latch `2000h`, bity `0401h`; pak
+   výstup zvuku v aplikaci.

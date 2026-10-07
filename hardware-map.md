@@ -23,7 +23,8 @@ binárek a z instrukcí `mov dx,imm16` těsně před `in`/`out`.
   - `22h` EOI řadiče přerušení (`FOSSIL.COM`, `SPEAK.EXE`)
   - `34h` řízení přerušení DMA0 a `3Eh` řízení INT3 (`SPEAK.EXE+0F89`,
     `+6794`); DSP tedy nejspíš hlásí rámce přes INT3 a DMA0
-    **[předpoklad]**
+    **[předpoklad]** — od 7. 10. 2026 doloženo během: prázdná schránka
+    `0402h` dává DRQ0 i INT3 (HANDOFF 6.3)
   - `38h`, `3Ah` řízení INT0, INT1 (`FOSSIL.COM`)
   - `5Ah`, `5Eh` časovač 1 (`FOSSIL.COM`)
   - `A0h` UMCS (`RAMDISK.EXE` čte i zapisuje) **[předpoklad]**
@@ -84,6 +85,14 @@ Porty s pevnou adresou `00h`–`FFh` (`in al,imm`) zůstávají ve výpisu
 zašuměné daty; za doklad se berou jen porty načtené do `DX`.
 
 - `0401h`, `0402h` — zápis z `SPEAK.EXE`, nejspíš DSP **[předpoklad]**
+
+  **Upřesněno 7. 10. 2026 (HANDOFF 6.3):** `0401h` je řídicí latch DSP,
+  bit 3 = DSP běží (0 drží reset), bity 0–2 neznámé **[binárka]**;
+  `0402h` je jednobajtová schránka do DSP: zápis dá DSP IRQ2 (při
+  zavádění bajt zaváděcí stránky), DSP ji čte na vnější datové adrese
+  `3000h`, prázdná schránka dává 80188 DRQ0 a INT3 **[binárka, výklad]**.
+  DSP navíc zapisuje do vnější programové paměti `2000h` (PX = 1 nebo
+  3), nejspíš latch na desce, význam neznámý **[binárka]**.
 - `0480h` — čtou `BKB.COM`, `DLFFSA.EXE`, `TRICKSS2.EXE`, zapisuje
   `VOICE.SYS`
 - `050Ch`, `050Dh` — čtou `ARIALARM.EXE`, `BKB.COM` (registry C a D RTC,

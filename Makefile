@@ -36,7 +36,7 @@ CPU_OBJS   := $(BUILD)/cpu80188.o $(I86_OBJS)
 DSP_OBJS   := $(BUILD)/adsp2105.o $(BUILD)/adsp_adsp2100.o
 # Stroj Arie s BIOSem emulatoru (HANDOFF 6.10, 6.11).
 MACHINE_OBJS := $(BUILD)/aria_machine.o $(BUILD)/hle_bios.o $(BUILD)/rtc146818.o \
-                $(CPU_OBJS) $(CORE_OBJS)
+                $(CPU_OBJS) $(DSP_OBJS) $(CORE_OBJS)
 
 EMU        := $(BIN)/AriaEmulator.exe
 TEST_EXES  := $(BIN)/codec_test.exe $(BIN)/flash_selftest.exe $(BIN)/firmware_test.exe \
