@@ -320,7 +320,45 @@ int wmain(int argc, wchar_t** argv) {
     std::cout << "FAIL boot: no speech after space + dot 4 (" << key_dsp_bytes << " bytes to the DSP)\n";
     return 1;
   }
+
+  // The battery keeps the RAM disk D: through power-off (HANDOFF 6.9):
+  // plant a file entry in D:'s root directory, power on again with the RAM
+  // kept, and see that RAMDISK.EXE takes the disk over instead of making a
+  // new one. VDISK sits at B0000h (RAMDISK.EXE+01BFh, HANDOFF 6.2), its
+  // boot sector carries "VDISK" and a BPB.
+  constexpr uint32_t kRamDisk = 0xB0000;
+  auto vdisk = [&] {
+    const char sign[] = "VDISK";
+    for (int i = 0; i < 5; ++i) {
+      if (machine.Peek(kRamDisk + 3 + i) != static_cast<uint8_t>(sign[i])) return false;
+    }
+    return true;
+  };
+  if (!vdisk()) {
+    std::cout << "FAIL boot: no VDISK boot sector at B0000h\n";
+    return 1;
+  }
+  const uint32_t sector = machine.PeekWord(kRamDisk + 0x0B);
+  const uint32_t root = kRamDisk + sector * (machine.PeekWord(kRamDisk + 0x0E) +
+                                             machine.Peek(kRamDisk + 0x10) * machine.PeekWord(kRamDisk + 0x16));
+  const char kMarker[] = "BATERIE TXT";
+  uint32_t entry = root;
+  while (machine.Peek(entry) != 0 && machine.Peek(entry) != 0xE5) entry += 32;
+  machine.PowerOn();
+  for (int i = 0; i < 11; ++i) machine.Poke(entry + i, static_cast<uint8_t>(kMarker[i]));
+  machine.Poke(entry + 11, 0x20);  // Archive.
+  for (long long t = 0; t < AriaMachine::kCpuHz * 30LL; t += kSlice) {
+    machine.Run(kSlice);
+    if (machine.bios().Teletype().find(">mainmenu") != std::string::npos) break;
+  }
+  if (verbose) std::cout << "--- INT 10h output, second power-on ---\n" << Printable(machine.bios().Teletype()) << "\n";
+  bool kept = vdisk();
+  for (int i = 0; i < 11 && kept; ++i) kept = machine.Peek(entry + i) == static_cast<uint8_t>(kMarker[i]);
+  if (machine.bios().Teletype().find(">mainmenu") == std::string::npos || !kept) {
+    std::cout << "FAIL boot: after a second power-on " << (kept ? "no MAINMENU" : "drive D: was made anew") << "\n";
+    return 1;
+  }
   std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, speech and harp from the DSP,"
-               " space + dot 4 answered)\n";
+               " space + dot 4 answered, drive D: kept through power-on)\n";
   return 0;
 }

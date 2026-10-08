@@ -976,6 +976,23 @@ výchozí hodnoty. Bead `ar-ram`. Pozor na pořadí startu: RAMDISK.EXE
 (Datalight VDISK „static“) disk při zavedení najde, nebo založí; zda
 obsah po teplém resetu převezme, ukáže až běh.
 
+**8. 10. 2026, stroj:** `AriaMachine::PowerOn()` už RAM nenuluje a
+CMOS hodin nechává (CMOS se nenulovala ani dřív, jen se `PowerOn()`
+nevolalo podruhé); nulování a výchozí CMOS dělá nové `BatteryCut()`.
+**Ověřeno během:** `boot_test` po prvním startu zapíše do kořenového
+adresáře D: (`B0600h` podle BPB VDISK na `B0000h`) položku, zapne stroj
+znovu s RAM a po druhém startu (7.05 i 6.87) ji tam najde — RAMDISK.EXE
+disk převezme. Zkouška opačně: po `BatteryCut()` disk založí znovu a
+položka zmizí. Podpis „VDISK“ v zaváděcím sektoru to **nerozhoduje**:
+s přepsaným podpisem ho VDISK obnoví a adresář nechá; podle čeho disk
+pozná, zatím nečteno. `INT 19h` volají jen nástroje karet (TRICKSS2,
+CARDMAN, DLFMT, FORMAT, `tools/ints.py`), start ne.
+
+Zbývá: okno zatím volá `PowerOn()` jen jednou, takže uživatel změnu
+neuslyší. Chybí zapnutí po vypnutí (`0701h`), restart po `INT 19h`,
+klávesy pro teplý reset a odpojení baterie a uložení paměti do souboru
+mezi spuštěními emulátoru.
+
 ### 6.10 Rozhodnutí: vrstva DOS
 
 Buď jádro FreeDOS na HLE BIOSu, nebo `INT 21h` v hostiteli. Riziko: ovladače

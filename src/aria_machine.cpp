@@ -16,7 +16,8 @@ AriaMachine::AriaMachine(const FlashImage& flash, std::vector<uint8_t> kernel, R
     : ram_(1 << 20, 0),
       flash_(flash.bytes),
       kernel_(std::move(kernel)),
-      rtc_(std::move(clock)),
+      clock_(std::move(clock)),
+      rtc_(clock_),
       cpu_(*this),
       bios_(std::make_unique<HleBios>(*this)),
       dsp_(*this) {
@@ -27,8 +28,12 @@ AriaMachine::AriaMachine(const FlashImage& flash, std::vector<uint8_t> kernel, R
 
 AriaMachine::~AriaMachine() = default;
 
-void AriaMachine::PowerOn() {
+void AriaMachine::BatteryCut() {
   std::fill(ram_.begin(), ram_.end(), 0);
+  rtc_ = Rtc146818(clock_);
+}
+
+void AriaMachine::PowerOn() {
   latch_580_ = latch_480_ = 0;
   powered_off_ = false;
   ucs_start_ = 0xFFC00;

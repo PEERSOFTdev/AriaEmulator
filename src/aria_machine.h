@@ -55,7 +55,12 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   ~AriaMachine() override;
 
   // Power-on: BIOS set-up, then the FreeDOS kernel started from drive B:.
+  // The battery keeps the RAM, the RAM disk D: in it, and the clock's CMOS
+  // through power-off and reset (HANDOFF 6.9), so they stay as they were.
   void PowerOn();
+  // The battery disconnected: RAM and CMOS are lost, the clock falls back
+  // to host time. A new machine starts this way.
+  void BatteryCut();
   // Runs about `cycles` CPU cycles.
   void Run(int cycles);
 
@@ -144,6 +149,7 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   std::vector<uint8_t> flash_;    // Flash contents as the window sees them.
   std::vector<uint8_t> kernel_;
   BiosDisk disks_[2];             // 0 = A: ROM disk, 1 = B: flash.
+  Rtc146818::Clock clock_;        // For a new RTC after a battery cut.
   Rtc146818 rtc_;
   Cpu80188 cpu_;
   std::unique_ptr<HleBios> bios_;
