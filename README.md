@@ -7,9 +7,8 @@ takže hlas zní stejně jako na skutečném stroji.
 
 **Stav: vývoj.** Emulátor spustí Arii z obrazu disku B: až do hlavního
 menu a **je slyšet**: úvodní řeč PeterTalk a harfa vycházejí z původních
-programů na emulovaném DSP. **Klávesy zatím do Arie nevedou**, takže se
-s ní nedá nic dělat; okno se zavírá Alt+F4. Stav stojí v titulku okna
-(NVDA+T). Co je zjištěno a co je otevřené, popisuje `HANDOFF.md`, mapu
+programů na emulovaném DSP. Klávesnice hostitele hraje klávesy Arie (viz
+níže); okno se zavírá Alt+F4. Stav stojí v titulku okna (NVDA+T). Co je zjištěno a co je otevřené, popisuje `HANDOFF.md`, mapu
 hardwaru `hardware-map.md`.
 
 ## Co emulátor potřebuje
@@ -51,6 +50,25 @@ nastavená, `CARD\CC0705.ZIP` ve složce z proměnné `ARIAFW` (výchozí
 
 Boot ROM Arie (BIOS a jádro ROM-DOS) se nedochovala. Emulátor ji nahrazuje
 vlastní implementací.
+
+## Klávesnice
+
+Klávesy Arie jsou rozložené stejně jako v emulátoru Eureky A4:
+
+- `F`, `D`, `S` jsou body 1, 2, 3 a `J`, `K`, `L` body 4, 5, 6;
+  mezerník je mezerník. Akord platí, až jsou všechny jeho klávesy
+  stisknuté současně.
+- `F1` až `F8` jsou funkční klávesy Arie.
+- Šipky jsou kurzorový kříž a `Shift` je kulatá klávesa uprostřed něj;
+  samotný ztiší řeč. `Home`, `End`, `PgUp` a `PgDn` stisknou dvě šipky
+  naráz (například `Home` je nahoru a vlevo).
+- Písmena se nepíšou, píše se body, jako na Arii. `Alt+F4` zavře okno.
+
+Ovladač klávesnice Arie bere akord, až se nezmění po tři snímání
+klávesnice. Emulátor proto drží všechny stisknuté klávesy, dokud od
+posledního stisku neuběhne pět snímání (zatím asi 0,2 sekundy, HANDOFF
+6.4), takže i rychle zahraný akord dojde celý. Automatické opakování
+Windows se nepoužívá.
 
 ## Zvuk
 

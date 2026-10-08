@@ -23,6 +23,8 @@ constexpr uint8_t kHandled[] = {0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 
 // The PCB after the BIOS moved it to I/O 0000h, as on the Aria (HANDOFF 6.1).
 constexpr uint16_t kPcbRelocation = 0x00FE;  // Offset 7Fh at its new base.
 constexpr uint16_t kTimer0MaxA = 0x0052, kTimer0Control = 0x0056;
+constexpr uint16_t kTimer2MaxA = 0x0062, kTimer2Control = 0x0066;
+constexpr uint16_t kEoi = 0x0022, kInService = 0x002C;
 constexpr uint16_t kTimerIntControl = 0x0032;
 constexpr uint16_t kInt2Control = 0x003C;
 
@@ -122,8 +124,17 @@ void HleBios::PowerOn(const std::vector<uint8_t>& kernel) {
   // its maximum is larger than that.
   cpu.OutWord(kTimer0MaxA, 0);            // 0 = 65536.
   cpu.OutWord(kTimer0Control, 0xC001);    // EN, INH, CONT; no interrupt.
-  cpu.OutWord(kTimerIntControl, 0x0008);  // Timer interrupts masked.
   cpu.OutWord(kInt2Control, 0x0000);      // INT2: unmasked, edge, priority 0.
+  // Timer 2 interrupts periodically on vector 13h, the 80186's type for it:
+  // on the Aria "INT 13h" is this hardware interrupt, and BKB scans the key
+  // matrix in its hook (BKB.COM+1A40h, call 02E5h). AAPI's hook on the same
+  // vector reloads timer 2's maximum with C925h before passing it on
+  // (AAPI.EXE+9F20), so the BIOS starts with that value: 1.19318 MHz /
+  // 51493 = 23.2 scans a second (HANDOFF 6.4). The vector is shared with
+  // the disk service FreeDOS needs; the INT 13h handler tells them apart.
+  cpu.OutWord(kTimer2MaxA, 0xC925);
+  cpu.OutWord(kTimer2Control, 0xE001);    // EN, INH, INT, CONT.
+  cpu.OutWord(kTimerIntControl, 0x0000);  // Timer interrupts unmasked, priority 0.
 
   // Vector table: everything to IRET, then the handlers.
   for (int n = 0; n < 256; ++n) {
@@ -220,7 +231,17 @@ void HleBios::Trap(uint8_t number) {
     case 0x10: Video(regs); break;
     case 0x11: regs.r.ax = machine_.PeekWord(kBda + kEquipment); break;
     case 0x12: regs.r.ax = machine_.PeekWord(kBda + kMemorySize); break;
-    case 0x13: Disk(regs); break;
+    case 0x13:
+      // A timer interrupt in service means this is timer 2's tick (above),
+      // not a disk call: acknowledge it and leave the registers alone.
+      // Software calls never come from inside a timer interrupt here: the
+      // tick's INT 08h chain runs on INT2 (HANDOFF 6.1).
+      if (machine_.cpu().InWord(kInService) & 0x0001) {
+        machine_.cpu().OutWord(kEoi, 0x0008);
+        return;
+      }
+      Disk(regs);
+      break;
     case 0x14: Serial(regs); break;
     case 0x15: System(regs); break;
     case 0x16: Keyboard(regs); break;

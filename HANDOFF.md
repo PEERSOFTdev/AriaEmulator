@@ -359,7 +359,9 @@ Předpoklady, které nic na B: nedokládá, a proto se mají ověřit:
   **Neplatí od 7. 10. 2026:** časovač 2 tik dělat nesmí. AAPI si ho
   bere: hák `INT 13h` na `AAPI.EXE+9F20` před každým voláním disku
   nahraje jeho maximum (`out 62h`) a po něm čte jeho stav (`in 60h`),
-  měří tak délku diskových operací. Na Arii šlo B: přes okno a
+  měří tak délku diskových operací. *(Výklad „měří disk“ týž den
+  opraven v 6.4: `INT 13h` je na Arii přerušení časovače 2, ve kterém BKB
+  snímá klávesnici, a hák AAPI nastavuje jeho periodu.)* Na Arii šlo B: přes okno a
   `FLASHDSK.SYS`, takže hák běžel zřídka; u nás každý sektor B: jde
   přes `INT 13h`, hák maximum přepsal na `C925h` a tik se zastavil
   (zachyceno krokováním: zápis na `3189:0015` po `INT 13h` jádra).
@@ -382,6 +384,10 @@ Předpoklady, které nic na B: nedokládá, a proto se mají ověřit:
   `tools/ints.py`); obsluha v ROM smaže západku tiku, pošle EOI a zavolá
   `INT 08h` softwarově; vlastní přerušení časovače 0 je vypnuté.
   Skutečné zapojení desky je neznámé **[předpoklad]**;
+
+  **Neplatí od 8. 10. 2026:** takt není 4,77 MHz, ale **15 MHz**
+  (FOSSIL, BKB a AAPI, doloženo v 6.4), a časovač 0 má periodu 1 ms.
+  Odkud bral tik 18,2 Hz, je tím znovu otevřené;
 - **modelový bajt `FCh`** na `FFFF:000Eh` (čte ho `AAPI.EXE+46DEh`;
   hodnota Arie neznámá, 6.5);
 - **past ESC zapnutá** (bit 15 relokačního registru): `VOICE.SYS+01CEh`
@@ -760,6 +766,84 @@ poběží jádro.
   aplikace přímo jen 2Eh (ARIALARM, MAINMENU, ZM), 2Fh (ARIAMODE) a
   30h (MAINMENU). Významy 21h–31h zatím neznámé.
 
+**Rozložení matice a snímání, 7. 10. 2026 (dekódování v `BKB.COM`):**
+
+- **Stisknutá klávesa čte 1.** Snímání `+02E5h` porovná porty se
+  snímkem (`[13Ch]`–`[13Eh]`), při změně je čte znovu (`+036Ch`): `0584h`
+  s maskou `0Fh`, pak `0582h` a `0581h`; nově stisknuté bity (`nové AND
+  NOT staré`, `+038Eh`) nastaví příznak, který přes `INT 61h` AX=0101h
+  ztiší řeč. Akord se sbírá, dokud se nepustí, a vydá se jednou.
+- **`0581h`:** bity 0–5 = **body 1–6**, bit 7 = **mezerník** (z kódu se
+  stane modifikátor 20h, „Alt“ z API), bit 6 se nepoužívá. Pořadí bodů
+  (bit 0 = bod 1) sedí s akordy, které rutina `+048Ch` rozlišuje (mezera
+  + 01h, 02h, 04h, 08h, 20h, 0Bh, 25h, 31h, 38h…) a s akordy z API.DOC.
+
+  **Neplatí od 8. 10. 2026:** body 1–3 jsou obráceně, bity 0–5 jsou
+  **body 3, 2, 1, 4, 5, 6** (pořadí kláves zleva doprava). Uživatel to
+  slyšel při zkoušce (`F` dávalo bod 3, `S` bod 1) a dokládá to celý
+  seznam akordů s mezerou (`+052Eh`–`+0578h`): `1Bh` → `CAh` a `1Ch` →
+  `CBh` jsou čas (body 2345) a datum (body 145) z API.DOC jen v tomto
+  pořadí; v původním by to byly akordy, které nikdo nepopisuje, a čas a
+  datum (`1Eh`, `19h`) by v seznamu chyběly. Stejně `04h` → `C8h` je
+  Mode (mezera + bod 1) a `06h` → `D8h` baterie (mezera + body 12).
+  Akordy jako `0Bh` z odstavce výše byly souměrné, proto pořadí
+  nerozlišily.
+- **`0582h`:** bity 0–7 = **F1–F8** (`+0459h`: kód C0h + číslo bitu, v API
+  1C0h + n).
+- **`0584h`:** bity 0–3 = **kurzorový kříž** nahoru 1, dolů 2, vlevo 4,
+  vpravo 8 (kód 80h | maska = API 180h + maska), bit 6 = **Shift**
+  uprostřed kříže (modifikátor 10h, `+0467h`). Předpoklad z 6. 10. (řádek
+  `0584h` = kříž) tím je doložen.
+- **Snímání běží v přerušení časovače 2.** BKB volá `+02E5h` jen ze svého
+  háku na `INT 13h` (`+1A40h`, s kontrolou baterie `0700h`). Na 80186 je
+  typ 13h přerušení časovače 2, takže „INT 13h“ je na Arii periodické
+  hardwarové přerušení, ne disk; B: obsluhoval `FLASHDSK.SYS` oknem. Bez
+  běžícího časovače 2 BKB klávesy vůbec nevidí (ověřeno: MAINMENU stál v
+  `INT 16h` AH=22h a na akord nereagoval).
+
+**V emulátoru (7. 10. 2026):** BIOS pouští časovač 2 s přerušením a
+maximem `C925h`, jaké nastavuje hák AAPI (`AAPI.EXE+9F20`), tedy 23,2
+snímání za sekundu při 1,19318 MHz. Vektor 13h zároveň potřebuje disk
+FreeDOSu: obsluha `INT 13h` v BIOSu pozná přerušení časovače podle
+in-service registru PCB (bit 0) a jen ho potvrdí, jinak obslouží disk.
+Hostitelské klávesy podle Eureky: `F D S` = body 1–3, `J K L` = body
+4–6, mezerník, `F1`–`F8`, šipky = kříž, `Shift` = Shift, `Home`/`End`/
+`PgUp`/`PgDn` = dvojice šipek (API: Home = nahoru + vlevo, PgDn = dolů +
+vpravo), `Alt+F4` zavírá okno. Každá klávesa zůstane stisknutá aspoň
+150 ms emulovaného času, aby ji periodické snímání nepřehlédlo; autorepeat
+Windows se zahazuje. `boot_test` po startu stiskne mezeru + bod 4 („kde
+jsem“) a MAINMENU odpoví řečí na 7.05, 7.04, 6.99 i 6.87.
+
+**Zkouška uživatele a oprava, 8. 10. 2026:** krátce, ale vědomě
+zahraný akord nevydal nic; klávesy bylo nutné držet asi 200 ms (stejně
+je to v emulátoru Eureky). Příčina: BKB bere akord, až se matice po
+poslední změně nezmění po **tři snímání** (`+0350h` nastaví `[149h]` =
+3, `+031Ah` odpočítává, `+03AFh` akord převezme; při puštění se uložený
+stav přepíše nulou, takže se akord bere za držení, ne při puštění).
+Rychlý akord má klávesy dole jednu po druhé a 150 ms od stisku každé
+zvlášť nestačilo, aby byly dole **všechny současně** dost dlouho.
+**Neplatí** proto „aspoň 150 ms na klávesu“: emulátor nepustí žádnou
+klávesu, dokud od posledního stisku kterékoli neuběhne pět period
+časovače 2 (`C925h` × 4 takty CPU; jedno snímání na zjištění změny, tři
+na odpočet, jedno rezerva). Při dnešním taktu 4,77 MHz je to 216 ms,
+což je pořád pomalé, protože snímání je třikrát pomalejší než na Arii:
+
+- **Arie snímala asi 72× za sekundu, ne 23×.** Tabulka zpoždění
+  autorepeatu pro `INT 16h` AH=03h (`BKB.COM+1012h`) má pro PC hodnoty
+  250, 500, 750, 1000 ms **18, 36, 54, 72** snímání a tabulka rychlostí
+  (`+1016h`, 32 položek) 3 až 34 snímání pro 30 až 2 znaky za sekundu.
+- **Takt CPU je podle tří nezávislých míst 15 MHz** (časovače 3,75 MHz):
+  dělitele rychlostí FOSSILu (`FOSSIL.COM+0793h`: 2131, 1562, 781, 390,
+  195, 98, 49, 24, 12, 8, 6, 4, 3, 2) krát rychlost krát 16 dávají
+  3,75 MHz pro 110 až 115 200 Bd (krystal 14,7456 MHz by dal 2095, 1536,
+  768…); `C925h` při 3,75 MHz je 72,8 snímání za sekundu, což sedí na
+  tabulku autorepeatu; zpožďovací smyčka `AAPI.EXE+10B35` čeká na
+  průchod čítače časovače 0 hodnotou `753h` = 1875, tedy polovinou
+  periody 3750, a ta je při 3,75 MHz přesně **1 ms** (smyčka počítá
+  periody podle argumentu). Předpoklad 4,77 MHz z 6.1 tím padá; změna
+  taktu je další krok, protože tik 18,2 Hz pak nemůže dělat 16bitový
+  časovač 0 (6.1).
+
 ### 6.5 RTC a buzení alarmem
 
 API má `AwokenByRTC` a `EnableAlarm`; `ARIALARM.EXE` a `ARIAMODE.EXE`
@@ -859,6 +943,18 @@ nahrazené): `AAPI_SET_VPP` 0100h, `ENABLE_CARD_VCC` 0101h,
 Pojmenovává tedy přesně hardware z 6.2 a 6.8 a říká, že okno umí
 ukázat i **RAM** — režim 1 latche `0580h`, který jsme v kódu neviděli,
 je nejspíš RAM **[předpoklad]**.
+
+**Požadavek uživatele, 7. 10. 2026: RAM drží, dokud drží baterie.** Paměť
+Arie, včetně RAM disku D: (319 KB na `B0000h`–`FFBFFh`, 6.2) a paměti
+CMOS hodin (6.5), napájí baterie; reset a vypnutí ji nesmažou. Má to
+fungovat jako v Eurece: **teplý reset** (na Arii tlačítko zapnutí/resetu
+na levém boku, popis z roku 1997, 2) paměť ponechá, **úplný reset**
+odpovídá odpojení baterie a paměť smaže, a stav se při řádném vypnutí
+uloží, takže další spuštění emulátoru naváže. Zatím neplatí:
+`AriaMachine::PowerOn()` při každém startu nuluje celou RAM a CMOS má
+výchozí hodnoty. Bead `ar-ram`. Pozor na pořadí startu: RAMDISK.EXE
+(Datalight VDISK „static“) disk při zavedení najde, nebo založí; zda
+obsah po teplém resetu převezme, ukáže až běh.
 
 ### 6.10 Rozhodnutí: vrstva DOS
 

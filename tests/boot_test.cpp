@@ -152,7 +152,19 @@ int wmain(int argc, wchar_t** argv) {
       }
     }
   }
+  // MAINMENU waits for a key now. Press "Where am I" (space + dot 4: port
+  // 0581h bits 7 and 3, HANDOFF 6.4) the way the application does, held
+  // 0.3 s, and see whether SPEAK sends new speech to the DSP.
+  const std::size_t dsp_before = machine.DspBytes().size();
+  const std::size_t samples_before = machine.Samples().size();
+  machine.SetKeyRow(0, 0x88);
+  for (long long t = 0; t < AriaMachine::kCpuHz * 3 / 10; t += kSlice) machine.Run(kSlice);
+  machine.SetKeyRow(0, 0x00);
+  for (long long t = 0; t < AriaMachine::kCpuHz * 15LL; t += kSlice) machine.Run(kSlice);
+  const std::size_t key_dsp_bytes = machine.DspBytes().size() - dsp_before;
+  const std::size_t key_samples = machine.Samples().size() - samples_before;
   if (verbose) {
+    std::printf("after space+dot 4: %zu more bytes to the DSP, %zu more samples\n", key_dsp_bytes, key_samples);
     std::printf("emulated seconds to:");
     for (std::size_t s = 0; s < std::size(stages); ++s) std::printf(" [%s] %.1f", stages[s], stage_seconds[s]);
     std::printf(" [first sound] %.1f\n", first_sound);
@@ -302,6 +314,13 @@ int wmain(int argc, wchar_t** argv) {
     std::cout << "\n";
     return 1;
   }
-  std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, speech and harp from the DSP)\n";
+  // The keyboard: BKB scans the matrix in timer 2's interrupt (vector 13h)
+  // and MAINMENU answers "Where am I" with speech.
+  if (key_dsp_bytes < 500) {
+    std::cout << "FAIL boot: no speech after space + dot 4 (" << key_dsp_bytes << " bytes to the DSP)\n";
+    return 1;
+  }
+  std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, speech and harp from the DSP,"
+               " space + dot 4 answered)\n";
   return 0;
 }
