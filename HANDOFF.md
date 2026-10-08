@@ -189,6 +189,17 @@ emulátoru `src/hle_bios.*` (podrobnosti v 6.10 a 6.11). Na něm
 nabootuje jádro FreeDOS z disku B: české 7.05 až po svůj úvodní text;
 dál zatím ne, viz 6.10.
 
+**Okno podle Eureky, 8. 10. 2026** (požadavek uživatele: převzít okno,
+nabídku, nastavení, F11/F12 z emulátoru Eureky). Krok 1: `src/win/window.*`
+beze změny z Eureky, `src/main_window.*` (směrování kláves, tóny, titulek),
+`src/res/aria.rc` (nabídka česky, dvě tabulky akcelerátorů, VERSIONINFO,
+manifest), verze z `git describe` (`build/aria_version.h`). Nabídka má
+jen to, co už funguje: Konec, uvolnění klávesnice, F11, nápověda.
+Odchylka od Eureky: Alt+F4 zavírá okno vždy (Aria Alt nemá); Alt a F10
+nabídku neotevřou. Další krok: zapnutí a vypnutí (`0701h`, akord čtyř
+šipek „konec“ podle uživatele), teplý reset, odpojení baterie, nastavení
+a uložení paměti mezi spuštěními (`ar-ram`). Doplněk NVDA zatím ne.
+
 Plán fází: 0 kostra
 repozitáře, 1 jádro CPU a rozbalení PKLITE, 2 reverzní inženýrství
 (rozhodovací brána pro 6.10 a 6.11), 3 bezhlavý stroj nabootuje do

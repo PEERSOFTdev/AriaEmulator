@@ -1,0 +1,346 @@
+#include "main_window.h"
+
+#include <algorithm>
+#include <iterator>
+
+#include "aria_version.h"
+#include "res/resource.h"
+
+namespace {
+
+constexpr wchar_t kClassName[] = L"AriaEmulatorWindow";
+constexpr UINT_PTR kAudioTimer = 1;
+
+// A mode nobody can hear is the trap this machine keeps setting: a keyboard
+// that goes nowhere and a keyboard that is broken are both silence.  So every
+// change of where the keys go says so out loud, in the host's own voice --
+// Beep() goes to the default device, not through the emulated DSP, so it
+// cannot be mistaken for the Aria speaking.  The shapes are the Eureka
+// emulator's, note for note, so that its users hear the same thing.
+void Tone(unsigned hz, unsigned ms) { Beep(hz, ms); }
+
+// Falling: the keys are leaving the Aria.  Rising: they are coming back.
+void ToneLeaving() { Tone(880, 70); Tone(440, 90); }
+void ToneReturning() { Tone(440, 70); Tone(880, 90); }
+void ToneArmed() { Tone(1200, 50); }
+void ToneDisarmed() { Tone(600, 50); }
+
+// A host key as a key of the Aria's matrix (HANDOFF 6.4, from BKB.COM's
+// decoding at +02E5h-+0489h): row 0 = port 0581h (bits 0-5 dots 3, 2, 1,
+// 4, 5, 6, the keys' order from left to right; bit 7 the space bar), row
+// 1 = 0582h (bits 0-7 F1-F8), row 2 = 0584h (bits 0-3 the cursor cross up,
+// down, left, right; bit 6 the central Shift). The dot order shows in BKB's
+// chord list (+052Eh-+0578h): space + 1Bh and 1Ch are API.DOC's time
+// (dots 2345) and date (dots 145) only this way round. The host layout
+// follows the Eureka emulator: F D S and J K L are dots 1-3 and 4-6. Home,
+// End, PgUp and PgDn press two arrows at once, as the Aria API defines them
+// (Home = up + left, PgDn = down + right).
+struct AriaKey {
+  int row = -1;
+  uint8_t bits = 0;
+};
+
+AriaKey KeyFor(WPARAM key) {
+  switch (key) {
+    case 'F': return {0, 0x04};
+    case 'D': return {0, 0x02};
+    case 'S': return {0, 0x01};
+    case 'J': return {0, 0x08};
+    case 'K': return {0, 0x10};
+    case 'L': return {0, 0x20};
+    case VK_SPACE: return {0, 0x80};
+    case VK_UP: return {2, 0x01};
+    case VK_DOWN: return {2, 0x02};
+    case VK_LEFT: return {2, 0x04};
+    case VK_RIGHT: return {2, 0x08};
+    case VK_HOME: return {2, 0x05};
+    case VK_PRIOR: return {2, 0x09};
+    case VK_END: return {2, 0x06};
+    case VK_NEXT: return {2, 0x0A};
+    case VK_SHIFT: return {2, 0x40};
+    default:
+      if (key >= VK_F1 && key <= VK_F8) return {1, static_cast<uint8_t>(1 << (key - VK_F1))};
+      return {};
+  }
+}
+
+const wchar_t kShortcutHelp[] =
+    L"Klávesy Arie:\r\n"
+    L"\r\n"
+    L"F, D, S jsou body 1, 2, 3 a J, K, L body 4, 5, 6, mezerník je\r\n"
+    L"mezerník. F1 až F8 jsou funkční klávesy Arie. Šipky jsou kurzorový\r\n"
+    L"kříž a Shift je kulatá klávesa uprostřed něj; samotný ztiší řeč.\r\n"
+    L"Home, End, PgUp a PgDn stisknou dvě šipky naráz.\r\n"
+    L"\r\n"
+    L"Okno:\r\n"
+    L"\r\n"
+    L"F12 otevře nabídku. Alt ani F10 ji neotevřou, dokud má klávesnici\r\n"
+    L"Aria.\r\n"
+    L"\r\n"
+    L"F11 pustí do Windows jednu následující klávesu nebo zkratku. Vysoký\r\n"
+    L"tón znamená, že je nachystaná, nižší, že se minula.\r\n"
+    L"\r\n"
+    L"Shift+F11 uvolní klávesnici úplně a okno se chová jako každé jiné.\r\n"
+    L"Klesající dvojice tónů znamená, že klávesy Arii opouštějí, stoupající,\r\n"
+    L"že se vracejí. Stav je i v titulku okna (NVDA+T).\r\n"
+    L"\r\n"
+    L"Zkratky s Ctrl platí po F11, nebo rovnou, když je klávesnice\r\n"
+    L"uvolněná: Ctrl+Q ukončí emulátor, Ctrl+H zobrazí tuto nápovědu.\r\n"
+    L"Alt+F4 zavře okno vždy, Aria klávesu Alt nemá.";
+
+}  // namespace
+
+MainWindow::MainWindow(EmulatorThread& emulator, MachineInfo info)
+    : emulator_(emulator), info_(std::move(info)) {}
+
+bool MainWindow::Create() {
+  const HINSTANCE instance = GetModuleHandleW(nullptr);
+  HMENU menu = LoadMenuW(instance, MAKEINTRESOURCEW(IDR_MAIN_MENU));
+  accelerators_ = LoadAcceleratorsW(instance, MAKEINTRESOURCEW(IDR_ACCELERATORS));
+  hostAccelerators_ = LoadAcceleratorsW(instance, MAKEINTRESOURCEW(IDR_ACCELERATORS_HOST));
+  // Resizable on purpose: nothing to lay out, but a fixed window cannot be
+  // maximised or snapped, and a screen reader user does that as much as
+  // anyone.
+  if (!win::Window::Create(kClassName, L"Aria", WS_OVERLAPPEDWINDOW, 520, 260, menu)) return false;
+  RegisterCommands();
+  RefreshTitle();
+  // A slow timer, so that a sound device that failed to open is reported
+  // even when nothing happens to the window.
+  SetTimer(hwnd_, kAudioTimer, 500, nullptr);
+  return true;
+}
+
+void MainWindow::RegisterCommands() {
+  OnCommand(ID_FILE_EXIT, [this] { PostMessageW(hwnd_, WM_CLOSE, 0, 0); });
+  OnCommand(ID_KEYBOARD_RELEASE, [this] { SetReleased(!released_); });
+  // Pressing F11 again changes your mind rather than arming it twice.
+  OnCommand(ID_KEYBOARD_PASSONCE, [this] { SetPassOnce(!passOnce_); });
+  OnCommand(ID_ACTIVATE_MENU, [this] {
+    // What Alt and F10 would do, on a key the Aria has no use for.  Posted
+    // rather than sent, so the menu loop does not start inside the
+    // accelerator dispatch that asked for it.
+    PostMessageW(hwnd_, WM_SYSCOMMAND, SC_KEYMENU, 0);
+  });
+  OnCommand(ID_HELP_KEYS, [this] {
+    MessageBoxW(hwnd_, kShortcutHelp, L"Klávesové zkratky", MB_OK | MB_ICONINFORMATION);
+  });
+  OnCommand(ID_HELP_ABOUT, [this] {
+    MessageBoxW(hwnd_, AboutText().c_str(), L"O programu", MB_OK | MB_ICONINFORMATION);
+  });
+}
+
+std::wstring MainWindow::AboutText() const {
+  return L"Aria Emulator\r\n"
+         L"Verze " + std::wstring(ARIA_VERSION) + L"\r\n"
+         L"\r\n"
+         L"Emulátor hlasového zápisníku Robotron Aria pro nevidomé.\r\n"
+         L"Procesor 80C188 na 15 MHz, signálový procesor ADSP-2105.\r\n"
+         L"\r\n"
+         L"Disk B: " + info_.flash + L"\r\n" +
+         L"Sestavení: " + info_.version + L", " + info_.encoding + L"\r\n" +
+         L"Jádro FreeDOS: " + info_.kernel + L"\r\n";
+}
+
+void MainWindow::RefreshTitle() const {
+  // The state lives in the title because that is the one thing a screen
+  // reader can be asked for at any moment (NVDA+T) and announces on Alt+Tab.
+  // The tones say when it changed; the title answers "what is it now".  It
+  // names no keys: advice in a state line is repeated on every glance and
+  // rots quietly (the Eureka emulator learned that); the keys are in
+  // Nápověda.
+  std::wstring title = L"Aria " + info_.version + L", " + info_.encoding +
+                       (released_ ? L" — klávesnice uvolněná" : L" — klávesy do Arie");
+  if (noAudio_) title += L" — bez zvuku";
+  SetTitle(title);
+}
+
+void MainWindow::RefreshMenu() const {
+  const HMENU menu = GetMenu(hwnd_);
+  if (!menu) return;
+  CheckMenuItem(menu, ID_KEYBOARD_RELEASE, MF_BYCOMMAND | (released_ ? MF_CHECKED : MF_UNCHECKED));
+  CheckMenuItem(menu, ID_KEYBOARD_PASSONCE, MF_BYCOMMAND | (passOnce_ ? MF_CHECKED : MF_UNCHECKED));
+  // Meaningless while the keyboard is released: every key already goes to
+  // Windows.  Greyed says so where a screen reader reads it.
+  EnableMenuItem(menu, ID_KEYBOARD_PASSONCE, MF_BYCOMMAND | (released_ ? MF_GRAYED : MF_ENABLED));
+  RefreshShortcutText(menu);
+}
+
+// The Ctrl shortcuts need F11 in front of them only while the Aria has the
+// keyboard.  Once it is released they stand on their own, and a menu still
+// saying "F11, Ctrl+Q" would tell the user to press a key that does nothing
+// in that state.  The letters are read back out of the menu, so the .rc stays
+// the only place that names them.
+void MainWindow::RefreshShortcutText(HMENU menu) const {
+  static constexpr wchar_t kPrefix[] = L"F11, ";
+  for (UINT id : {ID_FILE_EXIT, ID_HELP_KEYS}) {
+    wchar_t text[128];
+    // MF_BYCOMMAND searches the submenus too, so the ids are enough.
+    if (!GetMenuStringW(menu, id, text, static_cast<int>(std::size(text)), MF_BYCOMMAND)) continue;
+    std::wstring item(text);
+    const size_t tab = item.find(L'\t');
+    if (tab == std::wstring::npos) continue;
+    std::wstring keys = item.substr(tab + 1);
+    if (keys.starts_with(kPrefix)) keys.erase(0, std::size(kPrefix) - 1);
+    if (!released_) keys.insert(0, kPrefix);
+    std::wstring wanted = item.substr(0, tab) + L'\t' + keys;
+    if (wanted == item) continue;
+    // MIIM_STRING alone: ModifyMenu would take the item's other attributes
+    // with it, and the checks and greying above are set by then.
+    MENUITEMINFOW itemInfo{};
+    itemInfo.cbSize = sizeof(itemInfo);
+    itemInfo.fMask = MIIM_STRING;
+    itemInfo.dwTypeData = wanted.data();
+    SetMenuItemInfoW(menu, id, FALSE, &itemInfo);
+  }
+}
+
+void MainWindow::ForwardKey(bool down, WPARAM virtualKey, LPARAM lParam) {
+  const AriaKey aria = KeyFor(virtualKey);
+  if (aria.row < 0) return;
+  if (down) {
+    // Windows' typematic repeat is not the Aria's; BKB repeats by itself.
+    if (lParam & (1 << 30)) return;
+    held_.push_back(virtualKey);
+  } else {
+    // Only a key whose press went to the Aria: one pressed while the host
+    // had the keyboard was never down there.
+    const auto found = std::find(held_.begin(), held_.end(), virtualKey);
+    if (found == held_.end()) return;
+    held_.erase(found);
+  }
+  emulator_.Key(aria.row, aria.bits, down);
+}
+
+void MainWindow::ReleaseAll() {
+  for (WPARAM key : held_) {
+    const AriaKey aria = KeyFor(key);
+    emulator_.Key(aria.row, aria.bits, false);
+  }
+  held_.clear();
+}
+
+void MainWindow::SetReleased(bool released) {
+  if (released_ == released) return;
+  released_ = released;
+  // Arming one and then the other would leave the one-shot armed behind the
+  // sticky mode, where nothing can spend it.
+  passOnce_ = false;
+  // Whatever the Aria believes is held has to go up now: no release for it
+  // is ever coming while the keyboard is somewhere else.  Shift+F11 itself
+  // pressed the Aria's Shift on the way.
+  ReleaseAll();
+  RefreshTitle();
+  if (released_) ToneLeaving(); else ToneReturning();
+}
+
+void MainWindow::SetPassOnce(bool armed) {
+  // Meaningless while the keyboard is released -- every key already goes to
+  // Windows -- and saying so beats arming something that can never fire.
+  if (released_) return;
+  if (passOnce_ == armed) return;
+  passOnce_ = armed;
+  passOnceUsed_ = false;
+  if (passOnce_) {
+    ReleaseAll();
+    ToneArmed();
+  } else {
+    ToneDisarmed();
+  }
+}
+
+bool MainWindow::HostKeepsKey(bool down) {
+  if (released_) return true;
+  if (!passOnce_) return false;
+  if (down) {
+    passOnceUsed_ = true;
+    return true;
+  }
+  // Spent on the first release whose press was actually seen here.  F11 arms
+  // this from the accelerator table, which eats the F11 press but not its
+  // release; without the guard F11 would disarm itself (measured in the
+  // Eureka emulator: F11 then Alt did nothing).  Modifiers count, so Alt on
+  // its own, which opens the menu on its release, spends it too.
+  if (passOnceUsed_) {
+    passOnce_ = false;
+    passOnceUsed_ = false;
+    ToneDisarmed();
+  }
+  return true;
+}
+
+LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
+  switch (message) {
+    case WM_KEYDOWN:
+    case WM_KEYUP:
+      // Breaking out hands the key to DefWindowProc, which is what "handled
+      // by Windows normally" means for a window with no controls of its own.
+      if (HostKeepsKey(message == WM_KEYDOWN)) break;
+      ForwardKey(message == WM_KEYDOWN, wParam, lParam);
+      return 0;
+
+    // Alt and F10 arrive here.  While the Aria has the keyboard they are
+    // swallowed, so that only F12 opens the menu: a stray Alt would otherwise
+    // drop the user into the menu bar, and the next dot would pick an item.
+    // Alt+F4 is the exception, unlike in the Eureka emulator, where Alt is a
+    // key of the machine: the Aria has none, so Alt+F4 closes the window.
+    case WM_SYSKEYDOWN:
+    case WM_SYSKEYUP:
+      if (wParam == VK_F4 && message == WM_SYSKEYDOWN && (lParam & (1 << 29))) break;
+      if (HostKeepsKey(message == WM_SYSKEYDOWN)) break;
+      ForwardKey(message == WM_SYSKEYDOWN, wParam, lParam);
+      return 0;
+
+    // Swallowed so that a key does not end in the system beep -- but not
+    // while the host owns the keyboard, because that is where the menu
+    // mnemonics come from.
+    case WM_SYSCHAR:
+    case WM_CHAR:
+      if (released_ || passOnce_) break;
+      return 0;
+
+    case WM_KILLFOCUS:
+      // The releases of whatever is held will be delivered to whoever took
+      // the focus, so let go now rather than let a key sit down for good --
+      // with BKB's autorepeat that would be a dot typed without end.
+      ReleaseAll();
+      // An armed one-shot would otherwise be waiting on the way back, long
+      // after the user forgot about it.  The sticky release is a deliberate
+      // state and survives; this is not.
+      SetPassOnce(false);
+      return 0;
+
+    case WM_ENTERMENULOOP:
+      // F12 or a mouse click opens the menu without taking the focus, and the
+      // menu loop eats the releases of keys still held.
+      ReleaseAll();
+      break;
+
+    case WM_COMMAND:
+      // Spends the one-shot on a shortcut that only fired because it was
+      // armed: TranslateAccelerator takes the press, so HostKeepsKey never
+      // sees it.  HIWORD 1 means "accelerator", so choosing the same command
+      // from the menu does not spend anything.  The two keyboard-state
+      // commands own that state and are left out.
+      if (HIWORD(wParam) == 1 && LOWORD(wParam) != ID_KEYBOARD_PASSONCE && LOWORD(wParam) != ID_KEYBOARD_RELEASE)
+        SetPassOnce(false);
+      break;
+
+    case WM_INITMENUPOPUP:
+      RefreshMenu();
+      break;
+
+    case WM_TIMER:
+      if (wParam == kAudioTimer && !noAudio_ && !emulator_.AudioOk()) {
+        // No sound device: say so in a way that is not the Aria's voice, and
+        // keep it in the title.  The machine runs on regardless.
+        noAudio_ = true;
+        MessageBeep(MB_ICONHAND);
+        RefreshTitle();
+      }
+      return 0;
+
+    default:
+      break;
+  }
+  return win::Window::HandleMessage(message, wParam, lParam);
+}
