@@ -66,7 +66,7 @@ Klávesy Arie jsou rozložené stejně jako v emulátoru Eureky A4:
 
 Ovladač klávesnice Arie bere akord, až se nezmění po tři snímání
 klávesnice. Emulátor proto drží všechny stisknuté klávesy, dokud od
-posledního stisku neuběhne pět snímání (zatím asi 0,2 sekundy, HANDOFF
+posledního stisku neuběhne pět snímání (asi 0,07 sekundy, HANDOFF
 6.4), takže i rychle zahraný akord dojde celý. Automatické opakování
 Windows se nepoužívá.
 

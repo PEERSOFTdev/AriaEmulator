@@ -56,7 +56,7 @@ int wmain(int argc, wchar_t** argv) {
   std::wstring wav_path;   // SPORT1 samples as a WAV file at `wav_rate`.
   uint32_t wav_rate = 8000;
   std::wstring dump_path;  // The 1 MB address space at the stop (-t) or the end, for analysis outside the repository.
-  long long budget = 400'000'000;  // 84 s of the assumed 4.77 MHz.
+  long long budget = AriaMachine::kCpuHz * 84LL;  // Emulated seconds.
   for (int i = 3; i < argc; ++i) {
     if (std::wstring(argv[i]) == L"-v") {
       verbose = true;

@@ -36,9 +36,16 @@ struct BiosDisk {
 class AriaMachine : public CpuBus, private Adsp2105Board {
  public:
   static constexpr uint32_t kRomStub = 0xFFC00;  // Top 1 KB, ROM under any UMCS.
-  // Assumption: the PC's 4.77 MHz, so that timer 0 alone gives the 18.2 Hz
-  // tick (HANDOFF 6.1, 6.12); the Aria's real clock is unknown.
-  static constexpr int kCpuHz = 4'772'727;
+  // 15 MHz, the timers 3.75 MHz (HANDOFF 6.4): FOSSIL's baud divisors give
+  // a 16x clock of 3.75 MHz (FOSSIL.COM+0793h), BKB counts 250 ms of key
+  // delay as 18 scans of timer 2 at C925h (BKB.COM+1012h), and AAPI's 1 ms
+  // delay waits a timer 0 period of 3750 (AAPI.EXE+10B35).
+  static constexpr int kCpuHz = 15'000'000;
+  // The PC's tick, 1193182 / 65536 Hz: the BIOS counts 1800B0h ticks a day
+  // for INT 1Ah, which DOS's clock relies on. No 16-bit timer makes it at
+  // 3.75 MHz, so the board has some other source, unknown (HANDOFF 6.1).
+  static constexpr int64_t kTickNumerator = 1'193'182;
+  static constexpr int64_t kTickDenominator = 65'536;
   // Assumption: the DSP's instruction rate. The Aria's crystal is unknown;
   // 10.24 MHz is a 2105 speed grade's range and, with a frame of 32 serial
   // clocks, gives Czech speech the 32 kHz listening chose (HANDOFF 6.3).
@@ -105,9 +112,8 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   uint8_t ReadIo(uint16_t port) override;
   void WriteIo(uint16_t port, uint8_t value) override;
   void ChipSelect(int which, uint16_t value) override;
-  // Timer 0's output sets the board's tick latch, which drives INT2; the
-  // BIOS's INT 0Eh handler clears it (HANDOFF 6.1, hle_bios.cpp).
-  void TimerOutput(int timer, int state) override;
+  // The tick (kTickNumerator) sets the board's tick latch, which drives
+  // INT2; the BIOS's INT 0Eh handler clears it (HANDOFF 6.1, hle_bios.cpp).
   void AcknowledgeTick();
 
  private:
@@ -156,6 +162,7 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   bool mailbox_full_ = false;     // The one-byte host latch (HANDOFF 6.3).
   uint8_t mailbox_ = 0;
   int64_t dsp_debt_ = 0;          // DSP cycles owed, in CPU-Hz units.
+  int64_t tick_debt_ = 0;         // Toward the next tick, in kTickNumerator units.
   std::vector<uint8_t> dsp_bytes_;
   std::vector<int16_t> samples_;
   std::vector<uint16_t> sample_dividers_;

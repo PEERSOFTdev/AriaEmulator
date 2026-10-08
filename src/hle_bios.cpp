@@ -79,8 +79,9 @@ void HleBios::PowerOn(const std::vector<uint8_t>& kernel) {
   // service would block it for good, at any timer priority. Hence the
   // hardware tick comes in on INT2 (vector 0Eh, used by nothing on B:,
   // tools/ints.py), whose handler acknowledges it and then calls INT 08h
-  // in software (HANDOFF 6.1). Assumption: the board wires timer 0's
-  // output to INT2; the Aria's real wiring is unknown.
+  // in software (HANDOFF 6.1). Assumption: an 18.2 Hz source on the board
+  // drives INT2 (AriaMachine::kTickNumerator); the Aria's real wiring is
+  // unknown, and no timer of the 80C188 can make that rate at 15 MHz.
   //
   // INT 0Eh: trap 0Eh (clears the board's tick latch), specific EOI for
   // type 0Eh to the PCB at 0022h (offset 11h), INT 08h.
@@ -114,23 +115,20 @@ void HleBios::PowerOn(const std::vector<uint8_t>& kernel) {
   // INT 07h does the same until it loads. FF00h is where the PCB sits at
   // reset.
   cpu.OutWord(0xFFFE, 0x8000);
-  // The tick from timer 0 alone, counting the full 65536: at the assumed
-  // 4.77 MHz the timers count 1.19318 MHz, the PC's timer clock, so this is
-  // the PC's 18.2 Hz (HANDOFF 6.1). Its own interrupt (type 08h) is off;
-  // its output pin drives INT2 (above). Timer 2 stays free: AAPI's INT 13h
-  // hook loads its maximum and reads its count to time disk calls
-  // (AAPI.EXE+9F20), and timer 1 is FOSSIL's (FOSSIL.COM+07EB). AAPI's
-  // delay loop waits for timer 0's count to pass 753h (AAPI.EXE+10B35), so
-  // its maximum is larger than that.
-  cpu.OutWord(kTimer0MaxA, 0);            // 0 = 65536.
+  // Timer 0 runs free with a 1 ms period and no interrupt: AAPI's delay
+  // counts its periods, each by its count passing 753h, half of 3750
+  // (AAPI.EXE+10B35, called with 100 and 6 at +DE0C and +F5EC); 3750 at
+  // the timers' 3.75 MHz is 1 ms (HANDOFF 6.4). The tick comes from the
+  // board on INT2 (aria_machine.cpp). Timer 1 is FOSSIL's (FOSSIL.COM+07EB).
+  cpu.OutWord(kTimer0MaxA, 3750);
   cpu.OutWord(kTimer0Control, 0xC001);    // EN, INH, CONT; no interrupt.
   cpu.OutWord(kInt2Control, 0x0000);      // INT2: unmasked, edge, priority 0.
   // Timer 2 interrupts periodically on vector 13h, the 80186's type for it:
   // on the Aria "INT 13h" is this hardware interrupt, and BKB scans the key
   // matrix in its hook (BKB.COM+1A40h, call 02E5h). AAPI's hook on the same
   // vector reloads timer 2's maximum with C925h before passing it on
-  // (AAPI.EXE+9F20), so the BIOS starts with that value: 1.19318 MHz /
-  // 51493 = 23.2 scans a second (HANDOFF 6.4). The vector is shared with
+  // (AAPI.EXE+9F20), so the BIOS starts with that value: 3.75 MHz /
+  // 51493 = 72.8 scans a second (HANDOFF 6.4). The vector is shared with
   // the disk service FreeDOS needs; the INT 13h handler tells them apart.
   cpu.OutWord(kTimer2MaxA, 0xC925);
   cpu.OutWord(kTimer2Control, 0xE001);    // EN, INH, INT, CONT.

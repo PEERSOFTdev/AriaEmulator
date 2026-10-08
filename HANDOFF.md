@@ -387,7 +387,11 @@ Předpoklady, které nic na B: nedokládá, a proto se mají ověřit:
 
   **Neplatí od 8. 10. 2026:** takt není 4,77 MHz, ale **15 MHz**
   (FOSSIL, BKB a AAPI, doloženo v 6.4), a časovač 0 má periodu 1 ms.
-  Odkud bral tik 18,2 Hz, je tím znovu otevřené;
+  Odkud bral tik 18,2 Hz, je tím znovu otevřené. Emulátor má od téhož
+  dne tik jako samostatný zdroj na desce (`AriaMachine::kTickNumerator`,
+  1 193 182 / 65 536 Hz, protože BIOS počítá `1800B0h` tiků za den pro
+  `INT 1Ah`), který dál vede na INT2; časovač 0 běží bez přerušení
+  s maximem 3750 **[předpoklad zdroje tiku]**;
 - **modelový bajt `FCh`** na `FFFF:000Eh` (čte ho `AAPI.EXE+46DEh`;
   hodnota Arie neznámá, 6.5);
 - **past ESC zapnutá** (bit 15 relokačního registru): `VOICE.SYS+01CEh`
@@ -701,7 +705,17 @@ před řečí **tvrdé lupnutí**, v řeči jen drobné špičky.
   (předpoklad 4,77 MHz kvůli tiku, 6.1). Ušetřené 2 s: BIOS v kopii jádra
   v paměti nuluje `SkipConfigSeconds` (konfigurační blok „CONFIG“ na
   offsetu 2, pole na offsetu 12, `kernel.asm`), takže FreeDOS nečeká na
-  F5/F8, na které stejně nemá kdo odpovědět. Další neznámé: význam zápisů do vnější
+  F5/F8, na které stejně nemá kdo odpovědět.
+
+  **Od 8. 10. 2026 při 15 MHz** (6.4): jádro 0,6; VOICE.SYS 1,2; disk D:
+  1,9; `aapi` 3,0 → hotovo 3,7; BKB 4,1; ARIALARM 5,5; MAINMENU 6,1;
+  **první zvuk 6,7**. Start je tedy vázán na takt, jak se čekalo.
+  Uživatel 8. 10. 2026: prodleva do harfy odpovídá jeho vzpomínce na
+  Arii. Zároveň **zmizel ráz (lupnutí) po harfě** a při odchodu
+  z aplikací, který byl slyšet při 4,77 MHz (`ar-5hf`). Příčina
+  nezměřena; nejspíš pomalé CPU nestíhalo krmit DSP.
+
+  Další neznámé: význam zápisů do vnější
 programové paměti `2000h` (PX = 1 v `LPC.DSP` `001Eh`, `0115h`; PX = 3
 v `PLAY.DSP` `0073h`), nejspíš latch na desce (výstup? frekvence?).
 
@@ -843,6 +857,12 @@ což je pořád pomalé, protože snímání je třikrát pomalejší než na Ar
   periody podle argumentu). Předpoklad 4,77 MHz z 6.1 tím padá; změna
   taktu je další krok, protože tik 18,2 Hz pak nemůže dělat 16bitový
   časovač 0 (6.1).
+
+  **Provedeno týž den:** `kCpuHz` = 15 000 000, časovač 0 s maximem 3750
+  (1 ms; AAPI volá zpoždění s 100 a 6 na `+DE0C` a `+F5EC`, při starém
+  nastavení trvalo 100 „ms“ 5,5 s), tik zvlášť (6.1). Snímání je 72,8×
+  za sekundu a držení akordu pět snímání, tedy **69 ms**. Start do
+  MAINMENU se zkrátil ze 16,9 na 6,1 s (6.3).
 
 ### 6.5 RTC a buzení alarmem
 

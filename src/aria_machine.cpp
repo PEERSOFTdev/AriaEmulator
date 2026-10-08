@@ -42,6 +42,7 @@ void AriaMachine::PowerOn() {
   dsp_boots_ = 0;
   mailbox_full_ = false;
   dsp_debt_ = 0;
+  tick_debt_ = 0;
   dac_ = DacRenderer(static_cast<double>(kDspHz), kAudioHz, 3000);
   audio_time_ = 0;
   dsp_.Reset();
@@ -59,6 +60,13 @@ void AriaMachine::Run(int cycles) {
   for (int done = 0; done < cycles && !powered_off_;) {
     const int used = cpu_.Run(std::min(kSlice, cycles - done));
     done += used;
+    // The tick sets a latch that holds INT2 until the BIOS takes it,
+    // because MAME drops an external request as soon as its line falls.
+    tick_debt_ += static_cast<int64_t>(used) * kTickNumerator;
+    if (tick_debt_ >= static_cast<int64_t>(kCpuHz) * kTickDenominator) {
+      tick_debt_ -= static_cast<int64_t>(kCpuHz) * kTickDenominator;
+      cpu_.SetInterruptPin(2, true);
+    }
     dsp_debt_ += static_cast<int64_t>(used) * kDspHz;
     const int dsp_cycles = static_cast<int>(dsp_debt_ / kCpuHz);
     if (dsp_cycles <= 0) continue;
@@ -175,13 +183,6 @@ void AriaMachine::ChipSelect(int which, uint16_t value) {
   // UMCS: bits 15-6 give the start address in 1 KB units (80186 manual);
   // RAMDISK.EXE writes FFF8h to shrink it to FFC00h (HANDOFF 6.2).
   if (which == 0) ucs_start_ = static_cast<uint32_t>(value & 0xFFC0) << 4;
-}
-
-void AriaMachine::TimerOutput(int timer, int state) {
-  // MAME reports a pulse at each terminal count as state 1 (i186.cpp
-  // timer_elapsed); a latch holds it until the BIOS takes the tick, because
-  // MAME drops an external request as soon as its line falls.
-  if (timer == 0 && state) cpu_.SetInterruptPin(2, true);
 }
 
 void AriaMachine::AcknowledgeTick() { cpu_.SetInterruptPin(2, false); }
