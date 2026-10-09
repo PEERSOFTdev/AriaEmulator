@@ -164,6 +164,17 @@ void Rtc146818::Write(uint8_t reg, uint8_t value) {
   regs_[reg] = value;
 }
 
-void Rtc146818::LoadCmos(const uint8_t* bytes) {
-  std::memcpy(regs_ + 0x0E, bytes + 0x0E, sizeof regs_ - 0x0E);
+void Rtc146818::SaveState(uint8_t* out) const {
+  std::memcpy(out, regs_, sizeof regs_);
+  for (int i = 0; i < 8; ++i) out[sizeof regs_ + i] = static_cast<uint8_t>(static_cast<uint64_t>(offset_) >> (8 * i));
+}
+
+void Rtc146818::LoadState(const uint8_t* in) {
+  std::memcpy(regs_, in, sizeof regs_);
+  uint64_t offset = 0;
+  for (int i = 0; i < 8; ++i) offset |= static_cast<uint64_t>(in[sizeof regs_ + i]) << (8 * i);
+  offset_ = static_cast<int64_t>(offset);
+  // The seconds that passed while the emulator was closed raised no flags:
+  // on the Aria they passed with the machine off.
+  last_checked_ = Now();
 }

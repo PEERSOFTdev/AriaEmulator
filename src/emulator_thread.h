@@ -7,6 +7,9 @@
 // carried the emulator would freeze with it -- and the speech with it, which
 // on this machine is the whole user interface.
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 #include <atomic>
 #include <cstdint>
 #include <deque>
@@ -17,13 +20,30 @@
 
 #include "aria_machine.h"
 
+// Posted to the window when the machine switches off (wParam 1) or on
+// (wParam 0): by itself through 0701h, or by a command below.
+constexpr UINT WM_ARIA_POWER = WM_APP + 2;
+
 class EmulatorThread {
  public:
   explicit EmulatorThread(std::unique_ptr<AriaMachine> machine);
   ~EmulatorThread();
 
+  // Where WM_ARIA_POWER goes. Before Start.
+  void SetNotifyWindow(HWND window) { notify_ = window; }
   void Start();
   void Stop();
+
+  // The machine, for the host once Stop has returned (to save what the
+  // battery keeps). Never while the thread runs.
+  AriaMachine& machine() { return *machine_; }
+
+  // Power commands from the window, carried out on the emulator thread.
+  // PostPowerOn switches an off machine on and resets a running one, with
+  // RAM kept (the warm reset); PostBatteryCut empties RAM and CMOS first.
+  void PostPowerOn() { command_ = kCommandPowerOn; }
+  void PostBatteryCut() { command_ = kCommandBatteryCut; }
+  void PostPowerOff() { command_ = kCommandPowerOff; }
 
   // False when no audio device could be opened; the machine runs anyway.
   bool AudioOk() const { return audio_ok_.load(); }
@@ -40,7 +60,15 @@ class EmulatorThread {
     bool down;
   };
 
+  enum Command { kCommandNone, kCommandPowerOn, kCommandBatteryCut, kCommandPowerOff };
+
   void Loop();
+  // Carries out a pending power command.
+  void ApplyCommand();
+  // Forgets every key, held or queued: a machine that starts again has
+  // nothing down.
+  void ClearKeys();
+  void Notify(bool off) const;
   // Applies queued key events. A release waits until the latest press is
   // kMinHoldCycles old in emulated time, so that BKB's periodic scan takes
   // even the quickest chord whole.
@@ -52,6 +80,9 @@ class EmulatorThread {
   uint8_t rows_[3] = {};
   int64_t last_press_ = 0;
   std::thread thread_;
+  HWND notify_ = nullptr;
+  std::atomic<int> command_{kCommandNone};
+  bool off_ = false;  // As last told to the window.
   std::atomic<bool> running_{false};
   std::atomic<bool> audio_ok_{true};
 };

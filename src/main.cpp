@@ -19,7 +19,9 @@
 #include "emulator_thread.h"
 #include "flash_image.h"
 #include "main_window.h"
+#include "snapshot.h"
 #include "text_codec.h"
+#include "zip_reader.h"
 
 namespace {
 
@@ -120,7 +122,35 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show) {
   info.flash = flash_path;
   info.kernel = kernel_path;
 
-  EmulatorThread emulator(std::make_unique<AriaMachine>(image, std::move(kernel)));
+  // What the battery kept since the last run of this firmware image
+  // (snapshot.h). Read and deleted: a run that ends without switching the
+  // Aria off leaves nothing behind, so the next one starts as after a cut
+  // battery.
+  auto machine = std::make_unique<AriaMachine>(image, std::move(kernel));
+  const uint32_t firmware = Crc32(image.bytes.data(), image.bytes.size());
+  const std::filesystem::path memory_file = snapshot::FileFor(firmware);
+  {
+    std::vector<uint8_t> state;
+    std::wstring snapshot_error;
+    std::error_code ec;
+    switch (snapshot::Load(memory_file, firmware, AriaMachine::kStateSize, state, snapshot_error)) {
+      case snapshot::Result::kOk:
+        machine->LoadState(state);
+        std::filesystem::remove(memory_file, ec);
+        break;
+      case snapshot::Result::kMissing:
+        break;
+      case snapshot::Result::kCorrupt: {
+        // The user's call. No: quit and leave the file for a look.
+        const std::wstring question = snapshot_error + L"\r\n\r\nSpustit Arii s prázdnou pamětí?";
+        if (MessageBoxW(nullptr, question.c_str(), kTitle, MB_YESNO | MB_ICONWARNING) != IDYES) return 0;
+        std::filesystem::remove(memory_file, ec);
+        break;
+      }
+    }
+  }
+
+  EmulatorThread emulator(std::move(machine));
   MainWindow window(emulator, std::move(info));
   if (!window.Create()) {
     MessageBoxW(nullptr, L"Nepodařilo se vytvořit okno emulátoru.", kTitle, MB_OK | MB_ICONERROR);
@@ -131,5 +161,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show) {
   win::RunMessageLoop(window.handle(), window.accelerators(), window.hostAccelerators(),
                       [&window] { return window.HostShortcutsActive(); });
   emulator.Stop();
+  if (window.SaveMemoryOnExit()) {
+    std::vector<uint8_t> state;
+    emulator.machine().SaveState(state);
+    std::wstring snapshot_error;
+    if (!snapshot::Save(memory_file, firmware, state, snapshot_error)) {
+      MessageBoxW(nullptr, snapshot_error.c_str(), kTitle, MB_OK | MB_ICONERROR);
+    }
+  }
   return 0;
 }

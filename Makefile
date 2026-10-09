@@ -50,7 +50,7 @@ ifneq ($(file < $(VERSION_H)),$(VERSION_TEXT))
 $(file > $(VERSION_H),$(VERSION_TEXT))
 endif
 
-EMU_NAMES  := main main_window text_codec zip_reader fat12 flash_image cpu80188 aria_machine hle_bios \
+EMU_NAMES  := main main_window snapshot text_codec zip_reader fat12 flash_image cpu80188 aria_machine hle_bios \
               rtc146818 dac_renderer adsp2105 audio_player emulator_thread
 # Jadro CPU prevzate z MAME (src/i86/LICENSE.mame-i86.txt, HANDOFF 6.12).
 I86_NAMES  := i86 i186
@@ -117,9 +117,11 @@ $(BUILD)/adsp_%.o: src/adsp2100/%.cpp Makefile | $(BUILD)
 	$(CXX) $(CXXFLAGS) -Wno-sign-compare $(DEPFLAGS) -c $< -o $@
 
 # -municode: vstupni bod je sirokoznakovy. -mwindows: GUI subsystem, bez okna
-# konzole. shell32 kvuli CommandLineToArgvW, winmm kvuli zvuku (waveOut).
+# konzole. shell32 kvuli CommandLineToArgvW a SHGetKnownFolderPath, ole32
+# a uuid kvuli CoTaskMemFree a FOLDERID_RoamingAppData (snapshot.cpp),
+# winmm kvuli zvuku (waveOut).
 $(EMU): $(EMU_OBJS) | $(BIN)
-	$(CXX) -municode -mwindows $(STATIC) -Wl,--gc-sections -s -o $@ $(EMU_OBJS) -lshell32 -lwinmm
+	$(CXX) -municode -mwindows $(STATIC) -Wl,--gc-sections -s -o $@ $(EMU_OBJS) -lshell32 -lole32 -luuid -lwinmm
 
 $(BIN)/codec_test.exe: $(BUILD)/test_codec_test.o $(BUILD)/text_codec.o | $(BIN)
 	$(CXX) $(STATIC) -o $@ $^
@@ -141,8 +143,8 @@ $(BIN)/pklite_unpack.exe: $(BUILD)/test_pklite_unpack.o $(CPU_OBJS) $(CORE_OBJS)
 	$(CXX) $(STATIC) -municode -o $@ $^
 
 # Start jadra FreeDOS z disku B: na BIOSu emulatoru (ar-4cu). wmain.
-$(BIN)/boot_test.exe: $(BUILD)/test_boot_test.o $(MACHINE_OBJS) | $(BIN)
-	$(CXX) $(STATIC) -municode -o $@ $^
+$(BIN)/boot_test.exe: $(BUILD)/test_boot_test.o $(BUILD)/snapshot.o $(MACHINE_OBJS) | $(BIN)
+	$(CXX) $(STATIC) -municode -o $@ $^ -lshell32 -lole32 -luuid
 
 # Jadro DSP bez firmwaru: poradi bajtu zavadeci stranky a kratky program.
 $(BIN)/dsp_selftest.exe: $(BUILD)/test_dsp_selftest.o $(DSP_OBJS) | $(BIN)

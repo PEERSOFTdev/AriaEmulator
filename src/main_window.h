@@ -32,6 +32,12 @@ class MainWindow : public win::Window {
   // True while the keyboard belongs to the host, so the Ctrl shortcuts apply.
   bool HostShortcutsActive() const { return released_ || passOnce_; }
 
+  // Whether what the battery keeps is to be saved when the program ends:
+  // the machine was off when the window closed, or the user chose to switch
+  // it off on the way out.  Closing a running Aria otherwise is the battery
+  // cut, as in the Eureka emulator.
+  bool SaveMemoryOnExit() const { return poweredOff_ || switchOffOnExit_; }
+
  protected:
   LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) override;
 
@@ -50,7 +56,12 @@ class MainWindow : public win::Window {
   // True when this key event belongs to the host rather than to the Aria.
   // Also spends the one-shot, which is why it is not const.
   bool HostKeepsKey(bool down);
-  void SetReleased(bool released);
+  // quiet is for the power switch, whose own tone already says it: off and
+  // released are one state (Eureka's MainWindow::SetReleased).
+  void SetReleased(bool released, bool quiet = false);
+  // Asked on WM_CLOSE while the machine runs. False means the user chose to
+  // stay; otherwise switchOffOnExit_ holds whether to keep the memory.
+  bool ConfirmClose();
   void SetPassOnce(bool armed);
   std::wstring AboutText() const;
 
@@ -69,6 +80,11 @@ class MainWindow : public win::Window {
   bool passOnceUsed_ = false;
   // No sound device could be opened; reported once, kept in the title.
   bool noAudio_ = false;
+  // The machine is switched off and sits there with the window open. The
+  // emulator thread's state is the truth; this copy builds title and menu.
+  bool poweredOff_ = false;
+  // Chosen in the close question: switch off, keep the memory.
+  bool switchOffOnExit_ = false;
   // Host keys down on the Aria, so that they can all be let go of.
   std::vector<WPARAM> held_;
 };

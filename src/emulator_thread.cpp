@@ -8,6 +8,7 @@
 #include <chrono>
 
 #include "audio_player.h"
+#include "hle_bios.h"
 
 namespace {
 
@@ -57,6 +58,42 @@ void EmulatorThread::ApplyKeys(int64_t now) {
   }
 }
 
+void EmulatorThread::ClearKeys() {
+  std::lock_guard<std::mutex> lock(keys_mutex_);
+  keys_.clear();
+  for (int row = 0; row < 3; ++row) {
+    rows_[row] = 0;
+    machine_->SetKeyRow(row, 0);
+  }
+}
+
+void EmulatorThread::Notify(bool off) const {
+  if (notify_) PostMessageW(notify_, WM_ARIA_POWER, off ? 1 : 0, 0);
+}
+
+void EmulatorThread::ApplyCommand() {
+  switch (command_.exchange(kCommandNone)) {
+    case kCommandPowerOn:
+      ClearKeys();
+      machine_->PowerOn();
+      break;
+    case kCommandBatteryCut:
+      ClearKeys();
+      machine_->BatteryCut();
+      machine_->PowerOn();
+      break;
+    case kCommandPowerOff:
+      machine_->PowerOff();
+      return;  // Told below, with an off the machine chose itself.
+    default:
+      return;
+  }
+  // A reset of a running machine is told too: it is silent until the harp,
+  // seconds later, and silence is also what a hung emulator sounds like.
+  off_ = false;
+  Notify(false);
+}
+
 EmulatorThread::EmulatorThread(std::unique_ptr<AriaMachine> machine) : machine_(std::move(machine)) {}
 
 EmulatorThread::~EmulatorThread() { Stop(); }
@@ -101,12 +138,25 @@ void EmulatorThread::Loop() {
     }
     guest_clock += static_cast<long double>(rate) * delta;
 
+    ApplyCommand();
     ApplyKeys(static_cast<int64_t>(done));
     const long double owed = guest_clock - done;
     if (owed >= 1) {
       const int cycles = static_cast<int>(std::min<long double>(owed, AriaMachine::kCpuHz / 4));
       machine.Run(cycles);
       done += cycles;
+    }
+    // INT 19h, from the card tools (TRICKSS2, CARDMAN, DLFMT, FORMAT,
+    // HANDOFF 6.9): the boot ROM started again, with RAM kept.
+    if (machine.bios().RebootRequested()) {
+      ClearKeys();
+      machine.PowerOn();
+    }
+    // Off by its own hand (0701h, after the four-cursor "konec" or idling)
+    // or by PostPowerOff: the window says so and takes the keyboard.
+    if (machine.PoweredOff() != off_) {
+      off_ = machine.PoweredOff();
+      Notify(off_);
     }
     // If the host could not keep up, forgive the debt rather than sprint
     // through the speech to catch up.

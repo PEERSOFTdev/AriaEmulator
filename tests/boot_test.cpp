@@ -25,6 +25,8 @@
 
 #include "aria_machine.h"
 #include "hle_bios.h"
+#include "snapshot.h"
+#include "zip_reader.h"
 
 namespace {
 
@@ -321,20 +323,22 @@ int wmain(int argc, wchar_t** argv) {
     return 1;
   }
 
-  // The battery keeps the RAM disk D: through power-off (HANDOFF 6.9):
-  // plant a file entry in D:'s root directory, power on again with the RAM
-  // kept, and see that RAMDISK.EXE takes the disk over instead of making a
-  // new one. VDISK sits at B0000h (RAMDISK.EXE+01BFh, HANDOFF 6.2), its
-  // boot sector carries "VDISK" and a BPB.
+  // The battery keeps the RAM disk D: through power-off (HANDOFF 6.9), and
+  // the emulator keeps it between runs (snapshot.h): plant a file entry in
+  // D:'s root directory, switch off, save to a snapshot file, load it into
+  // a new machine, power that on, and see that RAMDISK.EXE takes the disk
+  // over instead of making a new one. VDISK sits at B0000h
+  // (RAMDISK.EXE+01BFh, HANDOFF 6.2), its boot sector carries "VDISK" and a
+  // BPB.
   constexpr uint32_t kRamDisk = 0xB0000;
-  auto vdisk = [&] {
+  auto vdisk = [](AriaMachine& m) {
     const char sign[] = "VDISK";
     for (int i = 0; i < 5; ++i) {
-      if (machine.Peek(kRamDisk + 3 + i) != static_cast<uint8_t>(sign[i])) return false;
+      if (m.Peek(kRamDisk + 3 + i) != static_cast<uint8_t>(sign[i])) return false;
     }
     return true;
   };
-  if (!vdisk()) {
+  if (!vdisk(machine)) {
     std::cout << "FAIL boot: no VDISK boot sector at B0000h\n";
     return 1;
   }
@@ -344,21 +348,41 @@ int wmain(int argc, wchar_t** argv) {
   const char kMarker[] = "BATERIE TXT";
   uint32_t entry = root;
   while (machine.Peek(entry) != 0 && machine.Peek(entry) != 0xE5) entry += 32;
-  machine.PowerOn();
   for (int i = 0; i < 11; ++i) machine.Poke(entry + i, static_cast<uint8_t>(kMarker[i]));
   machine.Poke(entry + 11, 0x20);  // Archive.
-  for (long long t = 0; t < AriaMachine::kCpuHz * 30LL; t += kSlice) {
-    machine.Run(kSlice);
-    if (machine.bios().Teletype().find(">mainmenu") != std::string::npos) break;
+  // Switched off from the host. The Aria's own way, "konec" with all four
+  // cursor keys, makes MAINMENU speak but not switch off within 20 s
+  // (HANDOFF 6.9, open), so it is not the test's way yet.
+  machine.PowerOff();
+
+  const uint32_t firmware = Crc32(flash.bytes.data(), flash.bytes.size());
+  const std::filesystem::path memory_file = std::filesystem::temp_directory_path() / "aria_boot_test_pamet.bin";
+  std::vector<uint8_t> state, loaded;
+  std::wstring snapshot_error;
+  machine.SaveState(state);
+  const bool saved = snapshot::Save(memory_file, firmware, state, snapshot_error);
+  const snapshot::Result read =
+      snapshot::Load(memory_file, firmware, AriaMachine::kStateSize, loaded, snapshot_error);
+  std::error_code ec;
+  std::filesystem::remove(memory_file, ec);
+  AriaMachine second(flash, kernel, [] { return int64_t{946728000}; });
+  if (!saved || read != snapshot::Result::kOk || !second.LoadState(loaded)) {
+    std::cout << "FAIL boot: the memory snapshot did not survive a round trip\n";
+    return 1;
   }
-  if (verbose) std::cout << "--- INT 10h output, second power-on ---\n" << Printable(machine.bios().Teletype()) << "\n";
-  bool kept = vdisk();
-  for (int i = 0; i < 11 && kept; ++i) kept = machine.Peek(entry + i) == static_cast<uint8_t>(kMarker[i]);
-  if (machine.bios().Teletype().find(">mainmenu") == std::string::npos || !kept) {
+  second.PowerOn();
+  for (long long t = 0; t < AriaMachine::kCpuHz * 30LL; t += kSlice) {
+    second.Run(kSlice);
+    if (second.bios().Teletype().find(">mainmenu") != std::string::npos) break;
+  }
+  if (verbose) std::cout << "--- INT 10h output, second power-on ---\n" << Printable(second.bios().Teletype()) << "\n";
+  bool kept = vdisk(second);
+  for (int i = 0; i < 11 && kept; ++i) kept = second.Peek(entry + i) == static_cast<uint8_t>(kMarker[i]);
+  if (second.bios().Teletype().find(">mainmenu") == std::string::npos || !kept) {
     std::cout << "FAIL boot: after a second power-on " << (kept ? "no MAINMENU" : "drive D: was made anew") << "\n";
     return 1;
   }
   std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, speech and harp from the DSP,"
-               " space + dot 4 answered, drive D: kept through power-on)\n";
+               " space + dot 4 answered, drive D: kept through a memory snapshot)\n";
   return 0;
 }

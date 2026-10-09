@@ -96,6 +96,38 @@ Alt nemá (na Eurece je `Alt+F4` klávesa stroje).
 Klávesy, které Aria drží, když okno ztratí fokus, když se otevře nabídka
 nebo když se klávesnice uvolní, emulátor pustí, aby nezůstaly stisknuté.
 
+## Zapnutí, vypnutí a paměť
+
+Paměť Arie včetně RAM disku `D:` a nastavení hodin drží baterie, takže
+vypnutí ani teplý reset je nesmažou. Emulátor to dělá stejně a navíc
+paměť uloží mezi spuštěními:
+
+- **`F11`, `Ctrl+V`** (Stroj → Vypnout Arii) Arii vypne. Vypnutá zůstane
+  v okně: ohlásí to **tři klesající tóny** a titulek, a klávesnici dostanou
+  Windows. Arie se sama vypíná stejně, zápisem do portu `0701h`.
+- **`F11`, `Ctrl+P`** (Teplý reset) vypnutou Arii zapne a běžící spustí
+  znovu, paměť zůstane. Ohlásí to **tři stoupající tóny**.
+- **`F11`, `Ctrl+R`** (Reset) **odpojí baterii**: paměť i RAM disk se
+  ztratí. Emulátor se nejdřív zeptá — na rozdíl od Eureky, protože na
+  RAM disku jsou soubory.
+
+**Zavření okna:** když je Aria vypnutá, paměť se tiše uloží a příští
+spuštění na ni naváže. Když běží, emulátor se zeptá: **Ano** ji vypne a
+paměť uloží, **Ne** zavře bez uložení (příště prázdná paměť, jako po
+odpojení baterie), **Storno** nechá Arii běžet.
+
+Paměť leží v souboru `pamet-XXXXXXXX.bin`, kde `XXXXXXXX` je kontrolní
+součet obrazu disku B:. Každé sestavení firmwaru (například 7.05 a 6.87)
+má tak svou paměť a přepnutí mezi nimi žádnou nesmaže. Soubor je ve složce
+`config` vedle `AriaEmulator.exe`, když ji vytvoříte (přenosný režim),
+jinak v `%APPDATA%\Aria`. Při startu se přečte a smaže, takže běh, který
+skončí jinak než vypnutím, nechá příště prázdnou paměť.
+
+Příkaz Arie **konec** (všechny čtyři šipky naráz; v emulátoru stačí
+`Home` s `PgDn`) Arii v emulátoru zatím nevypne: hlavní nabídka
+promluví, ale nevypne se (HANDOFF 6.9). Do vyřešení vypínejte `F11`,
+`Ctrl+V`.
+
 ## Zvuk
 
 Zvuk jde do výchozího zvukového zařízení Windows. Když se ho nepodaří

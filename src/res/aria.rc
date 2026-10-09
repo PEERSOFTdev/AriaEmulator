@@ -58,6 +58,12 @@ BEGIN
     BEGIN
         MENUITEM "&Konec\tF11, Ctrl+Q",                         ID_FILE_EXIT
     END
+    POPUP "S&troj"
+    BEGIN
+        MENUITEM "&Reset (odpojit baterii)…\tF11, Ctrl+R",     ID_MACHINE_RESET
+        MENUITEM "T&eplý reset\tF11, Ctrl+P",                   ID_MACHINE_POWERON
+        MENUITEM "&Vypnout Arii\tF11, Ctrl+V",                  ID_MACHINE_POWEROFF
+    END
     POPUP "&Klávesnice"
     BEGIN
         MENUITEM "&Uvolnit klávesnici\tShift+F11",              ID_KEYBOARD_RELEASE
@@ -95,5 +101,8 @@ END
 IDR_ACCELERATORS_HOST ACCELERATORS
 BEGIN
     "Q",        ID_FILE_EXIT,        VIRTKEY, CONTROL
+    "R",        ID_MACHINE_RESET,    VIRTKEY, CONTROL
+    "P",        ID_MACHINE_POWERON,  VIRTKEY, CONTROL
+    "V",        ID_MACHINE_POWEROFF, VIRTKEY, CONTROL
     "H",        ID_HELP_KEYS,        VIRTKEY, CONTROL
 END

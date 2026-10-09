@@ -19,9 +19,12 @@ class Rtc146818 {
   uint8_t Read(uint8_t reg);
   void Write(uint8_t reg, uint8_t value);
 
-  // Battery-backed RAM, for saving and restoring between sessions.
-  const uint8_t* Cmos() const { return regs_; }
-  void LoadCmos(const uint8_t* bytes);
+  // The whole battery-backed chip, for saving and restoring between
+  // sessions: all 128 registers and how far the emulated clock is from the
+  // host's. The time registers are recomputed on the next read anyway.
+  static constexpr int kStateSize = 128 + 8;
+  void SaveState(uint8_t* out) const;
+  void LoadState(const uint8_t* in);
 
   // Local time the emulated clock shows now, in seconds since 1970.
   int64_t Now() const;

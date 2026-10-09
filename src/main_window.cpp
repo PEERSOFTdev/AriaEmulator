@@ -25,6 +25,12 @@ void ToneReturning() { Tone(440, 70); Tone(880, 90); }
 void ToneArmed() { Tone(1200, 50); }
 void ToneDisarmed() { Tone(600, 50); }
 
+// The power switch, the only three-note shape: what follows switching off
+// is silence, and silence is also what a crashed emulator sounds like.
+// Three notes down for off, three up for on.
+void TonePoweredOff() { Tone(700, 100); Tone(500, 100); Tone(300, 150); }
+void TonePoweredOn() { Tone(300, 100); Tone(500, 100); Tone(700, 150); }
+
 // A host key as a key of the Aria's matrix (HANDOFF 6.4, from BKB.COM's
 // decoding at +02E5h-+0489h): row 0 = port 0581h (bits 0-5 dots 3, 2, 1,
 // 4, 5, 6, the keys' order from left to right; bit 7 the space bar), row
@@ -86,7 +92,24 @@ const wchar_t kShortcutHelp[] =
     L"\r\n"
     L"Zkratky s Ctrl platí po F11, nebo rovnou, když je klávesnice\r\n"
     L"uvolněná: Ctrl+Q ukončí emulátor, Ctrl+H zobrazí tuto nápovědu.\r\n"
-    L"Alt+F4 zavře okno vždy, Aria klávesu Alt nemá.";
+    L"Alt+F4 zavře okno vždy, Aria klávesu Alt nemá.\r\n"
+    L"\r\n"
+    L"Stroj:\r\n"
+    L"\r\n"
+    L"Arii vypnete jako naozaj příkazem konec, všemi čtyřmi šipkami\r\n"
+    L"naráz (stačí i Home s PgDn). Nebo F11, Ctrl+V. Vypnutá zůstane\r\n"
+    L"v okně, ohlásí to tři klesající tóny a titulek, a klávesnici\r\n"
+    L"dostanou Windows.\r\n"
+    L"\r\n"
+    L"F11, Ctrl+P je teplý reset: vypnutou Arii zapne, běžící spustí znovu.\r\n"
+    L"Paměť i RAM disk D: zůstanou, jako když je drží baterie. Tři\r\n"
+    L"stoupající tóny.\r\n"
+    L"\r\n"
+    L"F11, Ctrl+R odpojí baterii: paměť i RAM disk se ztratí a Aria začne\r\n"
+    L"od začátku. Emulátor se nejdřív zeptá.\r\n"
+    L"\r\n"
+    L"Když Arii vypnete a pak zavřete okno, paměť se uloží a příští\r\n"
+    L"spuštění na ni naváže. Zavření běžící Arie se zeptá, co s pamětí.";
 
 }  // namespace
 
@@ -103,6 +126,7 @@ bool MainWindow::Create() {
   // anyone.
   if (!win::Window::Create(kClassName, L"Aria", WS_OVERLAPPEDWINDOW, 520, 260, menu)) return false;
   RegisterCommands();
+  emulator_.SetNotifyWindow(hwnd_);
   RefreshTitle();
   // A slow timer, so that a sound device that failed to open is reported
   // even when nothing happens to the window.
@@ -112,6 +136,19 @@ bool MainWindow::Create() {
 
 void MainWindow::RegisterCommands() {
   OnCommand(ID_FILE_EXIT, [this] { PostMessageW(hwnd_, WM_CLOSE, 0, 0); });
+  OnCommand(ID_MACHINE_RESET, [this] {
+    // Unlike the Eureka emulator's Reset, this one asks: on the Aria the
+    // battery holds the RAM disk D:, files the user wrote, not only a
+    // session.
+    const int answer = MessageBoxW(hwnd_,
+                                   L"Reset odpojí baterii: obsah paměti i RAM disku D: se ztratí a Aria "
+                                   L"začne od začátku, jako po výměně baterie.\r\n\r\n"
+                                   L"Odpojit baterii?",
+                                   L"Reset Arie", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+    if (answer == IDYES) emulator_.PostBatteryCut();
+  });
+  OnCommand(ID_MACHINE_POWERON, [this] { emulator_.PostPowerOn(); });
+  OnCommand(ID_MACHINE_POWEROFF, [this] { emulator_.PostPowerOff(); });
   OnCommand(ID_KEYBOARD_RELEASE, [this] { SetReleased(!released_); });
   // Pressing F11 again changes your mind rather than arming it twice.
   OnCommand(ID_KEYBOARD_PASSONCE, [this] { SetPassOnce(!passOnce_); });
@@ -148,8 +185,11 @@ void MainWindow::RefreshTitle() const {
   // names no keys: advice in a state line is repeated on every glance and
   // rots quietly (the Eureka emulator learned that); the keys are in
   // Nápověda.
+  // Switched off outranks where the keys go: they go nowhere.
   std::wstring title = L"Aria " + info_.version + L", " + info_.encoding +
-                       (released_ ? L" — klávesnice uvolněná" : L" — klávesy do Arie");
+                       (poweredOff_ ? L" — vypnutá"
+                        : released_ ? L" — klávesnice uvolněná"
+                                    : L" — klávesy do Arie");
   if (noAudio_) title += L" — bez zvuku";
   SetTitle(title);
 }
@@ -158,6 +198,13 @@ void MainWindow::RefreshMenu() const {
   const HMENU menu = GetMenu(hwnd_);
   if (!menu) return;
   CheckMenuItem(menu, ID_KEYBOARD_RELEASE, MF_BYCOMMAND | (released_ ? MF_CHECKED : MF_UNCHECKED));
+  // While the machine is off the keyboard is released and cannot be taken
+  // back: there is nothing on the other side.  Ticked and greyed together.
+  EnableMenuItem(menu, ID_KEYBOARD_RELEASE, MF_BYCOMMAND | (poweredOff_ ? MF_GRAYED : MF_ENABLED));
+  // Nothing to switch off on an off machine.  Both resets stay enabled: the
+  // warm one switches an off machine on, and on a running one it is the way
+  // out of a hang.
+  EnableMenuItem(menu, ID_MACHINE_POWEROFF, MF_BYCOMMAND | (poweredOff_ ? MF_GRAYED : MF_ENABLED));
   CheckMenuItem(menu, ID_KEYBOARD_PASSONCE, MF_BYCOMMAND | (passOnce_ ? MF_CHECKED : MF_UNCHECKED));
   // Meaningless while the keyboard is released: every key already goes to
   // Windows.  Greyed says so where a screen reader reads it.
@@ -172,7 +219,7 @@ void MainWindow::RefreshMenu() const {
 // the only place that names them.
 void MainWindow::RefreshShortcutText(HMENU menu) const {
   static constexpr wchar_t kPrefix[] = L"F11, ";
-  for (UINT id : {ID_FILE_EXIT, ID_HELP_KEYS}) {
+  for (UINT id : {ID_FILE_EXIT, ID_MACHINE_RESET, ID_MACHINE_POWERON, ID_MACHINE_POWEROFF, ID_HELP_KEYS}) {
     wchar_t text[128];
     // MF_BYCOMMAND searches the submenus too, so the ids are enough.
     if (!GetMenuStringW(menu, id, text, static_cast<int>(std::size(text)), MF_BYCOMMAND)) continue;
@@ -219,7 +266,9 @@ void MainWindow::ReleaseAll() {
   held_.clear();
 }
 
-void MainWindow::SetReleased(bool released) {
+void MainWindow::SetReleased(bool released, bool quiet) {
+  // An off machine has nothing to give the keyboard to.
+  if (poweredOff_ && !released) return;
   if (released_ == released) return;
   released_ = released;
   // Arming one and then the other would leave the one-shot armed behind the
@@ -230,7 +279,22 @@ void MainWindow::SetReleased(bool released) {
   // pressed the Aria's Shift on the way.
   ReleaseAll();
   RefreshTitle();
+  if (quiet) return;
   if (released_) ToneLeaving(); else ToneReturning();
+}
+
+bool MainWindow::ConfirmClose() {
+  const int answer = MessageBoxW(hwnd_,
+                                 L"Aria je stále zapnutá.\r\n\r\n"
+                                 L"Ano: vypnout ji a paměť uložit, příští spuštění na ni naváže.\r\n"
+                                 L"Ne: zavřít bez uložení, jako po odpojení baterie; příště bude paměť "
+                                 L"i RAM disk D: prázdný.\r\n"
+                                 L"Storno: nechat Arii běžet.\r\n\r\n"
+                                 L"Vypnout Arii a uložit paměť?",
+                                 L"Aria je zapnutá", MB_YESNOCANCEL | MB_ICONQUESTION);
+  if (answer == IDCANCEL) return false;
+  switchOffOnExit_ = answer == IDYES;
+  return true;
 }
 
 void MainWindow::SetPassOnce(bool armed) {
@@ -328,6 +392,26 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     case WM_INITMENUPOPUP:
       RefreshMenu();
       break;
+
+    case WM_CLOSE:
+      // Every way out lands here: Konec posts it, Alt+F4 and the close box
+      // reach it through WM_SYSCOMMAND.  An off machine has its memory
+      // saved without a word; a running one asks (user's choice, 8. 10.
+      // 2026; the Eureka emulator asks too).
+      if (!poweredOff_ && !ConfirmClose()) return 0;
+      break;
+
+    case WM_ARIA_POWER:
+      // Off and released are one state: an off machine has nowhere to put a
+      // key, and holding the keyboard would make every key silent.  So the
+      // keyboard goes to Windows on the way out and back on the way in,
+      // without a tone of its own -- the power tone is the announcement.
+      // poweredOff_ first: SetReleased asks it.
+      poweredOff_ = wParam != 0;
+      SetReleased(poweredOff_, /*quiet=*/true);
+      if (poweredOff_) TonePoweredOff(); else TonePoweredOn();
+      RefreshTitle();
+      return 0;
 
     case WM_TIMER:
       if (wParam == kAudioTimer && !noAudio_ && !emulator_.AudioOk()) {

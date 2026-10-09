@@ -61,6 +61,16 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   // The battery disconnected: RAM and CMOS are lost, the clock falls back
   // to host time. A new machine starts this way.
   void BatteryCut();
+  // Switched off from outside, as by the Aria's own write of 0 to 0701h
+  // (TURNOFF.COM): the CPU stops, the battery keeps RAM and clock.
+  void PowerOff() { powered_off_ = true; }
+
+  // What the battery keeps, for the host to save between sessions: the whole
+  // RAM, then the clock chip (Rtc146818::SaveState).
+  static constexpr std::size_t kStateSize = (1u << 20) + Rtc146818::kStateSize;
+  void SaveState(std::vector<uint8_t>& out) const;
+  // False, with the machine untouched, when `in` is not kStateSize long.
+  bool LoadState(const std::vector<uint8_t>& in);
   // Runs about `cycles` CPU cycles.
   void Run(int cycles);
 

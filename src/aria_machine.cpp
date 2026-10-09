@@ -33,6 +33,19 @@ void AriaMachine::BatteryCut() {
   rtc_ = Rtc146818(clock_);
 }
 
+void AriaMachine::SaveState(std::vector<uint8_t>& out) const {
+  out.assign(ram_.begin(), ram_.end());
+  out.resize(kStateSize);
+  rtc_.SaveState(out.data() + ram_.size());
+}
+
+bool AriaMachine::LoadState(const std::vector<uint8_t>& in) {
+  if (in.size() != kStateSize) return false;
+  std::copy(in.begin(), in.begin() + static_cast<std::ptrdiff_t>(ram_.size()), ram_.begin());
+  rtc_.LoadState(in.data() + ram_.size());
+  return true;
+}
+
 void AriaMachine::PowerOn() {
   latch_580_ = latch_480_ = 0;
   powered_off_ = false;

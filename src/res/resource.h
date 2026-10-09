@@ -12,6 +12,12 @@
 
 // Menu and accelerator commands.
 #define ID_FILE_EXIT         40002
+// Reset is the battery cut: RAM, the RAM disk D: and the clock's CMOS are
+// lost.  The warm reset keeps them; it switches an off machine on and
+// resets a running one.  See AriaMachine::PowerOn and BatteryCut.
+#define ID_MACHINE_RESET     40010
+#define ID_MACHINE_POWEROFF  40011
+#define ID_MACHINE_POWERON   40012
 #define ID_KEYBOARD_RELEASE  40023
 #define ID_KEYBOARD_PASSONCE 40024
 #define ID_HELP_KEYS         40040

@@ -1004,6 +1004,36 @@ neuslyší. Chybí zapnutí po vypnutí (`0701h`), restart po `INT 19h`,
 klávesy pro teplý reset a odpojení baterie a uložení paměti do souboru
 mezi spuštěními emulátoru.
 
+**Doplněno 8. 10. 2026, okno (krok 2):** všechno z předchozího odstavce
+je hotové. Stroj → Reset (odpojit baterii, s dotazem), Teplý reset,
+Vypnout Arii (`F11`, `Ctrl+R`/`P`/`V`, jako Eureka); vypnutí (vlastní
+`0701h` nebo z hostitele) a zapnutí ohlásí okno tóny Eureky a titulkem,
+vypnutá Aria pustí klávesnici. `INT 19h` stroj znovu zapne s RAM.
+Paměť (RAM 1 MB + celé RTC s posunem hodin, `AriaMachine::SaveState`)
+se ukládá při zavření okna, jen když je Aria vypnutá nebo ji uživatel
+v dotazu vypne (rozhodnutí uživatele: dotaz na Alt+F4); soubor
+`pamet-<CRC-32 obrazu>.bin` (`src/snapshot.*`) v `config` vedle EXE
+nebo `%APPDATA%\Aria`, při startu přečten a smazán. Jeden soubor na
+sestavení, takže 7.05 a 6.87 nemají společnou paměť a dotaz „jiná ROM“
+z Eureky odpadá. `boot_test` druhý start dělá z nového stroje načteného
+ze souboru.
+
+**Otevřené: „konec“ nevypíná.** Podle uživatele Arii vypíná akord všech
+čtyř šipek (API: `K_UDLR` = 18Fh, `ARIA-API.H`). V `boot_test` po něm
+MAINMENU promluví (asi 12 000 bajtů do DSP), ale do 20 s nezapíše
+`0701h`; CPU stojí na `355C:01E0`, ne ve vypínací smyčce AAPI. Ta
+(`AAPI.EXE+DDF0`, `POWER_SWITCH_OFF`) čeká, až `INT 61h` AX=010Ah
+(SpeechSpeaking, `SPEAK.EXE+8512h`: příznak `[123Eh]` nebo neprázdný
+kruh textu `[1B6Eh]`/`[1B70h]`) vrátí 0, pak 100 ms (`+DE0C`, zpoždění
+v ms, 6.4) a `out 0701h,0`. Nejspíš MAINMENU po „konec“ něco říká a čeká
+na odpověď **[předpoklad]**; co řekl, ukáže až záznam textu z
+`INT 61h`.
+
+**Neplatí (uživatel, 9. 10. 2026):** MAINMENU se na nic neptá, po čtyřech
+šipkách jen řekne „vypnuto“ a Aria se vypne. Podezření se tím přesouvá na
+čekání AAPI na konec řeči: SpeechSpeaking v emulátoru nejspíš nikdy
+nevrátí 0 **[předpoklad, k ověření]**.
+
 ### 6.10 Rozhodnutí: vrstva DOS
 
 Buď jádro FreeDOS na HLE BIOSu, nebo `INT 21h` v hostiteli. Riziko: ovladače
