@@ -1055,6 +1055,29 @@ skočí dál do SPEAK (`0Fh 61h; jmp far`), pak akord čtyř šipek a krokován�
 Klávesa se tedy ztratí nebo změní mezi frontou BKB (`+0663h`, kód `8Fh`
 z `+0437h`–`+047Ah`) a MAINMENU. Další krok: zjistit, jaký kód MAINMENU
 přes AAPI (`GetKey`, `INT 16h` BKB `+0DC5h`) po akordu skutečně dostane.
+
+**Vyřešeno 9. 10. 2026 — emulátor je v pořádku, test ne.** Obalem
+`INT 16h` (záznam AH a vráceného AX): AAPI čte klávesy `INT 16h` AH=21h
+z `3246:0086` a akord **dostane jako `018Fh`** (šipka nahoru `0181h`,
+F1 `01C0h`). Na zásobníku byl text „, ano nebo ne?“: v testu po
+studeném startu visí otázka MAINMENU **„ram disk může být poškozen,
+formátovat, ano nebo ne?“** (`IDS_MM_RAMDISK_CORRUPT` 114h). MAINMENU
+před ní porovná 8 bajtů na `B000:0030` (zaváděcí sektor RAM disku) se
+vzorem z `DS:011Ch` (`MAINMENU.EXE+0729h`–`+0796h`, porovnání `+3B9Bh`);
+po formátování (`+0678h`) vzor zapíše, takže otázka přijde jen po
+prázdné paměti. Otázka bere všechny klávesy, proto akord konec i F1 v
+testu „nic nedělaly“. Ano je **`y`** i v české verzi (MESSAGES.DAT
+„yYnN“, `IDS_YES_CHARS` 83h); `a` otázku jen zopakuje. Po `y`:
+„ano“, „formátování skončeno ok“, pak konec → MAINMENU dostane `18Fh`,
+řekne zprávu 8 **„vypnuto“** (MESSAGES.DAT: 0 selhání, 3 ano, 5 „, ano
+nebo ne?“, 8 vypnuto) a AAPI zapíše `0701h` — přesně podle uživatele.
+**To vysvětluje i formátování „při každém zapnutí“:** emulátor dřív
+začínal s prázdnou pamětí. `boot_test` to teď ověřuje celé: otázka po
+studeném startu, `y` naformátuje, konec řekne „vypnuto“ a vypne,
+druhý start ze souboru paměti otázku nepoloží a položka na D: zůstane
+(7.05 i 6.87). Řeč zaznamenává `SpeechLog` v testu (pahýl na
+`FFC0:0240h`, `INT 61h` AX=0201h řetězec v ES:DI, AX=0200h znak v BL).
+Bead `ar-rp0` uzavřen.
 Záznam `INT 61h` pahýlem stojí za to udělat trvalým (`boot_test -v`).
 `TURNOFF.COM` (uživatel si na něj vzpomněl) je na B: a dělá jen
 `cli; out 0701h,0` — totéž co konec `+DDF0h`.

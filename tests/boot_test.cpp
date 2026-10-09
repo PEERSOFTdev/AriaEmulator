@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -44,6 +45,47 @@ std::string Printable(const std::string& bytes) {
   }
   return out;
 }
+
+// What the Aria says, as text: SPEAK's INT 61h with AX=0201h (a string at
+// ES:DI, SPEAK.EXE+81B5h dispatch) and AX=0200h (one character in BL,
+// SAY.COM). Once SPEAK owns vector 61h, the vector is pointed at a stub in
+// the ROM's free space that traps to here and jumps on to SPEAK; the
+// machine itself is not changed. Bytes are the image's encoding.
+class SpeechLog {
+ public:
+  // After every slice: hooks the vector as soon as SPEAK has installed it.
+  void Poll(AriaMachine& m) {
+    if (hooked_) return;
+    const uint16_t off = m.PeekWord(0x61 * 4), seg = m.PeekWord(0x61 * 4 + 2);
+    if (seg == 0 || seg == 0xFFC0) return;
+    hooked_ = true;
+    // FFC0:0240h is unused by the BIOS's layout (hle_bios.cpp).
+    const uint8_t stub[] = {0x0F, 0xF3, 0xEA, static_cast<uint8_t>(off), static_cast<uint8_t>(off >> 8),
+                            static_cast<uint8_t>(seg), static_cast<uint8_t>(seg >> 8)};
+    std::memcpy(m.RomStub() + 0x240, stub, sizeof stub);
+    m.PokeWord(0x61 * 4, 0x0240);
+    m.PokeWord(0x61 * 4 + 2, 0xFFC0);
+    m.cpu().SetTrapHandler([this, &m](uint8_t number) {
+      if (number != 0xF3) {
+        m.bios().Trap(number);
+        return;
+      }
+      const auto r = m.cpu().GetRegisters();
+      if (r.ax == 0x0200) {
+        text_.push_back(static_cast<char>(r.bx & 0xFF));
+      } else if (r.ax == 0x0201) {
+        const uint32_t at = (static_cast<uint32_t>(r.es) << 4) + r.di;
+        for (uint32_t i = 0; i < 512 && m.Peek(at + i); ++i) text_.push_back(static_cast<char>(m.Peek(at + i)));
+        text_.push_back('\n');
+      }
+    });
+  }
+  const std::string& text() const { return text_; }
+
+ private:
+  bool hooked_ = false;
+  std::string text_;
+};
 
 }  // namespace
 
@@ -137,9 +179,11 @@ int wmain(int argc, wchar_t** argv) {
                           "Aria Alarm Scheduler", ">mainmenu"};
   std::vector<double> stage_seconds(std::size(stages), -1.0);
   double first_sound = -1.0;
+  SpeechLog speech;
   while (ran < budget && !machine.PoweredOff() && !machine.bios().RebootRequested()) {
     machine.Run(kSlice);
     ran += kSlice;
+    speech.Poll(machine);
     if (!verbose) continue;
     const double now = static_cast<double>(ran) / AriaMachine::kCpuHz;
     for (std::size_t s = 0; s < std::size(stages); ++s) {
@@ -323,13 +367,42 @@ int wmain(int argc, wchar_t** argv) {
     return 1;
   }
 
+  if (verbose) std::cout << "--- speech ---\n" << Printable(speech.text()) << "\n--- end ---\n";
+
+  // Holds a key of the matrix for 0.3 s, then runs `seconds` more, or until
+  // the machine switches itself off.
+  auto press = [&](AriaMachine& m, int row, uint8_t bits, int seconds) {
+    m.SetKeyRow(row, bits);
+    for (long long t = 0; t < AriaMachine::kCpuHz * 3 / 10; t += kSlice) m.Run(kSlice);
+    m.SetKeyRow(row, 0);
+    for (long long t = 0; t < AriaMachine::kCpuHz * static_cast<long long>(seconds) && !m.PoweredOff(); t += kSlice)
+      m.Run(kSlice);
+  };
+
+  // A cold start finds no signature of MAINMENU's at B000:0030 in the RAM
+  // disk's boot sector (an 8-byte compare, MAINMENU.EXE+0729h-+0796h), so
+  // MAINMENU asks IDS_MM_RAMDISK_CORRUPT "ram disk může být poškozen,
+  // formátovat, ano nebo ne?" and takes every key until it is answered.
+  // The yes characters are "yY" in the Czech builds too (MESSAGES.DAT,
+  // IDS_YES_CHARS); y is dots 1, 3, 4, 5, 6 = 0581h bits 2, 0, 3, 4, 5.
+  if (speech.text().find(", ano nebo ne?") == std::string::npos) {
+    std::cout << "FAIL boot: no RAM disk question after a cold start\n";
+    return 1;
+  }
+  std::size_t mark = speech.text().size();
+  press(machine, 0, 0x3D, 8);
+  if (speech.text().find(" ok", mark) == std::string::npos) {
+    std::cout << "FAIL boot: y did not format drive D: (" << Printable(speech.text().substr(mark)) << ")\n";
+    return 1;
+  }
+
   // The battery keeps the RAM disk D: through power-off (HANDOFF 6.9), and
   // the emulator keeps it between runs (snapshot.h): plant a file entry in
-  // D:'s root directory, switch off, save to a snapshot file, load it into
-  // a new machine, power that on, and see that RAMDISK.EXE takes the disk
-  // over instead of making a new one. VDISK sits at B0000h
-  // (RAMDISK.EXE+01BFh, HANDOFF 6.2), its boot sector carries "VDISK" and a
-  // BPB.
+  // D:'s root directory, switch off the Aria's own way, save to a snapshot
+  // file, load it into a new machine, power that on, and see that
+  // RAMDISK.EXE takes the disk over and MAINMENU does not ask again. VDISK
+  // sits at B0000h (RAMDISK.EXE+01BFh, HANDOFF 6.2), its boot sector
+  // carries "VDISK" and a BPB.
   constexpr uint32_t kRamDisk = 0xB0000;
   auto vdisk = [](AriaMachine& m) {
     const char sign[] = "VDISK";
@@ -350,10 +423,16 @@ int wmain(int argc, wchar_t** argv) {
   while (machine.Peek(entry) != 0 && machine.Peek(entry) != 0xE5) entry += 32;
   for (int i = 0; i < 11; ++i) machine.Poke(entry + i, static_cast<uint8_t>(kMarker[i]));
   machine.Poke(entry + 11, 0x20);  // Archive.
-  // Switched off from the host. The Aria's own way, "konec" with all four
-  // cursor keys, makes MAINMENU speak but not switch off within 20 s
-  // (HANDOFF 6.9, open), so it is not the test's way yet.
-  machine.PowerOff();
+  // "Konec": all four cursor keys (0584h bits 0-3) are K_UDLR 18Fh, on which
+  // MAINMENU says message 8 "vypnuto" and calls Power(POWER_SWITCH_OFF)
+  // (MAINMENU.EXE+087Ah, +09AFh); AAPI waits for the speech to end and
+  // writes 0 to 0701h (AAPI.EXE+DDF0h).
+  mark = speech.text().size();
+  press(machine, 2, 0x0F, 20);
+  if (!machine.PoweredOff() || speech.text().find("vypnuto", mark) == std::string::npos) {
+    std::cout << "FAIL boot: konec (all four cursor keys) did not say vypnuto and switch off\n";
+    return 1;
+  }
 
   const uint32_t firmware = Crc32(flash.bytes.data(), flash.bytes.size());
   const std::filesystem::path memory_file = std::filesystem::temp_directory_path() / "aria_boot_test_pamet.bin";
@@ -371,18 +450,33 @@ int wmain(int argc, wchar_t** argv) {
     return 1;
   }
   second.PowerOn();
-  for (long long t = 0; t < AriaMachine::kCpuHz * 30LL; t += kSlice) {
+  SpeechLog second_speech;
+  long long after_menu = -1;  // Cycles run since ">mainmenu", for MAINMENU's own start.
+  for (long long t = 0; t < AriaMachine::kCpuHz * 40LL && after_menu < AriaMachine::kCpuHz * 10LL; t += kSlice) {
     second.Run(kSlice);
-    if (second.bios().Teletype().find(">mainmenu") != std::string::npos) break;
+    second_speech.Poll(second);
+    if (after_menu >= 0) {
+      after_menu += kSlice;
+    } else if (second.bios().Teletype().find(">mainmenu") != std::string::npos) {
+      after_menu = 0;
+    }
   }
-  if (verbose) std::cout << "--- INT 10h output, second power-on ---\n" << Printable(second.bios().Teletype()) << "\n";
+  if (verbose) {
+    std::cout << "--- INT 10h output, second power-on ---\n" << Printable(second.bios().Teletype()) << "\n";
+    std::cout << "--- speech, second power-on ---\n" << Printable(second_speech.text()) << "\n--- end ---\n";
+  }
   bool kept = vdisk(second);
   for (int i = 0; i < 11 && kept; ++i) kept = second.Peek(entry + i) == static_cast<uint8_t>(kMarker[i]);
-  if (second.bios().Teletype().find(">mainmenu") == std::string::npos || !kept) {
+  if (after_menu < 0 || !kept) {
     std::cout << "FAIL boot: after a second power-on " << (kept ? "no MAINMENU" : "drive D: was made anew") << "\n";
     return 1;
   }
+  if (second_speech.text().find(", ano nebo ne?") != std::string::npos) {
+    std::cout << "FAIL boot: MAINMENU asks to format drive D: again after a power-on with the memory kept\n";
+    return 1;
+  }
   std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, speech and harp from the DSP,"
-               " space + dot 4 answered, drive D: kept through a memory snapshot)\n";
+               " space + dot 4 answered, D: formatted on y, konec says vypnuto and switches off, D: kept through"
+               " a memory snapshot without a new question)\n";
   return 0;
 }
