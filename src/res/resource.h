@@ -20,6 +20,9 @@
 #define ID_MACHINE_POWERON   40012
 #define ID_KEYBOARD_RELEASE  40023
 #define ID_KEYBOARD_PASSONCE 40024
+// Keys the host keyboard cannot play, sent to the Aria from the menu, as
+// Eureka's "Poslať Eureke kláves" (its 40025-40028).
+#define ID_KEYBOARD_SEND_KONEC 40029
 #define ID_HELP_KEYS         40040
 #define ID_HELP_ABOUT        40041
 // F12: the menu bar, on a key the Aria has no use for (aria.rc).

@@ -97,7 +97,9 @@ const wchar_t kShortcutHelp[] =
     L"Stroj:\r\n"
     L"\r\n"
     L"Arii vypnete jako naozaj příkazem konec, všemi čtyřmi šipkami\r\n"
-    L"naráz (stačí i Home s PgDn). Nebo F11, Ctrl+V. Vypnutá zůstane\r\n"
+    L"naráz. Většina klávesnic PC čtyři šipky naráz nepozná, proto je\r\n"
+    L"konec i v nabídce Klávesnice, Poslat Arii klávesu (F12, K, P, K),\r\n"
+    L"a stačí i Home s PgDn. Nebo F11, Ctrl+V. Vypnutá zůstane\r\n"
     L"v okně, ohlásí to tři klesající tóny a titulek, a klávesnici\r\n"
     L"dostanou Windows.\r\n"
     L"\r\n"
@@ -152,6 +154,13 @@ void MainWindow::RegisterCommands() {
   OnCommand(ID_KEYBOARD_RELEASE, [this] { SetReleased(!released_); });
   // Pressing F11 again changes your mind rather than arming it twice.
   OnCommand(ID_KEYBOARD_PASSONCE, [this] { SetPassOnce(!passOnce_); });
+  OnCommand(ID_KEYBOARD_SEND_KONEC, [this] {
+    // "Konec": all four cursor keys at once, which most PC keyboards cannot
+    // report (key rollover). Down and up together; the emulator thread holds
+    // the chord until BKB has taken it (EmulatorThread::ApplyKeys).
+    emulator_.Key(2, 0x0F, true);
+    emulator_.Key(2, 0x0F, false);
+  });
   OnCommand(ID_ACTIVATE_MENU, [this] {
     // What Alt and F10 would do, on a key the Aria has no use for.  Posted
     // rather than sent, so the menu loop does not start inside the
@@ -205,6 +214,8 @@ void MainWindow::RefreshMenu() const {
   // warm one switches an off machine on, and on a running one it is the way
   // out of a hang.
   EnableMenuItem(menu, ID_MACHINE_POWEROFF, MF_BYCOMMAND | (poweredOff_ ? MF_GRAYED : MF_ENABLED));
+  // A key for an off machine would go nowhere, in silence.
+  EnableMenuItem(menu, ID_KEYBOARD_SEND_KONEC, MF_BYCOMMAND | (poweredOff_ ? MF_GRAYED : MF_ENABLED));
   CheckMenuItem(menu, ID_KEYBOARD_PASSONCE, MF_BYCOMMAND | (passOnce_ ? MF_CHECKED : MF_UNCHECKED));
   // Meaningless while the keyboard is released: every key already goes to
   // Windows.  Greyed says so where a screen reader reads it.

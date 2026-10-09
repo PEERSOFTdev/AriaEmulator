@@ -68,6 +68,14 @@ BEGIN
     BEGIN
         MENUITEM "&Uvolnit klávesnici\tShift+F11",              ID_KEYBOARD_RELEASE
         MENUITEM "&Jedna klávesa do Windows nebo zkratka\tF11", ID_KEYBOARD_PASSONCE
+        MENUITEM SEPARATOR
+        /* No shortcut, as in Eureka's submenu: every host shortcut is a key
+           the Aria never gets again.  The mnemonics reach it in four keys:
+           F12, K, P, K. */
+        POPUP "&Poslat Arii klávesu"
+        BEGIN
+            MENUITEM "&Konec (všechny čtyři šipky)",            ID_KEYBOARD_SEND_KONEC
+        END
     END
     POPUP "&Nápověda"
     BEGIN

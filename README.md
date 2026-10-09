@@ -132,8 +132,11 @@ jinak v `%APPDATA%\Aria`. Při startu se přečte a smaže, takže běh, který
 skončí jinak než vypnutím, nechá příště prázdnou paměť.
 
 Arii vypnete i jejím vlastním příkazem **konec**: v hlavní nabídce
-všechny čtyři šipky naráz (v emulátoru stačí `Home` s `PgDn`). Aria
-řekne „vypnuto“ a vypne se.
+všechny čtyři šipky naráz. Aria řekne „vypnuto“ a vypne se. Většina
+klávesnic PC čtyři šipky naráz neohlásí (nezvládne tolik kláves
+najednou), proto je konec i v nabídce **Klávesnice → Poslat Arii
+klávesu → Konec** (`F12`, `K`, `P`, `K`); stačí i `Home` s `PgDn`, které
+stisknou po dvou šipkách.
 
 Po odpojení baterie (a dřív při každém spuštění emulátoru, protože
 paměť nepřežila) se hlavní nabídka zeptá „ram disk může být poškozen,
