@@ -1034,6 +1034,31 @@ na odpověď **[předpoklad]**; co řekl, ukáže až záznam textu z
 čekání AAPI na konec řeči: SpeechSpeaking v emulátoru nejspíš nikdy
 nevrátí 0 **[předpoklad, k ověření]**.
 
+**Ověřeno 9. 10. 2026, neplatí ani to.** Pokus v `boot_test` (dočasný,
+nezapsaný): vektor `61h` přes pahýl v ROM, který volání zaznamená a
+skočí dál do SPEAK (`0Fh 61h; jmp far`), pak akord čtyř šipek a krokování
+3 s. Zjištěno:
+
+- Po akordu přijde `INT 61h` AX=0101h (ztišení, BKB při stisku), pak
+  text `!<TO14/100/10000/1>` = **cvaknutí klávesy BKB** (`IDS_KBD_KLIK5`
+  0C16h v ARIAMSG.H, MESSAGES.DAT `+9709h`), jinak žádný text.
+- **MAINMENU svůj případ `K_UDLR` nedostane:** `MAINMENU.EXE+087Ah`
+  porovná klávesu s `18Fh` a skočí na `+09AFh` (volání s 8, nejspíš
+  zvuk, pak `Power(0, POWER_SWITCH_OFF = 2)`, ARIA-INT.H); kód na `+09AFh`
+  se během 3 s nevykoná. `Power` v AAPI (tabulka skoků `CS:0383h` při
+  základu segmentu `DC40h`) na příkaz 2 volá rovnou `+DDF0h`, ani ta se
+  nevykoná.
+- SPEAK je potom v klidu (`[123Eh]` = 0, kruh textu prázdný), tisíce
+  dotazů AX=010Ah jsou obyčejná nečinná smyčka MAINMENU (byly i před
+  akordem). Čekání na řeč tedy vypnutí neblokuje.
+
+Klávesa se tedy ztratí nebo změní mezi frontou BKB (`+0663h`, kód `8Fh`
+z `+0437h`–`+047Ah`) a MAINMENU. Další krok: zjistit, jaký kód MAINMENU
+přes AAPI (`GetKey`, `INT 16h` BKB `+0DC5h`) po akordu skutečně dostane.
+Záznam `INT 61h` pahýlem stojí za to udělat trvalým (`boot_test -v`).
+`TURNOFF.COM` (uživatel si na něj vzpomněl) je na B: a dělá jen
+`cli; out 0701h,0` — totéž co konec `+DDF0h`.
+
 ### 6.10 Rozhodnutí: vrstva DOS
 
 Buď jádro FreeDOS na HLE BIOSu, nebo `INT 21h` v hostiteli. Riziko: ovladače
