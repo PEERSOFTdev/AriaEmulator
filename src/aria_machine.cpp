@@ -14,6 +14,7 @@ constexpr uint32_t kWindowSize = 0x10000;
 
 AriaMachine::AriaMachine(const FlashImage& flash, std::vector<uint8_t> kernel, Rtc146818::Clock clock)
     : ram_(1 << 20, 0),
+      rom_area_(kRomStub - kRomArea, 0xFF),
       flash_(flash.bytes),
       kernel_(std::move(kernel)),
       clock_(std::move(clock)),
@@ -50,6 +51,9 @@ void AriaMachine::PowerOn() {
   latch_580_ = latch_480_ = 0;
   powered_off_ = false;
   ucs_start_ = 0xFFC00;
+  // ROM contents are the BIOS's to set up; the kernel copies itself in anew
+  // at every start, and none of it is battery-kept state.
+  std::fill(rom_area_.begin(), rom_area_.end(), 0xFF);
   dsp_bytes_.clear();
   samples_.clear();
   sample_dividers_.clear();
@@ -184,16 +188,21 @@ uint8_t AriaMachine::ReadWindow(uint32_t address) const {
 uint8_t AriaMachine::ReadMemory(uint32_t address) {
   if (WindowMapped(address)) return ReadWindow(address);
   if (address >= ucs_start_) {
-    // Upper chip select: the boot ROM. Only the top 1 KB is ours; below
-    // it, inside a larger UCS, the original ROM disk A: would have been.
-    return address >= kRomStub ? rom_stub_[address - kRomStub] : 0xFF;
+    // Upper chip select: the boot ROM. Ours is the top 1 KB and the area
+    // from kRomArea; below that, inside a larger UCS, the original ROM
+    // disk A: would have been.
+    if (address >= kRomStub) return rom_stub_[address - kRomStub];
+    return address >= kRomArea ? rom_area_[address - kRomArea] : 0xFF;
   }
   return ram_[address];
 }
 
 void AriaMachine::WriteMemory(uint32_t address, uint8_t value) {
   if (WindowMapped(address)) return;  // Flash programming is not emulated (HANDOFF 6.11).
-  if (address >= ucs_start_) return;  // ROM.
+  if (address >= ucs_start_) {
+    if (address >= kRomArea && address < kRomStub) rom_area_[address - kRomArea] = value;
+    return;
+  }
   ram_[address] = value;
 }
 

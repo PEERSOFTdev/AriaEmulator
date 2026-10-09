@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 
 #include "aria_machine.h"
 
@@ -20,6 +21,25 @@ constexpr uint16_t kModelByte = 0x03FE;    // FFFF:000Eh, read by AAPI.EXE+46DEh
 // BIOS interrupts with a C++ handler (HANDOFF 6.1: what B: and FreeDOS call).
 constexpr uint8_t kHandled[] = {0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x19, 0x1A};
 
+// The trap PatchKernel puts in place of the kernel's allocation of its
+// resident code; no interrupt has this number, only our 0Fh F0h.
+constexpr uint8_t kKernelRomTrap = 0xF0;
+
+// configDone() in the unpacked FreeDOS ke2046 kernel (config.c, compiled
+// by Watcom; seen at 026B:ADFD): hma_paras = (HMAFree + 15) / 16 in AX,
+// kernel_seg = allocmem(AX), the MCB below it named "SC" with owner 8, then
+// MoveKernel(kernel_seg). -1 stands for any byte. The allocmem call is at
+// kAllocCall, the MoveKernel call at kMoveCall.
+constexpr int kConfigDone[] = {0xA1, -1,   -1,   0x05, 0x0F, 0x00, 0xB1, 0x04, 0xD3, 0xE8, 0x50, 0xE8,
+                               -1,   -1,   0x31, 0xDB, 0x89, 0xC2, 0x4A, 0x8E, 0xC2, 0x26, 0xC7, 0x47,
+                               0x08, 0x53, 0x43, 0x26, 0xC7, 0x47, 0x01, 0x08, 0x00, 0xE8, -1,   -1};
+constexpr std::size_t kAllocCall = 11, kMoveCall = 33;
+// MoveKernel's prologue down to "mov si,[CurrentKernelSegment]; test si,si"
+// (inithma.c); the variable's DS offset is at kSegmentVar.
+constexpr int kMoveKernel[] = {0x53, 0x51, 0x52, 0x56, 0x57, 0x06, 0x55, 0x89, 0xE5, 0x83,
+                               0xEC, -1,   0x89, 0xC1, 0x8B, 0x36, -1,   -1,   0x85, 0xF6};
+constexpr std::size_t kSegmentVar = 16;
+
 // The PCB after the BIOS moved it to I/O 0000h, as on the Aria (HANDOFF 6.1).
 constexpr uint16_t kPcbRelocation = 0x00FE;  // Offset 7Fh at its new base.
 constexpr uint16_t kTimer0MaxA = 0x0052, kTimer0Control = 0x0056;
@@ -27,6 +47,7 @@ constexpr uint16_t kTimer2MaxA = 0x0062, kTimer2Control = 0x0066;
 constexpr uint16_t kEoi = 0x0022, kInService = 0x002C;
 constexpr uint16_t kTimerIntControl = 0x0032;
 constexpr uint16_t kInt2Control = 0x003C;
+constexpr uint16_t kUmcs = 0x00A0;
 
 // BIOS data area at 0040:0000.
 constexpr uint32_t kBda = 0x400;
@@ -133,6 +154,12 @@ void HleBios::PowerOn(const std::vector<uint8_t>& kernel) {
   cpu.OutWord(kTimer2MaxA, 0xC925);
   cpu.OutWord(kTimer2Control, 0xE001);    // EN, INH, INT, CONT.
   cpu.OutWord(kTimerIntControl, 0x0000);  // Timer interrupts unmasked, priority 0.
+  // Upper chip select from F0000h, so the ROM area holding the kernel's
+  // code covers the top of the RAM disk's memory, as the Aria's ROM did
+  // (AriaMachine::kRomArea; RAMDISK.EXE saves UMCS, shrinks it to FFF8h for
+  // each access and restores it, +0372h-+03A9h). Bits 5-3 read as ones;
+  // no wait states. The Aria's own value is unknown [assumption].
+  cpu.OutWord(kUmcs, static_cast<uint16_t>((AriaMachine::kRomArea >> 10) << 6 | 0x38));
 
   // Vector table: everything to IRET, then the handlers.
   for (int n = 0; n < 256; ++n) {
@@ -152,8 +179,13 @@ void HleBios::PowerOn(const std::vector<uint8_t>& kernel) {
   // one serial port. The parallel port's PC address is unknown (HANDOFF
   // 6.7), so no LPT in the table yet.
   machine_.PokeWord(kBda + kEquipment, 0x0261);
-  // 640 KB for DOS; the RAM disk D: sits above (B0000h, HANDOFF 6.2).
-  machine_.PokeWord(kBda + kMemorySize, 640);
+  // 704 KB for DOS, up to the RAM disk D: at B0000h (HANDOFF 6.2). Nothing
+  // on B: names the size, but the 1 MB RAM divides into exactly this, the
+  // 64 KB at A0000h, the RAM disk's 319 KB and the 1 KB of boot ROM; at
+  // 640 KB those 64 KB would lie unused [assumption]. With the kernel's
+  // code in ROM it leaves the word processor the room it had on the Aria
+  // (HANDOFF 6.2, 9. 10. 2026).
+  machine_.PokeWord(kBda + kMemorySize, 704);
   machine_.Poke(kBda + kVideoMode, 3);
   machine_.PokeWord(kBda + kColumns, 80);
   machine_.PokeWord(kBda + kPageSize, 4000);
@@ -165,6 +197,8 @@ void HleBios::PowerOn(const std::vector<uint8_t>& kernel) {
   teletype_.clear();
   keys_.clear();
   reboot_ = false;
+  kernel_patch_tried_ = false;
+  kernel_in_rom_ = false;
 
   // FreeDOS boot hand-off (boot.asm): KERNEL.SYS at 0060:0000, entered
   // far with the BIOS boot drive in BL. Booting from B: makes the kernel
@@ -213,6 +247,65 @@ void HleBios::SetCallerZero(bool zero) {
   machine_.PokeWord(at, flags);
 }
 
+// The FreeDOS kernel keeps its resident code (the HMA_TEXT group, 40.6 KB
+// in ke2046) in the HMA when it can, and otherwise in a block of DOS memory
+// named "SC" (config.c configDone). The 80C188 has no HMA, and ROM-DOS ran
+// from the boot ROM, so on the Aria that memory was the programs': without
+// it the word processor (AWP.EXE, 249 KB) does not start and MAINMENU says
+// "plná paměť" (HANDOFF 6.2, 9. 10. 2026). So the allocation becomes a trap
+// that copies the code into the ROM area and hands MoveKernel that segment;
+// MoveKernel then points the kernel's far jumps there. It copies only
+// downwards itself (inithma.c), hence the copy here. Only an exact match of
+// configDone and MoveKernel is patched; anything else leaves the kernel as
+// it is, and boot_test notices the "SC" block.
+void HleBios::PatchKernel() {
+  kernel_patch_tried_ = true;
+  auto matches = [this](uint32_t at, const int* pattern, std::size_t length) {
+    for (std::size_t i = 0; i < length; ++i) {
+      if (pattern[i] >= 0 && machine_.Peek(at + static_cast<uint32_t>(i)) != pattern[i]) return false;
+    }
+    return true;
+  };
+  uint32_t site = 0;
+  int found = 0;
+  for (uint32_t at = 0x600; at + std::size(kConfigDone) < 0xA0000; ++at) {
+    if (matches(at, kConfigDone, std::size(kConfigDone))) {
+      site = at;
+      ++found;
+    }
+  }
+  if (found != 1) return;
+  const uint32_t after_call = site + kMoveCall + 3;
+  const uint32_t move_kernel = after_call + static_cast<int16_t>(machine_.PeekWord(site + kMoveCall + 1));
+  if (!matches(move_kernel, kMoveKernel, std::size(kMoveKernel))) return;
+  kernel_segment_var_ = machine_.PeekWord(move_kernel + kSegmentVar);
+  machine_.Poke(site + kAllocCall, 0x0F);
+  machine_.Poke(site + kAllocCall + 1, kKernelRomTrap);
+  machine_.Poke(site + kAllocCall + 2, 0x90);  // NOP for the third byte of the call.
+}
+
+void HleBios::KernelToRom(Regs& r) {
+  // AX = paragraphs of resident code; the code sits at CurrentKernelSegment
+  // :0000 (MoveKernel copies from offset HMATextStart & FFF0h, which is 0).
+  // The returned segment is one paragraph into the ROM area, so the "SC"
+  // MCB configDone writes below it lands in the area too, not on D:.
+  const uint32_t bytes = static_cast<uint32_t>(r.r.ax) * 16;
+  const uint16_t source = machine_.PeekWord((static_cast<uint32_t>(r.r.ds) << 4) + kernel_segment_var_);
+  const uint16_t target = static_cast<uint16_t>((AriaMachine::kRomArea >> 4) + 1);
+  if ((static_cast<uint32_t>(target) << 4) + bytes > AriaMachine::kRomStub) {
+    // Cannot happen with ke2046 (9EB0h bytes in 63 KB), but a kernel that
+    // grew must not overwrite the BIOS: stop where it is visible.
+    std::fprintf(stderr, "kernel code %u bytes does not fit the ROM area\n", static_cast<unsigned>(bytes));
+    r.r.ax = 0;
+    return;
+  }
+  for (uint32_t i = 0; i < bytes; ++i) {
+    machine_.Poke((static_cast<uint32_t>(target) << 4) + i, machine_.Peek((static_cast<uint32_t>(source) << 4) + i));
+  }
+  r.r.ax = target;
+  kernel_in_rom_ = true;
+}
+
 void HleBios::Trap(uint8_t number) {
   Regs regs{machine_.cpu().GetRegisters()};
   switch (number) {
@@ -228,7 +321,12 @@ void HleBios::Trap(uint8_t number) {
     case 0x0E: machine_.AcknowledgeTick(); return;
     case 0x10: Video(regs); break;
     case 0x11: regs.r.ax = machine_.PeekWord(kBda + kEquipment); break;
-    case 0x12: regs.r.ax = machine_.PeekWord(kBda + kMemorySize); break;
+    case 0x12:
+      regs.r.ax = machine_.PeekWord(kBda + kMemorySize);
+      // The kernel asks once, unpacked by then (main.c init_oem) and before
+      // CONFIG.SYS: the moment to patch it.
+      if (!kernel_patch_tried_) PatchKernel();
+      break;
     case 0x13:
       // A timer interrupt in service means this is timer 2's tick (above),
       // not a disk call: acknowledge it and leave the registers alone.
@@ -246,6 +344,7 @@ void HleBios::Trap(uint8_t number) {
     case 0x17: Printer(regs); break;
     case 0x19: reboot_ = true; regs.wait = true; break;
     case 0x1A: Time(regs); break;
+    case kKernelRomTrap: KernelToRom(regs); break;
     default: return;
   }
   if (regs.wait) regs.r.ip = static_cast<uint16_t>(regs.r.ip - 3);  // Back to STI; 0Fh nn.

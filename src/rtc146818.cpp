@@ -56,9 +56,10 @@ Rtc146818::Rtc146818(Clock clock) : clock_(clock ? std::move(clock) : Clock(Host
   regs_[kRegA] = 0x26;               // 32.768 kHz time base, 1024 Hz periodic rate.
   regs_[kRegB] = kB24Hour;           // BCD, 24-hour, no interrupts.
   regs_[kRegD] = kDValid;            // Battery good.
-  // CMOS defaults of the settings ARIAMODE keeps there (HANDOFF 6.5, 6.14):
-  // "R" = the newer card support on, so TRICKSS2 installs; no "C", so the
-  // driver for an external IBM keyboard (ATKBD) leaves.
+  // CMOS defaults of the settings ARIAMODE keeps there (HANDOFF 6.2, 6.5):
+  // "R" = the old flash card support on, so TRICKSS2 installs; no "C", so
+  // the driver for an external IBM keyboard (ATKBD) leaves. ARIAMODE's own
+  // defaults are the same (menu table, value 1 and 0).
   regs_[0x7F] = 'R';
   last_checked_ = Now();
 }

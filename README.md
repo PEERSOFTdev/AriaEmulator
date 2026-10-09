@@ -24,6 +24,14 @@ nespojuje, jen se načte jako samostatný soubor. Emulátor ho hledá ve
 složce z proměnné `ARIA_FREEDOS`, jinak vedle sebe; jinou cestu lze zadat
 volbou `--jadro`.
 
+ROM-DOS na Arii běžel z paměti ROM a programům nebral žádnou paměť.
+Emulátor proto při startu přesune rezidentní kód jádra FreeDOS (40 KB)
+do oblasti ROM nad RAM diskem, stejně jako to jádro samo dělá s oblastí
+HMA na počítačích PC, a DOS dostane 704 KB. Textový editor tak má
+dost paměti i s výchozím nastavením, jako na skutečné Arii. Soubor
+`KERNEL.SYS` se nemění, úprava se děje jen v paměti emulovaného stroje
+a jen u sestavení ke2046, které emulátor zná.
+
 ## Volba verze firmwaru
 
 Disk B: si můžete vybrat. Emulátor přijme aktualizaci přesně tak, jak ji

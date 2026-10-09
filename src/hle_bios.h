@@ -42,6 +42,10 @@ class HleBios {
   bool RebootRequested() const { return reboot_; }
   void ClearReboot() { reboot_ = false; }
 
+  // Whether this start moved the FreeDOS kernel's resident code into the
+  // ROM area (PatchKernel); false means it sits in DOS memory as usual.
+  bool KernelInRom() const { return kernel_in_rom_; }
+
  private:
   struct Regs;
   void Video(Regs& r);
@@ -58,6 +62,10 @@ class HleBios {
   void SetCursor(int row, int col);
   void SetCallerCarry(bool carry);
   void SetCallerZero(bool zero);
+  // Finds configDone's allocation for the kernel's resident code in the
+  // unpacked kernel and turns it into a trap (KernelToRom). Once per start.
+  void PatchKernel();
+  void KernelToRom(Regs& r);
 
   AriaMachine& machine_;
   std::deque<uint16_t> keys_;
@@ -65,6 +73,9 @@ class HleBios {
   uint8_t screen_[25][80][2] = {};
   int cursor_row_ = 0, cursor_col_ = 0;
   bool reboot_ = false;
+  bool kernel_patch_tried_ = false;
+  bool kernel_in_rom_ = false;
+  uint16_t kernel_segment_var_ = 0;  // DS offset of CurrentKernelSegment (inithma.c).
   std::function<void(const std::string&)> disk_log_;
 };
 

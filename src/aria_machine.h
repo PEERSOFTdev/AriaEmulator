@@ -36,6 +36,15 @@ struct BiosDisk {
 class AriaMachine : public CpuBus, private Adsp2105Board {
  public:
   static constexpr uint32_t kRomStub = 0xFFC00;  // Top 1 KB, ROM under any UMCS.
+  // The rest of the emulator's "boot ROM", F0000h-FFBFFh, under the upper
+  // chip select as the BIOS sets it: on the Aria the boot ROM, with ROM-DOS
+  // running from it, covered the top of the RAM disk's memory, which
+  // RAMDISK.EXE reaches only by shrinking UMCS to FFF8h with interrupts off
+  // (RAMDISK.EXE+0372h-+03A9h, HANDOFF 6.2). Here it holds the FreeDOS
+  // kernel's resident code (HleBios::PatchKernel), so that it takes no DOS
+  // memory, as ROM-DOS took none. Writable like shadow RAM: the kernel
+  // copies itself in at start-up. Where the real ROM began is unknown.
+  static constexpr uint32_t kRomArea = 0xF0000;
   // 15 MHz, the timers 3.75 MHz (HANDOFF 6.4): FOSSIL's baud divisors give
   // a 16x clock of 3.75 MHz (FOSSIL.COM+0793h), BKB counts 250 ms of key
   // delay as 18 scans of timer 2 at C925h (BKB.COM+1012h), and AAPI's 1 ms
@@ -156,6 +165,7 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
 
   std::vector<uint8_t> ram_;
   uint8_t rom_stub_[1024] = {};
+  std::vector<uint8_t> rom_area_;  // kRomArea up to kRomStub.
   std::vector<uint8_t> flash_;    // Flash contents as the window sees them.
   std::vector<uint8_t> kernel_;
   BiosDisk disks_[2];             // 0 = A: ROM disk, 1 = B: flash.

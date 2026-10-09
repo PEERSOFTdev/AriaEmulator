@@ -410,6 +410,8 @@ Předpoklady, které nic na B: nedokládá, a proto se mají ověřit:
   BIOS do té doby ESC přeskakuje stejně (posun o 2);
 - **výchozí CMOS** `7Fh` = „R“ (nová podpora karet zapnutá), `7Eh` bez
   „C“ (bez externí klávesnice), 6.5;
+  *(9. 10. 2026: „R“ je **stará** podpora fleš karet, tedy TRICKSS2, a
+  výchozí 1 je doložená v ARIAMODE, viz 6.2 „Paměť DOSu“.)*
 - **adaptér připojen, baterie nabitá** (`0700h` = `2Fh`, 6.9).
 
 ### 6.2 Mapa paměti a stránkování
@@ -478,6 +480,50 @@ Otevřené k 6.2: normální hodnota UMCS z boot ROM (velikost oblasti ROM),
 co je na A0000h–AFFFFh a kolik RAM vidí DOS. Stav a napájení slotu karty
 (`0480h`, `0702h`) jsou v 6.8; první verze tohoto odstavce měla hodnoty
 `0702h` obráceně.
+
+**Paměť DOSu a textový editor, 9. 10. 2026.** Uživatel hlásil, že F1
+dá „plná paměť“ a anglicky „please disable old flash card support in
+mode“, a přepnutí v Mode nepomohlo. Zjištěno:
+
+- Obě hlášky říká **MAINMENU**, ne editor: `MAINMENU.EXE+0351h`–`+0372h`
+  spustí program, a když DOS vrátí chybu 8 (málo paměti), řekne zprávu
+  16h `IDS_OUT_OF_MEMORY` a 276h. Formát MESSAGES.DAT: slovo 0, slovo
+  počet (D9Dh), tabulka 32bitových offsetů, na offsetu bajt délky a text.
+- **AWP.EXE potřebuje 248 624 B** (obraz + minimální alokace z hlavičky
+  MZ + PSP); volných bylo **172 KB** (640 KB, jádro FreeDOS v DOS paměti).
+- **„Podpora staré fleš karty“ je TRICKSS2** (42 KB rezidentně): položka
+  Mode se zprávou 274h má obsluhu `ARIAMODE.EXE+1361h`, která do CMOS
+  `057Fh` zapíše „R“ při hodnotě 1 (tabulka položek `ARIAMODE.EXE`
+  soubor `+4856h`, 28h bajtů na položku, hodnota na `+16h`; výchozí 1,
+  u externí klávesnice 0). Výchozí „R“ v emulátoru tedy sedí s Arií.
+  **Oprava 6.5:** „R“ neznamená novou, ale **starou** podporu karet.
+  Změna v Mode se projeví až při dalším startu (TRICKSS2 čte CMOS v
+  AUTOEXEC), a dokud se CMOS neukládala, každé spuštění ji zapomnělo.
+- Uživatel potvrdil, že na Arii editor s výchozím nastavením (TRICKSS2
+  zavedený) **šel spustit**. ROM-DOS běžel z ROM; FreeDOS drží rezidentní
+  kód (skupina HMA_TEXT, 40,6 KB) v bloku „SC“ v paměti DOSu, když nemá
+  HMA (`config.c` configDone), a 80C188 HMA nemá.
+
+**Řešení:** (1) DOS má **704 KB** (`INT 12h`, BDA): 640 + 64 KB na
+A0000h + 319 KB RAM disku od B0000h + 1 KB boot ROM je přesně 1 MB RAM;
+na B: nic velikost neudává **[předpoklad]**. (2) **Jádro v ROM:** UMCS od
+**F0000h** (`AriaMachine::kRomArea`, oblast ROM až po FFBFFh, zapisovatelná
+jako stínová RAM, mimo snímek paměti); RAM disk pod ní je dostupný, protože
+RAMDISK.EXE na každý přístup zmenší UMCS na FFF8h se zakázaným
+přerušením. Začátek F0000h je **[předpoklad]**. UMCS jinak píše jen
+obsluha IRQ 13 koprocesoru z knihovny Borlandu v ARIACLK a CALC
+(`out 0A0h,20h`, EOI druhého PIC na PC), která na Arii nikdy neběží.
+BIOS při `INT 12h` (jádro je už rozbalené, `main.c` init_oem) najde v
+paměti právě jeden výskyt configDone (alokace `allocmem`, MCB „SC“,
+volání MoveKernel; v ke2046 `026B:ADFD`) a ověří prolog MoveKernel s
+proměnnou CurrentKernelSegment (`DS:0592h`). Volání `allocmem` nahradí
+pastí `0Fh F0h`; ta zkopíruje kód do `F001:0000` a vrátí ten segment
+(MCB „SC“ pak padne do oblasti ROM, ne na D:). MoveKernel sám kopíruje
+jen směrem dolů (`inithma.c`), proto kopie v pasti; pak přesměruje
+dálkové skoky. **Výsledek:** 278 KB volných s TRICKSS2, F1 spustí AWP.
+`boot_test` (7.05 i 6.87) to ověřuje: žádný blok „SC“, největší volný
+blok ≥ potřebě AWP z hlavičky, po F1 blok „AWP“ v řetězu MCB a žádné
+„please disable“. Při jiném jádře se nic nepatchuje a test selže.
 
 ### 6.3 Rozhraní DSP
 

@@ -46,6 +46,45 @@ std::string Printable(const std::string& bytes) {
   return out;
 }
 
+// DOS's memory blocks (MCBs: 'M' or 'Z', owner, size in paragraphs, name).
+// The chain is found by trying every start in the low memory and keeping
+// the longest that ends in 'Z'; FreeDOS's own start (List of Lists) would
+// need an INT 21h call from here.
+struct Mcb {
+  uint16_t segment, owner, paragraphs;
+  std::string name;
+};
+
+std::vector<Mcb> McbChain(AriaMachine& m) {
+  std::vector<Mcb> best;
+  for (uint32_t start = 0x40; start < 0x2000; ++start) {
+    std::vector<Mcb> chain;
+    uint32_t p = start;
+    while (p < 0xB000) {
+      const uint8_t type = m.Peek(p * 16);
+      if (type != 'M' && type != 'Z') break;
+      Mcb block{static_cast<uint16_t>(p), m.PeekWord(p * 16 + 1), m.PeekWord(p * 16 + 3), {}};
+      for (int i = 0; i < 8 && m.Peek(p * 16 + 8 + i); ++i) block.name.push_back(static_cast<char>(m.Peek(p * 16 + 8 + i)));
+      chain.push_back(block);
+      if (type == 'Z') {
+        if (chain.size() > best.size()) best = chain;
+        break;
+      }
+      p += block.paragraphs + 1u;
+    }
+  }
+  return best;
+}
+
+// Paragraphs DOS must find free to start an EXE: its load image and
+// minimum allocation from the MZ header, plus the PSP.
+uint32_t ExeParagraphs(const std::vector<uint8_t>& exe) {
+  auto word = [&](std::size_t at) { return static_cast<uint32_t>(exe[at] | exe[at + 1] << 8); };
+  const uint32_t last = word(2), pages = word(4), header = word(8), minimum = word(10);
+  const uint32_t image = pages * 512 - (last ? 512 - last : 0) - header * 16;
+  return (image + 15) / 16 + minimum + 0x10;
+}
+
 // What the Aria says, as text: SPEAK's INT 61h with AX=0201h (a string at
 // ES:DI, SPEAK.EXE+81B5h dispatch) and AX=0200h (one character in BL,
 // SAY.COM). Once SPEAK owns vector 61h, the vector is pointed at a stub in
@@ -379,6 +418,37 @@ int wmain(int argc, wchar_t** argv) {
       m.Run(kSlice);
   };
 
+  // DOS memory as the Aria had it (HANDOFF 6.2, 9. 10. 2026): the kernel's
+  // resident code in the ROM area, no "SC" block, and the largest free
+  // block big enough for the word processor, AWP.EXE, which MAINMENU
+  // starts on F1.
+  std::vector<uint8_t> awp;
+  if (!volume.ReadFile("SYSTEM\\AWP.EXE", awp) || awp.size() < 32) {
+    std::cout << "FAIL boot: cannot read SYSTEM\\AWP.EXE from drive B:\n";
+    return 1;
+  }
+  const std::vector<Mcb> chain = McbChain(machine);
+  uint32_t largest = 0;
+  bool sc = false;
+  for (const Mcb& block : chain) {
+    if (block.owner == 0) largest = std::max<uint32_t>(largest, block.paragraphs);
+    if (block.owner == 8 && block.name == "SC") sc = true;
+  }
+  if (verbose) {
+    for (const Mcb& block : chain)
+      std::printf("MCB %04X owner %04X %6u B %s\n", block.segment, block.owner, block.paragraphs * 16u, block.name.c_str());
+    std::printf("kernel in ROM: %s; largest free %u B, AWP needs %u B\n", machine.bios().KernelInRom() ? "yes" : "no",
+                largest * 16, ExeParagraphs(awp) * 16);
+  }
+  if (!machine.bios().KernelInRom() || sc || chain.empty()) {
+    std::cout << "FAIL boot: the kernel's resident code is not in the ROM area\n";
+    return 1;
+  }
+  if (largest < ExeParagraphs(awp)) {
+    std::cout << "FAIL boot: " << largest * 16 << " B free, AWP.EXE needs " << ExeParagraphs(awp) * 16 << " B\n";
+    return 1;
+  }
+
   // A cold start finds no signature of MAINMENU's at B000:0030 in the RAM
   // disk's boot sector (an 8-byte compare, MAINMENU.EXE+0729h-+0796h), so
   // MAINMENU asks IDS_MM_RAMDISK_CORRUPT "ram disk může být poškozen,
@@ -475,8 +545,21 @@ int wmain(int argc, wchar_t** argv) {
     std::cout << "FAIL boot: MAINMENU asks to format drive D: again after a power-on with the memory kept\n";
     return 1;
   }
+  // F1 starts the word processor; without the memory ROM-DOS left free,
+  // MAINMENU said "plná paměť" and "please disable old flash card support
+  // in mode" instead (MAINMENU.EXE+0351h-+0372h, HANDOFF 6.2).
+  mark = second_speech.text().size();
+  press(second, 1, 0x01, 10);
+  if (verbose) std::cout << "--- speech after F1 ---\n" << Printable(second_speech.text().substr(mark)) << "\n--- end ---\n";
+  bool awp_running = false;
+  for (const Mcb& block : McbChain(second)) awp_running = awp_running || block.name == "AWP";
+  if (!awp_running || second_speech.text().find("please disable", mark) != std::string::npos) {
+    std::cout << "FAIL boot: F1 did not start the word processor (" << Printable(second_speech.text().substr(mark))
+              << ")\n";
+    return 1;
+  }
   std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, speech and harp from the DSP,"
                " space + dot 4 answered, D: formatted on y, konec says vypnuto and switches off, D: kept through"
-               " a memory snapshot without a new question)\n";
+               " a memory snapshot without a new question, F1 starts the word processor)\n";
   return 0;
 }
