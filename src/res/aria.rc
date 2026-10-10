@@ -58,19 +58,20 @@ BEGIN
     BEGIN
         MENUITEM "&Konec\tF11, Ctrl+Q",                         ID_FILE_EXIT
     END
-    POPUP "S&troj"
-    BEGIN
-        MENUITEM "&Reset (odpojit baterii)…\tF11, Ctrl+R",     ID_MACHINE_RESET
-        MENUITEM "T&eplý reset\tF11, Ctrl+P",                   ID_MACHINE_POWERON
-        MENUITEM "&Vypnout Arii\tF11, Ctrl+V",                  ID_MACHINE_POWEROFF
-    END
-    /* As the Eureka emulator's Disketa: the slot holds an SRAM card made
-       from a folder, written back when it comes out (HANDOFF 6.8). */
+    /* As the Eureka emulator's Disketa, and second like it: the slot holds
+       an SRAM card made from a folder, written back when it comes out
+       (HANDOFF 6.8). */
     POPUP "K&arta"
     BEGIN
         MENUITEM "&Vložit kartu ze složky…\tF11, Ctrl+I",       ID_CARD_INSERT
         MENUITEM "V&ysunout kartu\tF11, Ctrl+0",                ID_CARD_EJECT
         MENUITEM "&Zamknout proti zápisu\tF11, Ctrl+Z",         ID_CARD_PROTECT
+    END
+    POPUP "S&troj"
+    BEGIN
+        MENUITEM "&Reset (odpojit baterii)…\tF11, Ctrl+R",     ID_MACHINE_RESET
+        MENUITEM "T&eplý reset\tF11, Ctrl+P",                   ID_MACHINE_POWERON
+        MENUITEM "&Vypnout Arii\tF11, Ctrl+V",                  ID_MACHINE_POWEROFF
     END
     POPUP "&Klávesnice"
     BEGIN

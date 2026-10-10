@@ -1256,8 +1256,9 @@ umí), `Save` odmítne a složku nechá být **[ověřit, zda FORMAT na SRAM
 FAT16 dělá]**. Zatím se ukládá jen na výslovný `Save`; průběžné ukládání
 po utišení karty (jako Eureka po sekundě klidu) přijde s nabídkou.
 
-**Nabídka Karta, 10. 10. 2026 (`ar-aj1`, krok 2).** Nabídka Karta se
-zkratkami Disketa z Eureky: `Ctrl+I` vložit ze složky, `Ctrl+0` vysunout,
+**Nabídka Karta, 10. 10. 2026 (`ar-aj1`, krok 2).** Nabídka Karta je
+druhá za Souborem, jako Disketa v Eurece (pořadí upraveno na přání
+uživatele), se zkratkami Disketa z Eureky: `Ctrl+I` vložit ze složky, `Ctrl+0` vysunout,
 `Ctrl+Z` zamknout; tóny diskety z Eureky; titulek „karta <složka>,
 <velikost>[, zamčená]“, jinak „bez karty“. Dialog `IDD_CARD_SIZE` nabídne
 jen velikosti, na které se složka vejde (`FolderCard::FittingSizes`),
