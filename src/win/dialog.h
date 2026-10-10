@@ -84,13 +84,13 @@ std::wstring PickFolderToCreate(HWND owner, const wchar_t* title,
                                 const wchar_t* suggestedName,
                                 const wchar_t* startFolder = nullptr);
 
-// An existing file, offered first among those with `extension` (no dot)
-// under the name `kind`, with every file a choice away.  Empty when
-// cancelled.  Requires COM, as above.  It opens in startFolder when that
-// is given and exists: the shell's own memory of the last folder is not to
-// be relied on, and left alone it opened on the Desktop.
+// An existing file, offered first among those matching `pattern` (such as
+// "*.img;*.flash") under the name `kind`, with every file a choice away.
+// Empty when cancelled.  Requires COM, as above.  It opens in startFolder
+// when that is given and exists: the shell's own memory of the last folder
+// is not to be relied on, and left alone it opened on the Desktop.
 std::wstring PickFile(HWND owner, const wchar_t* title, const wchar_t* kind,
-                      const wchar_t* extension, const wchar_t* startFolder);
+                      const wchar_t* pattern, const wchar_t* startFolder);
 
 // A file to be written: the shell asks itself before replacing one that
 // exists, and adds `extension` to a name typed without one.  Empty when

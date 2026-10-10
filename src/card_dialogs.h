@@ -91,7 +91,7 @@ class SlotsDialog : public win::Dialog {
 // Where it goes, the window asks next.
 class NewCardDialog : public win::Dialog {
  public:
-  enum class Kind { kFolder, kImage, kBlankImage };
+  enum class Kind { kFolder, kImage, kBlankImage, kFlash };
 
   Kind kind() const { return kind_; }
   uint32_t size() const { return size_; }
@@ -102,7 +102,12 @@ class NewCardDialog : public win::Dialog {
   bool OnOk() override;
 
  private:
+  // The sizes for the kind chosen: every SRAM size, or a flash card's 2,
+  // 4, 10 and 20 MB (Intel Series 2, HANDOFF 6.8). The selection keeps its
+  // size when the new list has it.
+  void FillSizes(bool flash);
   std::vector<uint32_t> sizes_;
+  bool flashSizes_ = false;
   Kind kind_ = Kind::kFolder;
   uint32_t size_ = 0;
 };

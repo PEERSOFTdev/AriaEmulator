@@ -53,7 +53,9 @@
 #define IDC_CARD_NEW_FOLDER  211
 #define IDC_CARD_NEW_IMAGE   212
 #define IDC_CARD_NEW_BLANK   213
-#define IDC_CARD_NEW_SIZES   214
+// The four kinds are consecutive: CheckRadioButton takes them as a range.
+#define IDC_CARD_NEW_FLASH   214
+#define IDC_CARD_NEW_SIZES   215
 #define IDD_CARD_SLOTS       220
 #define IDC_SLOT_LIST        221
 #define IDC_SLOT_FOLDER      222

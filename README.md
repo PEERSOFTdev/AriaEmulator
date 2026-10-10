@@ -148,7 +148,8 @@ vypnutí a zapnutí už nepřijde.
 ## Karta (jednotka C:)
 
 Do slotu pro kartu PC Card se dá vložit **karta SRAM ze složky ve
-Windows**, tak jako se do emulátoru Eureky vkládá disketa ze složky. Aria
+Windows**, tak jako se do emulátoru Eureky vkládá disketa ze složky,
+karta SRAM z obrazu, nebo **fleš karta** z obrazu `.flash`. Aria
 ji vidí jako jednotku `C:` a pracuje s ní svými vlastními ovladači; soubory
 z PC se tak dostanou do Arie a zpět. Nabídka **Karta** (`F12`, `A`):
 
@@ -161,9 +162,13 @@ z PC se tak dostanou do Arie a zpět. Nabídka **Karta** (`F12`, `A`):
   který nese obsah karty bajt po bajtu (obvykle `.img`). Velikost karty
   je velikost souboru; soubor jiné velikosti než skutečné karty (mocnina
   dvou od 64 KB do 64 MB) se odmítne. Obraz se zapisuje stejně jako
-  složka, celý.
+  složka, celý. **Obraz s příponou `.flash` je fleš karta** (násobek
+  2 MB, nejvýš 64 MB); ostatní jsou karty SRAM. Fleš karta drží data bez
+  baterie, hlášení baterie na ni tedy nikdy neupozorní, a ze složky být
+  nemůže: její
+  formát (FTL) si zakládá ovladač Arie.
 - **`F11`, `Ctrl+M`** (Vložit novou kartu) založí novou kartu. V dialogu
-  zvolíte druh a velikost (předvybraný je 1 MB) a pak, kam ji uložit:
+  zvolíte druh a velikost (u SRAM předvybraný 1 MB) a pak, kam ji uložit:
   - **Nová prázdná složka** — pojmenujete novou složku; ta pak funguje
     jako každá karta ze složky.
   - **Obraz karty, naformátovaný** — soubor s prázdnou kartou, jmenovkou
@@ -173,6 +178,9 @@ z PC se tak dostanou do Arie a zpět. Nabídka **Karta** (`F12`, `A`):
     otázky), dokud ji sama nenaformátuje; formátování v Arii funguje.
     Do té doby správce souborů ukazuje žádné soubory a kapacitu, která
     s velikostí karty nesouvisí — hlásí ji tak ovladač karty.
+  - **Fleš karta, nenaformátovaná** — obraz s příponou `.flash`, velikost
+    2, 4, 10 nebo 20 MB (předvybraná 4 MB). Je to fleš karta z čipů Intel
+    28F008SA, jakou znají ovladače Arie; Aria ji musí naformátovat sama.
 - **`F11`, `Ctrl+0`** (Vysunout kartu) kartu vysune a zapíše do složky
   nebo do obrazu.
 - **`F11`, `Ctrl+Z`** (Zamknout proti zápisu) přepne ochranu proti

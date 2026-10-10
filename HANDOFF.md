@@ -1546,6 +1546,17 @@ každý čip se svým režimem a registrem SR; Vpp z `0702h` bit 0 jde do
 - Další krok: nabídka a obrazy `.flash` (nová karta flash, vložení
   obrazu), pak zkouška uživatele.
 
+**Fleš karta v nabídce, 10. 10. 2026 (`ar-ibv`, krok 3).** Druh obrazu
+nese jen přípona: `.flash` = fleš karta (`card_image::IsFlash`, velikost
+násobek 2 MB do 64 MB), jinak SRAM. Nová karta má čtvrtý druh „Fleš karta,
+nenaformátovaná“ s velikostmi 2, 4, 10, 20 MB (předvybrané 4 MB; seznam
+se mění s druhem, velikost zůstane, je-li v novém seznamu); obraz FFh.
+Dialog otevření ukazuje `*.img;*.flash`. Titulek říká „fleš karta“.
+Naformátovaný fleš obraz emulátor nedělá: FTL zakládá DLFFSA.
+`card_selftest`: přípona, velikosti, obraz 10 MB, odmítnutý 1 MB.
+Zbývá ověřit u uživatele: formát ze správce souborů, karta ve slotu už
+při zapnutí, starý formát přes TRICKSS2 (E:).
+
 ### 6.9 Napájení
 
 `TURNOFF.COM` (16 B): `cli; mov dx,0701h; mov al,0; out dx,al; jmp $` —

@@ -182,15 +182,18 @@ STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSM
 CAPTION "Nová karta"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    GROUPBOX        "Jaká karta", IDC_STATIC, 7, 7, 246, 50
+    GROUPBOX        "Jaká karta", IDC_STATIC, 7, 7, 246, 62
     CONTROL         "Nová prázdná &složka", IDC_CARD_NEW_FOLDER, "Button",
                     BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, 16, 19, 230, 10
     CONTROL         "&Obraz karty, naformátovaný", IDC_CARD_NEW_IMAGE, "Button",
                     BS_AUTORADIOBUTTON, 16, 31, 230, 10
     CONTROL         "Obraz karty, &nenaformátovaný — naformátuje ho Aria",
                     IDC_CARD_NEW_BLANK, "Button", BS_AUTORADIOBUTTON, 16, 43, 230, 10
-    LTEXT           "&Velikost karty:", IDC_STATIC, 7, 63, 246, 9
-    LISTBOX         IDC_CARD_NEW_SIZES, 7, 74, 246, 66, LBS_NOTIFY | WS_VSCROLL | WS_GROUP | WS_TABSTOP
+    /* Only unformatted: the FTL is DLFFSA's to lay down (HANDOFF 6.8). */
+    CONTROL         "&Fleš karta, nenaformátovaná — naformátuje ji Aria",
+                    IDC_CARD_NEW_FLASH, "Button", BS_AUTORADIOBUTTON, 16, 55, 230, 10
+    LTEXT           "&Velikost karty:", IDC_STATIC, 7, 75, 246, 9
+    LISTBOX         IDC_CARD_NEW_SIZES, 7, 86, 246, 54, LBS_NOTIFY | WS_VSCROLL | WS_GROUP | WS_TABSTOP
     DEFPUSHBUTTON   "OK", IDOK, 149, 143, 50, 14, WS_GROUP
     PUSHBUTTON      "Storno", IDCANCEL, 203, 143, 50, 14
 END

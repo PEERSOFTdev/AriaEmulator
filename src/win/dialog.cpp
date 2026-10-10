@@ -146,12 +146,12 @@ namespace {
 
 // Shows a file dialog set up by the caller and returns the path chosen.
 std::wstring ShowFileDialog(IFileDialog* dialog, HWND owner, const wchar_t* title,
-                            const wchar_t* kind, const wchar_t* extension) {
-  const std::wstring pattern = std::wstring(L"*.") + extension;
-  const COMDLG_FILTERSPEC types[] = {{kind, pattern.c_str()},
+                            const wchar_t* kind, const wchar_t* pattern,
+                            const wchar_t* extension) {
+  const COMDLG_FILTERSPEC types[] = {{kind, pattern},
                                      {L"Všechny soubory", L"*.*"}};
   dialog->SetFileTypes(2, types);
-  dialog->SetDefaultExtension(extension);
+  if (extension) dialog->SetDefaultExtension(extension);
   dialog->SetTitle(title);
   std::wstring result;
   if (SUCCEEDED(dialog->Show(owner))) {
@@ -171,7 +171,7 @@ std::wstring ShowFileDialog(IFileDialog* dialog, HWND owner, const wchar_t* titl
 }  // namespace
 
 std::wstring PickFile(HWND owner, const wchar_t* title, const wchar_t* kind,
-                      const wchar_t* extension, const wchar_t* startFolder) {
+                      const wchar_t* pattern, const wchar_t* startFolder) {
   IFileOpenDialog* dialog = nullptr;
   if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr,
                               CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))))
@@ -180,7 +180,7 @@ std::wstring PickFile(HWND owner, const wchar_t* title, const wchar_t* kind,
   dialog->GetOptions(&options);
   dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST);
   StartIn(dialog, startFolder);
-  std::wstring result = ShowFileDialog(dialog, owner, title, kind, extension);
+  std::wstring result = ShowFileDialog(dialog, owner, title, kind, pattern, nullptr);
   dialog->Release();
   return result;
 }
@@ -199,7 +199,8 @@ std::wstring PickFileToCreate(HWND owner, const wchar_t* title,
                      FOS_PATHMUSTEXIST | FOS_NOREADONLYRETURN);
   if (suggestedName) dialog->SetFileName(suggestedName);
   StartIn(dialog, startFolder);
-  std::wstring result = ShowFileDialog(dialog, owner, title, kind, extension);
+  const std::wstring pattern = std::wstring(L"*.") + extension;
+  std::wstring result = ShowFileDialog(dialog, owner, title, kind, pattern.c_str(), extension);
   dialog->Release();
   return result;
 }

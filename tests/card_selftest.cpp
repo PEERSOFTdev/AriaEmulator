@@ -323,6 +323,21 @@ int main() {
     Check(card_image::ValidSize(64 * 1024) && card_image::ValidSize(64u << 20) && !card_image::ValidSize(32 * 1024) &&
               !card_image::ValidSize(128u << 20) && !card_image::ValidSize(3u << 20),
           "card sizes are powers of two from 64 KB to 64 MB");
+    // A .flash image is a flash card, of whole 2 MB chip pairs.
+    Check(card_image::IsFlash(L"a.flash") && card_image::IsFlash(L"B.FLASH") && !card_image::IsFlash(L"a.img") &&
+              !card_image::IsFlash(L"flash"),
+          "the .flash extension, in any case, makes a flash image");
+    Check(card_image::ValidFlashSize(2u << 20) && card_image::ValidFlashSize(10u << 20) &&
+              card_image::ValidFlashSize(64u << 20) && !card_image::ValidFlashSize(1u << 20) &&
+              !card_image::ValidFlashSize(3u << 20) && !card_image::ValidFlashSize(66u << 20),
+          "flash sizes are whole 2 MB pairs up to 64 MB");
+    const fs::path flash_file = root / L"Obrazy" / L"Fleš.flash";
+    Check(card_image::Write(flash_file, std::vector<uint8_t>(10u << 20, 0xFF), error) &&
+              card_image::Read(flash_file, back, error) && back.size() == 10u << 20,
+          "a 10 MB flash image reads");
+    Put(root / L"Obrazy" / L"Spatna.flash", std::string(1u << 20, '\xFF'));
+    Check(!card_image::Read(root / L"Obrazy" / L"Spatna.flash", back, error) && !error.empty(),
+          "a 1 MB flash image is refused");
   }
 
   // A flash card of two 28F008SA pairs (pc_card.h, HANDOFF 6.8): what

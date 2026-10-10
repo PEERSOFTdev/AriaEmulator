@@ -124,7 +124,7 @@ bool SlotsDialog::OnCommand(int id, int notification) {
     }
     case IDC_SLOT_IMAGE: {
       const std::wstring file = win::PickFile(hwnd_, L"Vyberte obraz karty pro tento slot", L"Obrazy karet",
-                                              card_image::kExtension, imageFolder_.c_str());
+                                              card_image::kPattern, imageFolder_.c_str());
       if (!file.empty()) SetSlot(index, file, lockOf(file));
       return true;
     }
@@ -154,17 +154,35 @@ bool SlotsDialog::OnCommand(int id, int notification) {
   }
 }
 
-bool NewCardDialog::OnInit() {
-  CheckRadioButton(hwnd_, IDC_CARD_NEW_FOLDER, IDC_CARD_NEW_BLANK, IDC_CARD_NEW_FOLDER);
+void NewCardDialog::FillSizes(bool flash) {
   const HWND list = Item(IDC_CARD_NEW_SIZES);
-  std::size_t pick = 0;
+  const LRESULT old = SendMessageW(list, LB_GETCURSEL, 0, 0);
+  const uint32_t kept = old >= 0 && static_cast<std::size_t>(old) < sizes_.size() ? sizes_[old] : 0;
   sizes_.clear();
-  for (uint32_t size = FolderCard::kMinSize; size <= FolderCard::kMaxSize; size *= 2) {
-    if (size == 1024u * 1024u) pick = sizes_.size();
-    sizes_.push_back(size);
-    SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(CardSizeText(size).c_str()));
+  if (flash) {
+    for (uint32_t mb : {2u, 4u, 10u, 20u}) sizes_.push_back(mb * 1024u * 1024u);
+  } else {
+    for (uint32_t size = FolderCard::kMinSize; size <= FolderCard::kMaxSize; size *= 2) sizes_.push_back(size);
+  }
+  flashSizes_ = flash;
+  SendMessageW(list, LB_RESETCONTENT, 0, 0);
+  // The size chosen before when the new list has it, else 1 MB for SRAM
+  // and 4 MB for flash.
+  const uint32_t fallback = (flash ? 4u : 1u) * 1024u * 1024u;
+  std::size_t pick = 0;
+  for (std::size_t i = 0; i < sizes_.size(); ++i) {
+    SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(CardSizeText(sizes_[i]).c_str()));
+    if (sizes_[i] == fallback) pick = i;
+  }
+  for (std::size_t i = 0; i < sizes_.size(); ++i) {
+    if (sizes_[i] == kept) pick = i;
   }
   SendMessageW(list, LB_SETCURSEL, pick, 0);
+}
+
+bool NewCardDialog::OnInit() {
+  CheckRadioButton(hwnd_, IDC_CARD_NEW_FOLDER, IDC_CARD_NEW_FLASH, IDC_CARD_NEW_FOLDER);
+  FillSizes(false);
   // The kind first, as it is read first.
   SetFocus(Item(IDC_CARD_NEW_FOLDER));
   return true;
@@ -175,6 +193,11 @@ bool NewCardDialog::OnCommand(int id, int notification) {
     if (OnOk()) EndDialog(hwnd_, IDOK);
     return true;
   }
+  if (id >= IDC_CARD_NEW_FOLDER && id <= IDC_CARD_NEW_FLASH && notification == BN_CLICKED) {
+    const bool flash = IsDlgButtonChecked(hwnd_, IDC_CARD_NEW_FLASH) == BST_CHECKED;
+    if (flash != flashSizes_) FillSizes(flash);
+    return false;
+  }
   return false;
 }
 
@@ -184,6 +207,7 @@ bool NewCardDialog::OnOk() {
   size_ = sizes_[static_cast<std::size_t>(index)];
   kind_ = IsDlgButtonChecked(hwnd_, IDC_CARD_NEW_IMAGE) == BST_CHECKED   ? Kind::kImage
           : IsDlgButtonChecked(hwnd_, IDC_CARD_NEW_BLANK) == BST_CHECKED ? Kind::kBlankImage
+          : IsDlgButtonChecked(hwnd_, IDC_CARD_NEW_FLASH) == BST_CHECKED ? Kind::kFlash
                                                                           : Kind::kFolder;
   return true;
 }

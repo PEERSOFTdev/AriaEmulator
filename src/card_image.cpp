@@ -1,15 +1,29 @@
 #include "card_image.h"
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 #include <fstream>
 
 #include "card_folder.h"
+#include "pc_card.h"
 
 namespace fs = std::filesystem;
 
 namespace card_image {
 
+bool IsFlash(const fs::path& file) {
+  std::wstring extension = file.extension().wstring();
+  if (!extension.empty()) CharLowerBuffW(extension.data(), static_cast<DWORD>(extension.size()));
+  return extension == std::wstring(L".") + kFlashExtension;
+}
+
 bool ValidSize(uint64_t bytes) {
   return bytes >= FolderCard::kMinSize && bytes <= FolderCard::kMaxSize && (bytes & (bytes - 1)) == 0;
+}
+
+bool ValidFlashSize(uint64_t bytes) {
+  return bytes >= PcCard::kFlashPairSize && bytes <= FolderCard::kMaxSize && bytes % PcCard::kFlashPairSize == 0;
 }
 
 bool Read(const fs::path& file, std::vector<uint8_t>& image, std::wstring& error) {
@@ -19,9 +33,10 @@ bool Read(const fs::path& file, std::vector<uint8_t>& image, std::wstring& error
     error = L"Obraz karty „" + file.wstring() + L"“ nelze přečíst.";
     return false;
   }
-  if (!ValidSize(bytes)) {
+  if (IsFlash(file) ? !ValidFlashSize(bytes) : !ValidSize(bytes)) {
     error = L"Soubor „" + file.wstring() + L"“ nemá velikost žádné karty: má " + std::to_wstring(bytes) +
-            L" bajtů, karta má mocninu dvou od 64 KB do 64 MB.";
+            (IsFlash(file) ? L" bajtů, fleš karta má násobek 2 MB, nejvýš 64 MB."
+                           : L" bajtů, karta SRAM má mocninu dvou od 64 KB do 64 MB.");
     return false;
   }
   std::ifstream input(file, std::ios::binary);

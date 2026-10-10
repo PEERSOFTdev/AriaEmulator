@@ -140,8 +140,9 @@ const wchar_t kShortcutHelp[] =
     L"tóny, vysunutí jedním nízkým; karta je i v titulku okna.\r\n"
     L"\r\n"
     L"F11, Ctrl+O vloží kartu z obrazu, souboru s obsahem karty bajt po\r\n"
-    L"bajtu. F11, Ctrl+M založí novou kartu: prázdnou složku, nebo obraz\r\n"
-    L"naformátovaný či nenaformátovaný, který naformátuje až Aria.\r\n"
+    L"bajtu; obraz s příponou .flash je fleš karta. F11, Ctrl+M založí\r\n"
+    L"novou kartu: prázdnou složku, obraz naformátovaný či nenaformátovaný,\r\n"
+    L"nebo fleš kartu, kterou naformátuje až Aria.\r\n"
     L"\r\n"
     L"F11, Ctrl+1 až Ctrl+9 vloží kartu ze slotu. Sloty naplníte v nabídce\r\n"
     L"Karta, Spravovat sloty.";
@@ -248,7 +249,7 @@ void MainWindow::InsertFolderAskingSize(const std::wstring& folder) {
 }
 
 void MainWindow::InsertCardFromImage() {
-  const std::wstring file = win::PickFile(hwnd_, L"Vyberte obraz karty", L"Obrazy karet", card_image::kExtension,
+  const std::wstring file = win::PickFile(hwnd_, L"Vyberte obraz karty", L"Obrazy karet", card_image::kPattern,
                                           CardDialogFolder(/*image=*/true).c_str());
   if (file.empty()) return;
   const Settings::Card* known = settings_.FindCard(file);
@@ -378,9 +379,12 @@ void MainWindow::InsertNewCard() {
     }
     if (!MountFolderCard(folder, size, /*locked=*/false)) return;
   } else {
-    const std::wstring file = win::PickFileToCreate(hwnd_, L"Pojmenujte obraz nové karty", L"Obrazy karet",
-                                                    card_image::kExtension, L"Karta",
-                                                    CardDialogFolder(/*image=*/true).c_str());
+    const bool flash = dialog.kind() == NewCardDialog::Kind::kFlash;
+    const std::wstring file =
+        win::PickFileToCreate(hwnd_, flash ? L"Pojmenujte obraz nové fleš karty" : L"Pojmenujte obraz nové karty",
+                              flash ? L"Obrazy fleš karet" : L"Obrazy karet",
+                              flash ? card_image::kFlashExtension : card_image::kExtension,
+                              flash ? L"Fleš karta" : L"Karta", CardDialogFolder(/*image=*/true).c_str());
     if (file.empty()) return;
     // Writing over the image in the slot would lose it twice over: the
     // eject before the new card goes in would save the old card on top.
@@ -458,7 +462,9 @@ bool MainWindow::PutCardIn(std::unique_ptr<FolderCard> folder, const std::wstrin
   // (AriaMachine::kCardSwapTicks).
   if (!cardHome_.empty() && !EjectCard(/*quiet=*/true)) return false;
   const uint32_t size = static_cast<uint32_t>(image.size());
-  PcCard inserted = PcCard::Sram(size, std::move(image));
+  // A .flash image is a flash card (card_image.h); everything else SRAM.
+  const bool flash = !folder && card_image::IsFlash(home);
+  PcCard inserted = flash ? PcCard::Flash(size, std::move(image)) : PcCard::Sram(size, std::move(image));
   inserted.write_protected = locked;
   emulator_.Call([&](AriaMachine& machine) { machine.InsertCard(std::move(inserted)); });
   cardFolder_ = std::move(folder);
@@ -661,7 +667,8 @@ void MainWindow::RefreshTitle() const {
                                     : L" — klávesy do Arie");
   // The card: the folder or image it lives in, as Eureka names a diskette's.
   if (!cardHome_.empty()) {
-    title += L" — karta " + cardHome_.filename().wstring() + L", " + CardSizeText(cardSize_) +
+    title += (!cardFolder_ && card_image::IsFlash(cardHome_) ? L" — fleš karta " : L" — karta ") +
+             cardHome_.filename().wstring() + L", " + CardSizeText(cardSize_) +
              (cardLocked_ ? L", zamčená" : L"");
   } else {
     title += L" — bez karty";
