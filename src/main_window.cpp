@@ -8,6 +8,7 @@
 
 #include "aria_version.h"
 #include "card_dialogs.h"
+#include "card_image.h"
 #include "pc_card.h"
 #include "res/resource.h"
 #include "snapshot.h"
@@ -136,7 +137,11 @@ const wchar_t kShortcutHelp[] =
     L"zpět do složky; při ukončení emulátoru se zapíše sama. Co Aria\r\n"
     L"smazala, najdete ve složce .aria-trash. F11, Ctrl+Z kartu zamkne\r\n"
     L"proti zápisu a znovu odemkne. Vložení zní dvěma krátkými stoupajícími\r\n"
-    L"tóny, vysunutí jedním nízkým; karta je i v titulku okna.";
+    L"tóny, vysunutí jedním nízkým; karta je i v titulku okna.\r\n"
+    L"\r\n"
+    L"F11, Ctrl+O vloží kartu z obrazu, souboru s obsahem karty bajt po\r\n"
+    L"bajtu. F11, Ctrl+M založí novou kartu: prázdnou složku, nebo obraz\r\n"
+    L"naformátovaný či nenaformátovaný, který naformátuje až Aria.";
 
 }  // namespace
 
@@ -187,6 +192,8 @@ void MainWindow::RegisterCommands() {
     emulator_.Key(2, 0x0F, false);
   });
   OnCommand(ID_CARD_INSERT, [this] { InsertCardFromFolder(); });
+  OnCommand(ID_CARD_INSERT_IMAGE, [this] { InsertCardFromImage(); });
+  OnCommand(ID_CARD_NEW, [this] { InsertNewCard(); });
   OnCommand(ID_CARD_EJECT, [this] { EjectCard(/*quiet=*/false); });
   OnCommand(ID_CARD_PROTECT, [this] { ToggleCardLock(); });
   OnCommand(ID_ACTIVATE_MENU, [this] {
@@ -225,12 +232,84 @@ void MainWindow::InsertCardFromFolder() {
   const Settings::Card* known = settings_.FindCard(folder);
   CardSizeDialog dialog(std::filesystem::path(folder).filename().wstring(), bytes, sizes, known ? known->size : 0);
   if (dialog.ShowModal(hwnd_, IDD_CARD_SIZE) != IDOK) return;
-  if (!MountCard(folder, dialog.chosen(), known && known->locked)) return;
+  if (!MountFolderCard(folder, dialog.chosen(), known && known->locked)) return;
   ToneInserted();
   if (cardLocked_) ToneLocked();
 }
 
-bool MainWindow::MountCard(const std::wstring& folder, uint32_t size, bool locked) {
+void MainWindow::InsertCardFromImage() {
+  const std::wstring file = win::PickFile(hwnd_, L"Vyberte obraz karty", L"Obrazy karet", card_image::kExtension,
+                                          CardDialogFolder(/*image=*/true).c_str());
+  if (file.empty()) return;
+  const Settings::Card* known = settings_.FindCard(file);
+  if (!MountImageCard(file, known && known->locked)) return;
+  ToneInserted();
+  if (cardLocked_) ToneLocked();
+}
+
+void MainWindow::InsertNewCard() {
+  NewCardDialog dialog;
+  if (dialog.ShowModal(hwnd_, IDD_CARD_NEW) != IDOK) return;
+  const uint32_t size = dialog.size();
+  if (dialog.kind() == NewCardDialog::Kind::kFolder) {
+    const std::wstring folder = win::PickFolderToCreate(hwnd_, L"Pojmenujte složku nové karty", L"Karta",
+                                                        CardDialogFolder(/*image=*/false).c_str());
+    if (folder.empty()) return;
+    std::error_code ec;
+    if (std::filesystem::exists(folder, ec) &&
+        (!std::filesystem::is_directory(folder, ec) || !std::filesystem::is_empty(folder, ec))) {
+      MessageBoxW(hwnd_, (L"„" + folder + L"“ už existuje a není to prázdná složka. Nová karta potřebuje novou "
+                          L"nebo prázdnou složku; existující složku vložíte jako kartu přes F11, Ctrl+I.")
+                             .c_str(),
+                  L"Karta", MB_OK | MB_ICONERROR);
+      return;
+    }
+    std::filesystem::create_directories(folder, ec);
+    if (ec) {
+      MessageBoxW(hwnd_, (L"Složku „" + folder + L"“ nelze založit.").c_str(), L"Karta", MB_OK | MB_ICONERROR);
+      return;
+    }
+    if (!MountFolderCard(folder, size, /*locked=*/false)) return;
+  } else {
+    const std::wstring file = win::PickFileToCreate(hwnd_, L"Pojmenujte obraz nové karty", L"Obrazy karet",
+                                                    card_image::kExtension, L"Karta",
+                                                    CardDialogFolder(/*image=*/true).c_str());
+    if (file.empty()) return;
+    // Writing over the image in the slot would lose it twice over: the
+    // eject before the new card goes in would save the old card on top.
+    if (!cardHome_.empty() && Settings::SamePath(cardHome_.wstring(), file)) {
+      MessageBoxW(hwnd_, L"Tento obraz je právě ve slotu. Novou kartu pojmenujte jinak, nebo starou nejdřív "
+                         L"vysuňte.",
+                  L"Karta", MB_OK | MB_ICONERROR);
+      return;
+    }
+    // Unformatted is erased: FFh, as a flash card leaves the factory.
+    const std::vector<uint8_t> image =
+        dialog.kind() == NewCardDialog::Kind::kImage
+            ? FolderCard::Formatted(size, std::filesystem::path(file).stem().wstring(), info_.text_encoding)
+            : std::vector<uint8_t>(size, 0xFF);
+    std::wstring error;
+    if (!card_image::Write(file, image, error)) {
+      MessageBoxW(hwnd_, error.c_str(), L"Karta", MB_OK | MB_ICONERROR);
+      return;
+    }
+    // A file written over keeps nothing of the card it was, its lock
+    // included.
+    if (!MountImageCard(file, /*locked=*/false)) return;
+  }
+  ToneInserted();
+}
+
+bool MainWindow::EjectIfInSlot(const std::wstring& path) {
+  // Put in again, the card must come out first and be saved, or what the
+  // Aria wrote since the last save would be read from the stale copy and
+  // then overwritten.
+  if (cardHome_.empty() || !Settings::SamePath(cardHome_.wstring(), path)) return true;
+  return EjectCard(/*quiet=*/true);
+}
+
+bool MainWindow::MountFolderCard(const std::wstring& folder, uint32_t size, bool locked) {
+  if (!EjectIfInSlot(folder)) return false;
   auto card = std::make_unique<FolderCard>();
   std::vector<uint8_t> image;
   std::wstring error;
@@ -238,14 +317,45 @@ bool MainWindow::MountCard(const std::wstring& folder, uint32_t size, bool locke
     MessageBoxW(hwnd_, error.c_str(), L"Karta", MB_OK | MB_ICONERROR);
     return false;
   }
-  // The card in the slot goes back to its folder first; the machine keeps
+  return PutCardIn(std::move(card), folder, std::move(image), locked);
+}
+
+bool MainWindow::MountImageCard(const std::wstring& file, bool locked) {
+  if (!EjectIfInSlot(file)) return false;
+  std::vector<uint8_t> image;
+  std::wstring error;
+  if (!card_image::Read(file, image, error)) {
+    MessageBoxW(hwnd_, error.c_str(), L"Karta", MB_OK | MB_ICONERROR);
+    return false;
+  }
+  // Saved with the card by RememberCard.
+  settings_.SetImageFolder(std::filesystem::path(file).parent_path().wstring());
+  return PutCardIn(nullptr, file, std::move(image), locked);
+}
+
+std::wstring MainWindow::CardDialogFolder(bool image) const {
+  // Images open where the last image was; before there was one, and for a
+  // new folder, beside the card in the slot or the last one -- where the
+  // user keeps cards.
+  std::error_code ec;
+  if (image && std::filesystem::is_directory(settings_.image_folder(), ec)) return settings_.image_folder();
+  const std::filesystem::path card = !cardHome_.empty() ? cardHome_ : std::filesystem::path(settings_.last_card());
+  if (card.empty()) return {};
+  return card.parent_path().wstring();
+}
+
+bool MainWindow::PutCardIn(std::unique_ptr<FolderCard> folder, const std::wstring& home, std::vector<uint8_t> image,
+                           bool locked) {
+  // The card in the slot goes back to its home first; the machine keeps
   // the slot empty long enough for the drivers to see the change
   // (AriaMachine::kCardSwapTicks).
-  if (card_ && !EjectCard(/*quiet=*/true)) return false;
+  if (!cardHome_.empty() && !EjectCard(/*quiet=*/true)) return false;
+  const uint32_t size = static_cast<uint32_t>(image.size());
   PcCard inserted = PcCard::Sram(size, std::move(image));
   inserted.write_protected = locked;
   emulator_.Call([&](AriaMachine& machine) { machine.InsertCard(std::move(inserted)); });
-  card_ = std::move(card);
+  cardFolder_ = std::move(folder);
+  cardHome_ = home;
   cardSize_ = size;
   cardLocked_ = locked;
   cardWrites_ = 0;
@@ -257,9 +367,9 @@ bool MainWindow::MountCard(const std::wstring& folder, uint32_t size, bool locke
 }
 
 void MainWindow::RememberCard() {
-  if (card_) {
-    settings_.RememberCard(card_->home().wstring(), cardSize_, cardLocked_);
-    settings_.SetLastCard(card_->home().wstring());
+  if (!cardHome_.empty()) {
+    settings_.RememberCard(cardHome_.wstring(), cardSize_, cardLocked_);
+    settings_.SetLastCard(cardHome_.wstring());
   } else {
     settings_.SetLastCard(L"");
   }
@@ -268,8 +378,11 @@ void MainWindow::RememberCard() {
 }
 
 bool MainWindow::SaveCard(const std::vector<uint8_t>& image, std::wstring& error) {
+  // An image takes the card as it is, byte for byte; only a folder has
+  // files that can fail to come off it.
+  if (!cardFolder_) return card_image::Write(cardHome_, image, error);
   std::vector<std::wstring> damaged;
-  if (!card_->Save(image, error, &damaged)) return false;
+  if (!cardFolder_->Save(image, error, &damaged)) return false;
   if (damaged.empty() || damaged == damagedTold_) {
     damagedTold_ = damaged;
     return true;
@@ -287,7 +400,7 @@ bool MainWindow::SaveCard(const std::vector<uint8_t>& image, std::wstring& error
   for (const std::wstring& name : damaged) names += L"\r\n" + name;
   // At exit the window is gone already.
   MessageBoxW(IsWindow(hwnd_) ? hwnd_ : nullptr,
-              (L"Tyto soubory jsou na kartě poškozené a do složky „" + card_->home().wstring() +
+              (L"Tyto soubory jsou na kartě poškozené a do složky „" + cardHome_.wstring() +
                L"“ se nezapsaly; jejich kopie ve složce zůstala, jak byla:" + names +
                L"\r\n\r\nOstatní soubory se zapsaly." + kept)
                   .c_str(),
@@ -296,21 +409,26 @@ bool MainWindow::SaveCard(const std::vector<uint8_t>& image, std::wstring& error
 }
 
 void MainWindow::InsertRememberedCard() {
-  const std::wstring folder = settings_.last_card();
-  if (folder.empty()) return;
-  const Settings::Card* known = settings_.FindCard(folder);
+  const std::wstring path = settings_.last_card();
+  if (path.empty()) return;
+  const Settings::Card* known = settings_.FindCard(path);
   std::error_code ec;
-  if (!known || !std::filesystem::is_directory(folder, ec)) {
-    MessageBoxW(hwnd_, (L"Karta ze složky „" + folder + L"“ z minulého spuštění se nevložila: složka "
-                        L"neexistuje.").c_str(),
+  // A folder needs its size from the settings; an image has its own.
+  const bool folder = known && std::filesystem::is_directory(path, ec);
+  const bool image = !folder && std::filesystem::is_regular_file(path, ec);
+  if (!folder && !image) {
+    MessageBoxW(hwnd_, (L"Karta „" + path + L"“ z minulého spuštění se nevložila: taková složka ani obraz "
+                        L"karty už neexistuje.").c_str(),
                 L"Karta", MB_OK | MB_ICONWARNING);
     settings_.SetLastCard(L"");
     std::wstring ignored;
     settings_.Save(ignored);
     return;
   }
-  // MountCard says why when the folder has outgrown its card.
-  if (!MountCard(folder, known->size, known->locked)) {
+  const bool locked = known && known->locked;
+  // The mount says why when the folder has outgrown its card or the image
+  // cannot be read.
+  if (folder ? !MountFolderCard(path, known->size, locked) : !MountImageCard(path, locked)) {
     settings_.SetLastCard(L"");
     std::wstring ignored;
     settings_.Save(ignored);
@@ -318,7 +436,7 @@ void MainWindow::InsertRememberedCard() {
 }
 
 void MainWindow::AutosaveCard() {
-  if (!card_) return;
+  if (cardHome_.empty()) return;
   // Every half second: the card's write count; once it has stood still for
   // two looks after a change, the card goes to its folder -- not mid-write,
   // when a directory being rewritten would make a file look deleted (the
@@ -359,7 +477,7 @@ void MainWindow::AutosaveCard() {
 }
 
 bool MainWindow::EjectCard(bool quiet) {
-  if (!card_) {
+  if (cardHome_.empty()) {
     // The shortcut on an empty slot: not silence, which sounds like a hang.
     if (!quiet) MessageBeep(MB_ICONASTERISK);
     return true;
@@ -373,8 +491,10 @@ bool MainWindow::EjectCard(bool quiet) {
     MessageBoxW(hwnd_, (error + L"\r\n\r\nKarta zůstala ve slotu.").c_str(), L"Karta", MB_OK | MB_ICONERROR);
     return false;
   }
-  card_.reset();
+  cardFolder_.reset();
+  cardHome_.clear();
   cardLocked_ = false;
+  damagedTold_.clear();
   RememberCard();
   if (!quiet) ToneEjected();
   RefreshTitle();
@@ -382,7 +502,7 @@ bool MainWindow::EjectCard(bool quiet) {
 }
 
 void MainWindow::ToggleCardLock() {
-  if (!card_) {
+  if (cardHome_.empty()) {
     MessageBeep(MB_ICONASTERISK);
     return;
   }
@@ -397,7 +517,7 @@ void MainWindow::ToggleCardLock() {
 }
 
 void MainWindow::SaveCardOnExit() {
-  if (!card_) return;
+  if (cardHome_.empty()) return;
   std::optional<PcCard> out;
   emulator_.Call([&](AriaMachine& machine) { out = machine.EjectCard(); });
   std::wstring error;
@@ -432,9 +552,9 @@ void MainWindow::RefreshTitle() const {
                        (poweredOff_ ? L" — vypnutá"
                         : released_ ? L" — klávesnice uvolněná"
                                     : L" — klávesy do Arie");
-  // The card: the folder it lives in, as Eureka names a diskette's.
-  if (card_) {
-    title += L" — karta " + card_->home().filename().wstring() + L", " + CardSizeText(cardSize_) +
+  // The card: the folder or image it lives in, as Eureka names a diskette's.
+  if (!cardHome_.empty()) {
+    title += L" — karta " + cardHome_.filename().wstring() + L", " + CardSizeText(cardSize_) +
              (cardLocked_ ? L", zamčená" : L"");
   } else {
     title += L" — bez karty";
@@ -457,8 +577,8 @@ void MainWindow::RefreshMenu() const {
   // A key for an off machine would go nowhere, in silence.
   EnableMenuItem(menu, ID_KEYBOARD_SEND_KONEC, MF_BYCOMMAND | (poweredOff_ ? MF_GRAYED : MF_ENABLED));
   // Nothing to take out or lock in an empty slot.
-  EnableMenuItem(menu, ID_CARD_EJECT, MF_BYCOMMAND | (card_ ? MF_ENABLED : MF_GRAYED));
-  EnableMenuItem(menu, ID_CARD_PROTECT, MF_BYCOMMAND | (card_ ? MF_ENABLED : MF_GRAYED));
+  EnableMenuItem(menu, ID_CARD_EJECT, MF_BYCOMMAND | (!cardHome_.empty() ? MF_ENABLED : MF_GRAYED));
+  EnableMenuItem(menu, ID_CARD_PROTECT, MF_BYCOMMAND | (!cardHome_.empty() ? MF_ENABLED : MF_GRAYED));
   CheckMenuItem(menu, ID_CARD_PROTECT, MF_BYCOMMAND | (cardLocked_ ? MF_CHECKED : MF_UNCHECKED));
   CheckMenuItem(menu, ID_KEYBOARD_PASSONCE, MF_BYCOMMAND | (passOnce_ ? MF_CHECKED : MF_UNCHECKED));
   // Meaningless while the keyboard is released: every key already goes to
@@ -475,7 +595,7 @@ void MainWindow::RefreshMenu() const {
 void MainWindow::RefreshShortcutText(HMENU menu) const {
   static constexpr wchar_t kPrefix[] = L"F11, ";
   for (UINT id : {ID_FILE_EXIT, ID_MACHINE_RESET, ID_MACHINE_POWERON, ID_MACHINE_POWEROFF, ID_CARD_INSERT,
-                  ID_CARD_EJECT, ID_CARD_PROTECT, ID_HELP_KEYS}) {
+                  ID_CARD_INSERT_IMAGE, ID_CARD_NEW, ID_CARD_EJECT, ID_CARD_PROTECT, ID_HELP_KEYS}) {
     wchar_t text[128];
     // MF_BYCOMMAND searches the submenus too, so the ids are enough.
     if (!GetMenuStringW(menu, id, text, static_cast<int>(std::size(text)), MF_BYCOMMAND)) continue;

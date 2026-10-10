@@ -79,16 +79,32 @@ class MainWindow : public win::Window {
 
   // The card slot (HANDOFF 6.8, ar-aj1).
   void InsertCardFromFolder();
-  // Builds the card from `folder` and puts it in, the one in the slot going
-  // back to its folder first. False, with the user told, when it cannot.
-  bool MountCard(const std::wstring& folder, uint32_t size, bool locked);
+  void InsertCardFromImage();
+  // Karta -> Vložit novou kartu: an empty folder, or an image formatted or
+  // not, made and put in.
+  void InsertNewCard();
+  // Builds the card from `folder`, or reads it from the image `file`, and
+  // puts it in, the one in the slot going back to its home first. False,
+  // with the user told, when it cannot.
+  bool MountFolderCard(const std::wstring& folder, uint32_t size, bool locked);
+  bool MountImageCard(const std::wstring& file, bool locked);
+  // Takes out the card in the slot when it is the one at `path`; false when
+  // it could not be saved and stayed in.
+  bool EjectIfInSlot(const std::wstring& path);
+  // Where a card dialog opens: for an image, the folder of the last image;
+  // else, or before one, beside the card in the slot or the last card.
+  // Empty leaves it to the shell.
+  std::wstring CardDialogFolder(bool image) const;
+  bool PutCardIn(std::unique_ptr<FolderCard> folder, const std::wstring& home, std::vector<uint8_t> image,
+                 bool locked);
   // Writes what the card holds now back into its folder while it stays in:
   // the autosave after a second of quiet.
   void AutosaveCard();
   // Records the card in the settings and saves them; a failure is told.
   void RememberCard();
-  // Writes `image` back into the card's folder; files the card could not
-  // read are told (once per set) and the image kept for a look.
+  // Writes `image` back into the card's image file or folder; files a
+  // folder card could not take are told (once per set) and the image kept
+  // for a look.
   bool SaveCard(const std::vector<uint8_t>& image, std::wstring& error);
   // Takes the card out and writes it back into its folder. False, with the
   // card put back in and the user told, when the folder could not take it.
@@ -118,8 +134,10 @@ class MainWindow : public win::Window {
   bool switchOffOnExit_ = false;
   // Host keys down on the Aria, so that they can all be let go of.
   std::vector<WPARAM> held_;
-  // The card in the slot and its home folder; empty when the slot is.
-  std::unique_ptr<FolderCard> card_;
+  // The card in the slot: its home, a folder or an image file, empty when
+  // the slot is; and for a folder card what writes it back.
+  std::filesystem::path cardHome_;
+  std::unique_ptr<FolderCard> cardFolder_;
   uint32_t cardSize_ = 0;
   bool cardLocked_ = false;
   // The autosave: the card's write count at the last look, how many looks

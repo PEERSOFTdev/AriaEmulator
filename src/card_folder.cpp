@@ -384,6 +384,10 @@ fs::path TrashPlace(const fs::path& path) {
 
 }  // namespace
 
+std::vector<uint8_t> FolderCard::Formatted(uint32_t size, const std::wstring& label, TextEncoding encoding) {
+  return FormatFat12(CardFormat(size, label, encoding));
+}
+
 bool FolderCard::FittingSizes(const fs::path& folder, TextEncoding encoding, std::vector<uint32_t>& sizes,
                               uint64_t& bytes, std::wstring& error) {
   Node root;

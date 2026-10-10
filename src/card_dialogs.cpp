@@ -1,5 +1,6 @@
 #include "card_dialogs.h"
 
+#include "card_folder.h"
 #include "res/resource.h"
 
 std::wstring CardSizeText(uint32_t bytes) {
@@ -39,5 +40,39 @@ bool CardSizeDialog::OnOk() {
   const LRESULT index = SendMessageW(Item(IDC_CARD_SIZES), LB_GETCURSEL, 0, 0);
   if (index < 0 || static_cast<std::size_t>(index) >= sizes_.size()) return false;
   chosen_ = sizes_[static_cast<std::size_t>(index)];
+  return true;
+}
+
+bool NewCardDialog::OnInit() {
+  CheckRadioButton(hwnd_, IDC_CARD_NEW_FOLDER, IDC_CARD_NEW_BLANK, IDC_CARD_NEW_FOLDER);
+  const HWND list = Item(IDC_CARD_NEW_SIZES);
+  std::size_t pick = 0;
+  sizes_.clear();
+  for (uint32_t size = FolderCard::kMinSize; size <= FolderCard::kMaxSize; size *= 2) {
+    if (size == 1024u * 1024u) pick = sizes_.size();
+    sizes_.push_back(size);
+    SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(CardSizeText(size).c_str()));
+  }
+  SendMessageW(list, LB_SETCURSEL, pick, 0);
+  // The kind first, as it is read first.
+  SetFocus(Item(IDC_CARD_NEW_FOLDER));
+  return true;
+}
+
+bool NewCardDialog::OnCommand(int id, int notification) {
+  if (id == IDC_CARD_NEW_SIZES && notification == LBN_DBLCLK) {
+    if (OnOk()) EndDialog(hwnd_, IDOK);
+    return true;
+  }
+  return false;
+}
+
+bool NewCardDialog::OnOk() {
+  const LRESULT index = SendMessageW(Item(IDC_CARD_NEW_SIZES), LB_GETCURSEL, 0, 0);
+  if (index < 0 || static_cast<std::size_t>(index) >= sizes_.size()) return false;
+  size_ = sizes_[static_cast<std::size_t>(index)];
+  kind_ = IsDlgButtonChecked(hwnd_, IDC_CARD_NEW_IMAGE) == BST_CHECKED   ? Kind::kImage
+          : IsDlgButtonChecked(hwnd_, IDC_CARD_NEW_BLANK) == BST_CHECKED ? Kind::kBlankImage
+                                                                          : Kind::kFolder;
   return true;
 }

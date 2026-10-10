@@ -28,14 +28,25 @@
 // F12: the menu bar, on a key the Aria has no use for (aria.rc).
 #define ID_ACTIVATE_MENU     40050
 // The card slot, drive C: (HANDOFF 6.8), with the Eureka emulator's
-// Disketa shortcuts: Ctrl+I insert, Ctrl+0 eject, Ctrl+Z write protect.
+// Disketa shortcuts: Ctrl+I insert, Ctrl+M new, Ctrl+0 eject, Ctrl+Z write
+// protect; Ctrl+O for an image, which the Eureka has not.
 #define ID_CARD_INSERT       40060
 #define ID_CARD_EJECT        40061
 #define ID_CARD_PROTECT      40062
+#define ID_CARD_INSERT_IMAGE 40063
+#define ID_CARD_NEW          40064
 
-// Dialogs.
+// Dialogs. IDC_STATIC as winres.h has it, which aria.rc does not include.
+#ifndef IDC_STATIC
+#define IDC_STATIC           (-1)
+#endif
 #define IDD_CARD_SIZE        200
 #define IDC_CARD_SIZE_LABEL  201
 #define IDC_CARD_SIZES       202
+#define IDD_CARD_NEW         210
+#define IDC_CARD_NEW_FOLDER  211
+#define IDC_CARD_NEW_IMAGE   212
+#define IDC_CARD_NEW_BLANK   213
+#define IDC_CARD_NEW_SIZES   214
 
 #endif

@@ -15,9 +15,11 @@ namespace {
 
 // Keys are ASCII, so a key retyped without diacritics still matches.
 constexpr char kLastCardKey[] = "posledni-karta";
+constexpr char kImageFolderKey[] = "slozka-obrazu";
 // One card per line, numbered because the parser keeps the last value of a
 // repeated key: "karta1=1048576;0;C:\Dopisy" -- size in bytes, 1 when
-// locked, then the folder, last, because a path may hold a ';'.
+// locked, then the folder or image file, last, because a path may hold a
+// ';'.
 constexpr char kCardPrefix[] = "karta";
 constexpr char kBom[] = "\xef\xbb\xbf";
 
@@ -48,13 +50,13 @@ std::string Trim(const std::string& text) {
   return text.substr(begin, end - begin);
 }
 
-std::wstring Normalized(std::wstring folder) {
-  for (wchar_t& ch : folder) {
+std::wstring Normalized(std::wstring path) {
+  for (wchar_t& ch : path) {
     if (ch == L'/') ch = L'\\';
   }
-  while (folder.size() > 3 && folder.back() == L'\\') folder.pop_back();
-  if (!folder.empty()) CharLowerBuffW(folder.data(), static_cast<DWORD>(folder.size()));
-  return folder;
+  while (path.size() > 3 && path.back() == L'\\') path.pop_back();
+  if (!path.empty()) CharLowerBuffW(path.data(), static_cast<DWORD>(path.size()));
+  return path;
 }
 
 }  // namespace
@@ -64,26 +66,26 @@ fs::path Settings::FindFile() {
   return dir.empty() ? fs::path{} : dir / L"nastaveni.txt";
 }
 
-bool Settings::SameFolder(const std::wstring& left, const std::wstring& right) {
+bool Settings::SamePath(const std::wstring& left, const std::wstring& right) {
   return Normalized(left) == Normalized(right);
 }
 
-const Settings::Card* Settings::FindCard(const std::wstring& folder) const {
+const Settings::Card* Settings::FindCard(const std::wstring& path) const {
   for (const Card& card : cards_) {
-    if (SameFolder(card.folder, folder)) return &card;
+    if (SamePath(card.path, path)) return &card;
   }
   return nullptr;
 }
 
-void Settings::RememberCard(const std::wstring& folder, uint32_t size, bool locked) {
+void Settings::RememberCard(const std::wstring& path, uint32_t size, bool locked) {
   for (Card& card : cards_) {
-    if (SameFolder(card.folder, folder)) {
+    if (SamePath(card.path, path)) {
       card.size = size;
       card.locked = locked;
       return;
     }
   }
-  cards_.push_back({folder, size, locked});
+  cards_.push_back({path, size, locked});
 }
 
 void Settings::Load() {
@@ -104,17 +106,21 @@ void Settings::Load() {
       lastCard_ = FromUtf8(value);
       continue;
     }
+    if (key == kImageFolderKey) {
+      imageFolder_ = FromUtf8(value);
+      continue;
+    }
     if (key.starts_with(kCardPrefix)) {
       const std::size_t first = value.find(';');
       const std::size_t second = first == std::string::npos ? first : value.find(';', first + 1);
       if (second == std::string::npos) continue;
       const std::string size = value.substr(0, first);
       const std::string locked = value.substr(first + 1, second - first - 1);
-      const std::wstring folder = FromUtf8(value.substr(second + 1));
+      const std::wstring path = FromUtf8(value.substr(second + 1));
       if (size.empty() || size.size() > 10 || size.find_first_not_of("0123456789") != std::string::npos ||
-          folder.empty())
+          path.empty())
         continue;
-      RememberCard(folder, static_cast<uint32_t>(std::stoull(size)), locked == "1");
+      RememberCard(path, static_cast<uint32_t>(std::stoull(size)), locked == "1");
     }
   }
 }
@@ -131,9 +137,10 @@ bool Settings::Save(std::wstring& error) const {
       L"# Soubor přepisuje emulátor, vlastní řádky v něm nepřežijí.\r\n"
       L"\r\n";
   if (!lastCard_.empty()) text += L"posledni-karta=" + lastCard_ + L"\r\n";
+  if (!imageFolder_.empty()) text += L"slozka-obrazu=" + imageFolder_ + L"\r\n";
   for (std::size_t i = 0; i < cards_.size(); ++i) {
     text += L"karta" + std::to_wstring(i + 1) + L"=" + std::to_wstring(cards_[i].size) + L";" +
-            (cards_[i].locked ? L"1" : L"0") + L";" + cards_[i].folder + L"\r\n";
+            (cards_[i].locked ? L"1" : L"0") + L";" + cards_[i].path + L"\r\n";
   }
   // Through a temporary file, so a failed write leaves the old settings.
   const fs::path temporary = file_.wstring() + L".tmp";

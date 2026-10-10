@@ -157,10 +157,31 @@ z PC se tak dostanou do Arie a zpět. Nabídka **Karta** (`F12`, `A`):
   vejde (64 KB až 64 MB), a předvybere nejmenší z nich od 1 MB, aby měla
   Aria kam psát. Karta, která ve slotu už je, se nejdřív zapíše zpět do
   své složky.
-- **`F11`, `Ctrl+0`** (Vysunout kartu) kartu vysune a zapíše do složky.
+- **`F11`, `Ctrl+O`** (Vložit kartu z obrazu) vloží kartu ze souboru,
+  který nese obsah karty bajt po bajtu (obvykle `.img`). Velikost karty
+  je velikost souboru; soubor jiné velikosti než skutečné karty (mocnina
+  dvou od 64 KB do 64 MB) se odmítne. Obraz se zapisuje stejně jako
+  složka, celý.
+- **`F11`, `Ctrl+M`** (Vložit novou kartu) založí novou kartu. V dialogu
+  zvolíte druh a velikost (předvybraný je 1 MB) a pak, kam ji uložit:
+  - **Nová prázdná složka** — pojmenujete novou složku; ta pak funguje
+    jako každá karta ze složky.
+  - **Obraz karty, naformátovaný** — soubor s prázdnou kartou, jmenovkou
+    je jméno souboru.
+  - **Obraz karty, nenaformátovaný** — soubor plný bajtů FFh, jako
+    smazaná karta. Aria na ni nic nezapíše (zápis skončí chybou, bez
+    otázky), dokud ji sama nenaformátuje; formátování v Arii funguje.
+    Do té doby správce souborů ukazuje žádné soubory a kapacitu, která
+    s velikostí karty nesouvisí — hlásí ji tak ovladač karty.
+- **`F11`, `Ctrl+0`** (Vysunout kartu) kartu vysune a zapíše do složky
+  nebo do obrazu.
 - **`F11`, `Ctrl+Z`** (Zamknout proti zápisu) přepne ochranu proti
   zápisu. Aria pak při zápisu řekne „c chráněn proti zápisu“ a čeká na
   `r` (zkusit znovu), `f` (zrušit) nebo `i` (ignorovat).
+
+Dialogy s obrazy se otvírají ve složce, kde byl poslední obraz, jinak
+vedle karty ve slotu nebo poslední vložené; tam se otvírá i dialog nové
+složky.
 
 Vložení ohlásí **dvě krátké stoupající tóny**, vysunutí **jeden nízký**,
 zamknutí dlouhý nízký a odemknutí dlouhý vysoký — stejně jako diskety
@@ -175,12 +196,12 @@ znovu po další změně a při vysunutí.
 
 **Emulátor si karty pamatuje** (soubor `nastaveni.txt` vedle souboru
 paměti): karta, která byla ve slotu při ukončení, se při dalším spuštění
-vloží sama. Každá složka si navíc pamatuje svou velikost a zámek, jako
+vloží sama. Každá složka (a obraz) si navíc pamatuje svou velikost a zámek, jako
 skutečná karta — při dalším vložení je její velikost v nabídce
 předvybraná a zámek platí dál. Vysunutá karta se při dalším spuštění
 nevkládá.
 
-Co se zapisuje:
+Co se zapisuje do složky:
 
 - Jména souborů na kartě jsou ve tvaru DOSu 8.3, velkými písmeny
   a v kódování firmwaru, takže česká písmena zůstanou. Dlouhé jméno se
@@ -201,8 +222,7 @@ Co se zapisuje:
 Změny ve složce, které uděláte ve Windows, dokud je karta ve slotu, Aria
 neuvidí — karta je kopie z chvíle vložení; uvidí je až po novém vložení.
 Soubor, který mezitím změníte vy i Aria, dostane při zápisu verzi
-z Arie. Karty z obrazu, nová prázdná karta a sloty `Ctrl+1` až `Ctrl+9`
-přijdou.
+z Arie. Sloty `Ctrl+1` až `Ctrl+9` přijdou.
 
 ## Zvuk
 

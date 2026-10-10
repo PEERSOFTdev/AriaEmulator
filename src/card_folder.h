@@ -30,6 +30,11 @@ class FolderCard {
   // The trash inside the home folder; never put on the card.
   static constexpr const wchar_t* kTrash = L".aria-trash";
 
+  // An empty card of `size` bytes, formatted as Load formats one, with
+  // `label` made a volume label by the Aria's rules: what a new image card
+  // starts as.
+  static std::vector<uint8_t> Formatted(uint32_t size, const std::wstring& label, TextEncoding encoding);
+
   // The card sizes `folder` fits on, smallest first, and the bytes its
   // files take. False with a Czech message when it cannot be read.
   static bool FittingSizes(const std::filesystem::path& folder, TextEncoding encoding, std::vector<uint32_t>& sizes,

@@ -51,7 +51,7 @@ $(file > $(VERSION_H),$(VERSION_TEXT))
 endif
 
 EMU_NAMES  := main main_window snapshot text_codec zip_reader fat12 flash_image cpu80188 aria_machine pc_card card_folder hle_bios \
-              rtc146818 dac_renderer adsp2105 audio_player emulator_thread card_dialogs settings
+              rtc146818 dac_renderer adsp2105 audio_player emulator_thread card_dialogs settings card_image
 # Jadro CPU prevzate z MAME (src/i86/LICENSE.mame-i86.txt, HANDOFF 6.12).
 I86_NAMES  := i86 i186
 I86_OBJS   := $(addprefix $(BUILD)/i86_,$(addsuffix .o,$(I86_NAMES)))
@@ -157,7 +157,7 @@ $(BIN)/dsp_disasm.exe: $(BUILD)/test_dsp_disasm.o $(BUILD)/adsp_2100dasm.o | $(B
 
 # Karta ze slozky bez firmwaru (HANDOFF 6.8, ar-aj1).
 $(BIN)/card_selftest.exe: $(BUILD)/test_card_selftest.o $(BUILD)/card_folder.o $(BUILD)/fat12.o $(BUILD)/text_codec.o \
-                          $(BUILD)/settings.o $(BUILD)/snapshot.o $(BUILD)/zip_reader.o | $(BIN)
+                          $(BUILD)/card_image.o $(BUILD)/settings.o $(BUILD)/snapshot.o $(BUILD)/zip_reader.o | $(BIN)
 	$(CXX) $(STATIC) -o $@ $^ -lshell32 -lole32 -luuid
 
 # Jadro CPU bez dat testu: kratke programy (PCB, preruseni, past ESC).

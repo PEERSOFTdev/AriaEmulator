@@ -1347,6 +1347,66 @@ položku.
   pro AWP. Diagnostika (`karta-poskozena.img`, hlášení poškozených
   souborů) zůstává v sestavení, aby další výskyt přinesl obraz.
 
+**Karty z obrazu a nová karta, 10. 10. 2026 (`ar-aj1`, krok 4).** Slot
+nese kartu se dvěma druhy domova: složku (`FolderCard`) nebo **obraz**,
+soubor s běžnou pamětí karty bajt po bajtu (`src/card_image.*`).
+
+- Obraz se čte a zapisuje celý, zápis přes dočasný soubor a přejmenování;
+  průběžné ukládání, vysunutí i ukončení jdou stejnou cestou
+  (`MainWindow::SaveCard`). Hlášení poškozených souborů a
+  `karta-poskozena.img` platí jen pro složku.
+- Obraz jiné velikosti než mocniny dvou 64 KB–64 MB se **odmítne**, ne
+  doplní: doplnění by soubor uživatele při prvním uložení zvětšilo a
+  `FORMAT.EXE+25D0h` měří kartu zrcadlením (výše „Kapacity karet“).
+- `nastaveni.txt` beze změny tvaru: řádek `kartaN` nese složku i obraz,
+  druh rozhodne, zda je cesta složka. Starší soubory se čtou stejně
+  (`card_selftest`).
+- Nabídka Karta: `Ctrl+O` z obrazu (Eureka obrazy nemá), `Ctrl+M` nová
+  karta jako „Nová disketa“ Eureky — dialog s druhem (prázdná složka,
+  naformátovaný obraz, nenaformátovaný obraz) a velikostí, pak výběr
+  cesty dialogem Windows. Naformátovaný obraz dělá
+  `FolderCard::Formatted`, tedy totéž rozvržení jako karta ze složky.
+  Nenaformátovaný je samé FFh (smazaná flash; i flash karty `ar-ibv`
+  budou obrazy).
+- Opraveno mimochodem: vložení téže složky, která už je ve slotu, ji
+  dřív přečetlo **před** zápisem karty zpět, takže by Aria dostala
+  zastaralou kopii. Teď se karta nejdřív vysune (`EjectIfInSlot`).
+- **Prázdná karta v Arii, změřeno v `boot_test` (7.05 i 6.87):** vytvoření
+  souboru na kartě samých FFh hned vrátí chybu DOS 4, bez otázky
+  kritické chyby a bez řeči; ovladač kartu zkusmo přepíše a vrátí bajty
+  zpět (`Writes` 34, obsah dál FFh). Stroj tedy nezamrzne. **Neověřeno:**
+  že ji `FORMAT.EXE` (spouští ho `FILEMGR.EXE`, řetězec `%Fs\format.exe`)
+  v emulátoru opravdu naformátuje — ověří uživatel, případně `boot_test`
+  se spuštěním FORMAT.
+- Další krok: sloty `Ctrl+1` až `Ctrl+9`.
+- **Zkouška uživatele týž den:** formátování v Arii funguje na všech
+  druzích karet. Správce souborů na nenaformátované kartě ukázal žádné
+  soubory a kapacitu kolem 2 012 KB, po naformátování přes 16 000 KB
+  (karta 16 MB). Dočasný `boot_test` (nezapsaný), `INT 21h` 36h na kartě
+  16 MB samých FFh: C: hlásí 1 sektor na cluster, 1 010 clusterů
+  (505 KB), volno 0 — náhradní geometrie ovladače pro kartu bez BPB, ne
+  velikost karty; naformátovaná 16 368 KB na C: i E:. Táž otázka na **E:**
+  (TRICKSS2) u prázdné karty: AAPI řekne „celkové selhání e“ a čeká na
+  klávesu, `f` ji v testu neukončilo. Obojí dělají původní ovladače; chyba
+  emulátoru tím není doložená.
+- Dialogy obrazů se otvíraly na ploše: shell si poslední složku
+  nepamatoval. Teď se otvírají ve složce posledního obrazu
+  (`slozka-obrazu` v `nastaveni.txt`), jinak vedle karty ve slotu nebo
+  poslední karty; tam se otvírá i dialog nové složky (`StartIn`
+  v `win/dialog.cpp`).
+- **Otevřené (`ar-pdw`):** správce souborů v `B:\SYSTEM`
+  neukáže žádné soubory, `DIR B:\SYSTEM` v DOSu ano. Soubory tam mají
+  obyčejné atributy (20h, `LPC.DSP` 21h), takže je neskrývá atribut.
+  `BrowseDirInit` (API.DOC) alokuje seznam souborů z globální paměti
+  AAPI; v `SYSTEM` je 38 souborů a podsložka, víc než jinde — podezření
+  na nedostatek paměti v emulátoru, neověřeno.
+  **Už neplatí:** složka `src` repozitáře (přes 60 souborů) na kartě se
+  procházela správně a hned potom i `B:\SYSTEM`. Chyba tedy závisí na
+  stavu, ne na počtu souborů. K tomu „označit vše“ v té složce ohlásilo
+  miliony označených souborů. Zda je to chyba firmwaru, nebo emulátoru
+  (např. paměť, kterou emulátor nuluje a skutečná RAM ne), není
+  rozhodnuto.
+
 ### 6.9 Napájení
 
 `TURNOFF.COM` (16 B): `cli; mov dx,0701h; mov al,0; out dx,al; jmp $` —

@@ -36,4 +36,25 @@ class CardSizeDialog : public win::Dialog {
   uint32_t chosen_ = 0;
 };
 
+// A new card (HANDOFF 6.8, ar-aj1), after the Eureka emulator's Nová
+// disketa: what kind and what size, every real size offered and 1 MB first.
+// Where it goes, the window asks next.
+class NewCardDialog : public win::Dialog {
+ public:
+  enum class Kind { kFolder, kImage, kBlankImage };
+
+  Kind kind() const { return kind_; }
+  uint32_t size() const { return size_; }
+
+ protected:
+  bool OnInit() override;
+  bool OnCommand(int id, int notification) override;
+  bool OnOk() override;
+
+ private:
+  std::vector<uint32_t> sizes_;
+  Kind kind_ = Kind::kFolder;
+  uint32_t size_ = 0;
+};
+
 #endif

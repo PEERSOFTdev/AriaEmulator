@@ -13,8 +13,9 @@
 //   * The layout is in dialog units in the .rc, so no coordinate is computed
 //     here and the whole thing scales with the dialog font.
 //
-// Nothing in win/ knows about the emulator.  (Taken unchanged from the Eureka
-// A4 emulator.)
+// Nothing in win/ knows about the emulator.  (Taken from the Eureka A4
+// emulator; PickFile and PickFileToCreate are the Aria's own, for card
+// images, which the Eureka has no use for.)
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -76,8 +77,28 @@ std::wstring PickFolder(HWND owner, const wchar_t* title);
 // where "New folder" on a toolbar has to be hunted for.
 //
 // suggestedName pre-fills that field and may be null.
+//
+// startFolder, when given and existing, is where the dialog opens (an
+// Aria addition, as below).
 std::wstring PickFolderToCreate(HWND owner, const wchar_t* title,
-                                const wchar_t* suggestedName);
+                                const wchar_t* suggestedName,
+                                const wchar_t* startFolder = nullptr);
+
+// An existing file, offered first among those with `extension` (no dot)
+// under the name `kind`, with every file a choice away.  Empty when
+// cancelled.  Requires COM, as above.  It opens in startFolder when that
+// is given and exists: the shell's own memory of the last folder is not to
+// be relied on, and left alone it opened on the Desktop.
+std::wstring PickFile(HWND owner, const wchar_t* title, const wchar_t* kind,
+                      const wchar_t* extension, const wchar_t* startFolder);
+
+// A file to be written: the shell asks itself before replacing one that
+// exists, and adds `extension` to a name typed without one.  Empty when
+// cancelled.
+std::wstring PickFileToCreate(HWND owner, const wchar_t* title,
+                              const wchar_t* kind, const wchar_t* extension,
+                              const wchar_t* suggestedName,
+                              const wchar_t* startFolder);
 
 }  // namespace win
 

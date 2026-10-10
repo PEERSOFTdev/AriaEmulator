@@ -10,9 +10,11 @@
 // the moment of the act that did not stick.
 //
 // So far it remembers cards (HANDOFF 6.8, ar-aj1): the one in the slot at
-// the end of the last run, and for every folder that has been a card its
-// size and write-protect switch -- both belong to the card, as on a real
-// one, so they come back whenever that folder goes in again.
+// the end of the last run, and for every folder or image file that has been
+// a card its size and write-protect switch -- both belong to the card, as
+// on a real one, so they come back whenever that card goes in again. Which
+// of the two a card is, the file does not say: a path that is a folder is a
+// folder card, any other an image (whose size is then the file's own).
 
 #include <cstdint>
 #include <filesystem>
@@ -32,27 +34,33 @@ class Settings {
   void Load();
   bool Save(std::wstring& error) const;
 
-  // The card folder to put back in at the next start; empty for none.
+  // The card (folder or image) to put back in at the next start; empty for
+  // none.
   const std::wstring& last_card() const { return lastCard_; }
-  void SetLastCard(std::wstring folder) { lastCard_ = std::move(folder); }
+  void SetLastCard(std::wstring path) { lastCard_ = std::move(path); }
+
+  // The folder of the last card image put in or made, where the image
+  // dialogs open; empty until there was one.
+  const std::wstring& image_folder() const { return imageFolder_; }
+  void SetImageFolder(std::wstring folder) { imageFolder_ = std::move(folder); }
 
   struct Card {
-    std::wstring folder;
+    std::wstring path;
     uint32_t size = 0;
     bool locked = false;
   };
-  // The card made from `folder` before, or null. Paths compare by
-  // SameFolder.
-  const Card* FindCard(const std::wstring& folder) const;
-  void RememberCard(const std::wstring& folder, uint32_t size, bool locked);
+  // The card made from `path` before, or null. Paths compare by SamePath.
+  const Card* FindCard(const std::wstring& path) const;
+  void RememberCard(const std::wstring& path, uint32_t size, bool locked);
 
   // Case-insensitive, separators and a trailing one folded, so the same
   // folder typed two ways is one card.
-  static bool SameFolder(const std::wstring& left, const std::wstring& right);
+  static bool SamePath(const std::wstring& left, const std::wstring& right);
 
  private:
   std::filesystem::path file_;
   std::wstring lastCard_;
+  std::wstring imageFolder_;
   // In the order they were first used, so the file stays readable.
   std::vector<Card> cards_;
 };

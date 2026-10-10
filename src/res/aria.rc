@@ -59,11 +59,14 @@ BEGIN
         MENUITEM "&Konec\tF11, Ctrl+Q",                         ID_FILE_EXIT
     END
     /* As the Eureka emulator's Disketa, and second like it: the slot holds
-       an SRAM card made from a folder, written back when it comes out
-       (HANDOFF 6.8). */
+       an SRAM card made from a folder, written back when it comes out, or
+       one kept in an image file (HANDOFF 6.8). The folder comes first: it
+       is how files get to the Aria. */
     POPUP "K&arta"
     BEGIN
         MENUITEM "&Vložit kartu ze složky…\tF11, Ctrl+I",       ID_CARD_INSERT
+        MENUITEM "Vložit kartu z &obrazu…\tF11, Ctrl+O",        ID_CARD_INSERT_IMAGE
+        MENUITEM "Vložit &novou kartu…\tF11, Ctrl+M",           ID_CARD_NEW
         MENUITEM "V&ysunout kartu\tF11, Ctrl+0",                ID_CARD_EJECT
         MENUITEM "&Zamknout proti zápisu\tF11, Ctrl+Z",         ID_CARD_PROTECT
     END
@@ -123,6 +126,8 @@ BEGIN
     "V",        ID_MACHINE_POWEROFF, VIRTKEY, CONTROL
     "H",        ID_HELP_KEYS,        VIRTKEY, CONTROL
     "I",        ID_CARD_INSERT,      VIRTKEY, CONTROL
+    "O",        ID_CARD_INSERT_IMAGE, VIRTKEY, CONTROL
+    "M",        ID_CARD_NEW,         VIRTKEY, CONTROL
     "0",        ID_CARD_EJECT,       VIRTKEY, CONTROL
     "Z",        ID_CARD_PROTECT,     VIRTKEY, CONTROL
 END
@@ -140,4 +145,27 @@ BEGIN
     LISTBOX         IDC_CARD_SIZES, 7, 29, 226, 58, LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP
     DEFPUSHBUTTON   "OK", IDOK, 129, 91, 50, 14
     PUSHBUTTON      "Storno", IDCANCEL, 183, 91, 50, 14
+END
+
+/* A new card, after the Eureka emulator's Nová disketa: one page, the kind
+   and the size, and where it goes is asked next by the shell's own picker,
+   a folder to create or a file to write. Every size is offered, since there
+   is nothing on the card yet. The unformatted kind is all FFh; the Aria
+   refuses to write to it until it is formatted (boot_test). */
+IDD_CARD_NEW DIALOGEX 0, 0, 260, 164
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Nová karta"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "Jaká karta", IDC_STATIC, 7, 7, 246, 50
+    CONTROL         "Nová prázdná &složka", IDC_CARD_NEW_FOLDER, "Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, 16, 19, 230, 10
+    CONTROL         "&Obraz karty, naformátovaný", IDC_CARD_NEW_IMAGE, "Button",
+                    BS_AUTORADIOBUTTON, 16, 31, 230, 10
+    CONTROL         "Obraz karty, &nenaformátovaný — naformátuje ho Aria",
+                    IDC_CARD_NEW_BLANK, "Button", BS_AUTORADIOBUTTON, 16, 43, 230, 10
+    LTEXT           "&Velikost karty:", IDC_STATIC, 7, 63, 246, 9
+    LISTBOX         IDC_CARD_NEW_SIZES, 7, 74, 246, 66, LBS_NOTIFY | WS_VSCROLL | WS_GROUP | WS_TABSTOP
+    DEFPUSHBUTTON   "OK", IDOK, 149, 143, 50, 14, WS_GROUP
+    PUSHBUTTON      "Storno", IDCANCEL, 203, 143, 50, 14
 END

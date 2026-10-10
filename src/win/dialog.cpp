@@ -91,8 +91,24 @@ std::wstring PickFolder(HWND owner, const wchar_t* title) {
   return result;
 }
 
+namespace {
+
+// Opens the dialog in `folder` when one is given and the shell can find
+// it; otherwise the shell's own choice stands.
+void StartIn(IFileDialog* dialog, const wchar_t* folder) {
+  if (!folder || !*folder) return;
+  IShellItem* item = nullptr;
+  if (FAILED(SHCreateItemFromParsingName(folder, nullptr, IID_PPV_ARGS(&item))))
+    return;
+  dialog->SetFolder(item);
+  item->Release();
+}
+
+}  // namespace
+
 std::wstring PickFolderToCreate(HWND owner, const wchar_t* title,
-                                const wchar_t* suggestedName) {
+                                const wchar_t* suggestedName,
+                                const wchar_t* startFolder) {
   IFileSaveDialog* dialog = nullptr;
   if (FAILED(CoCreateInstance(CLSID_FileSaveDialog, nullptr,
                               CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))))
@@ -109,6 +125,7 @@ std::wstring PickFolderToCreate(HWND owner, const wchar_t* title,
                      ~static_cast<DWORD>(FOS_FILEMUSTEXIST));
   dialog->SetTitle(title);
   if (suggestedName) dialog->SetFileName(suggestedName);
+  StartIn(dialog, startFolder);
   std::wstring result;
   if (SUCCEEDED(dialog->Show(owner))) {
     IShellItem* item = nullptr;
@@ -121,6 +138,68 @@ std::wstring PickFolderToCreate(HWND owner, const wchar_t* title,
       item->Release();
     }
   }
+  dialog->Release();
+  return result;
+}
+
+namespace {
+
+// Shows a file dialog set up by the caller and returns the path chosen.
+std::wstring ShowFileDialog(IFileDialog* dialog, HWND owner, const wchar_t* title,
+                            const wchar_t* kind, const wchar_t* extension) {
+  const std::wstring pattern = std::wstring(L"*.") + extension;
+  const COMDLG_FILTERSPEC types[] = {{kind, pattern.c_str()},
+                                     {L"Všechny soubory", L"*.*"}};
+  dialog->SetFileTypes(2, types);
+  dialog->SetDefaultExtension(extension);
+  dialog->SetTitle(title);
+  std::wstring result;
+  if (SUCCEEDED(dialog->Show(owner))) {
+    IShellItem* item = nullptr;
+    if (SUCCEEDED(dialog->GetResult(&item))) {
+      PWSTR path = nullptr;
+      if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
+        result = path;
+        CoTaskMemFree(path);
+      }
+      item->Release();
+    }
+  }
+  return result;
+}
+
+}  // namespace
+
+std::wstring PickFile(HWND owner, const wchar_t* title, const wchar_t* kind,
+                      const wchar_t* extension, const wchar_t* startFolder) {
+  IFileOpenDialog* dialog = nullptr;
+  if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr,
+                              CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))))
+    return {};
+  DWORD options = 0;
+  dialog->GetOptions(&options);
+  dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST);
+  StartIn(dialog, startFolder);
+  std::wstring result = ShowFileDialog(dialog, owner, title, kind, extension);
+  dialog->Release();
+  return result;
+}
+
+std::wstring PickFileToCreate(HWND owner, const wchar_t* title,
+                              const wchar_t* kind, const wchar_t* extension,
+                              const wchar_t* suggestedName,
+                              const wchar_t* startFolder) {
+  IFileSaveDialog* dialog = nullptr;
+  if (FAILED(CoCreateInstance(CLSID_FileSaveDialog, nullptr,
+                              CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))))
+    return {};
+  DWORD options = 0;
+  dialog->GetOptions(&options);
+  dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_OVERWRITEPROMPT |
+                     FOS_PATHMUSTEXIST | FOS_NOREADONLYRETURN);
+  if (suggestedName) dialog->SetFileName(suggestedName);
+  StartIn(dialog, startFolder);
+  std::wstring result = ShowFileDialog(dialog, owner, title, kind, extension);
   dialog->Release();
   return result;
 }

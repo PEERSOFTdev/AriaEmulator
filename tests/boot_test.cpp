@@ -762,6 +762,35 @@ int wmain(int argc, wchar_t** argv) {
       return 1;
     }
     machine.EjectCard();
+
+    // A blank card, every byte FFh, as Karta -> Vložit novou kartu makes an
+    // unformatted image (HANDOFF 6.8): creating a file must fail and come
+    // back, without a critical-error prompt for nobody to answer, and leave
+    // the card blank. Measured 10. 10. 2026 on 7.05: DOS error 4 at once,
+    // nothing said; the driver writes its probe and puts the bytes back.
+    machine.InsertCard(PcCard::Sram(kCardSize, std::vector<uint8_t>(kCardSize, 0xFF)));
+    for (int i = 0; i < 100 && machine.CardWaiting(); ++i) machine.Run(kSlice);
+    Cpu80188::Registers b{};
+    b.ax = 0x3C00;
+    b.ds = b.es = data;
+    bool blank_prompted = false;
+    const bool blank_returned = DosCall(machine, speech, waiting, top, b, [&] {
+      blank_prompted = true;
+      press(machine, 0, 0x0E, 1);
+    });
+    const std::vector<uint8_t>& blank = machine.card()->Contents();
+    const bool still_blank = std::all_of(blank.begin(), blank.end(), [](uint8_t v) { return v == 0xFF; });
+    if (verbose) std::cout << "create on a blank card: " << (blank_returned ? "returned" : "no return")
+                           << ", AX " << std::hex << b.ax << std::dec << (blank_prompted ? ", prompted" : "")
+                           << (still_blank ? "" : ", card changed") << "\n";
+    if (!blank_returned || blank_prompted || !(b.flags & 0x0001) || !still_blank) {
+      std::cout << "FAIL boot: a blank card: "
+                << (!blank_returned ? "the call did not return" : blank_prompted ? "a prompt waited for a key"
+                    : !(b.flags & 0x0001) ? "a file was created" : "the card was written")
+                << "\n";
+      return 1;
+    }
+    machine.EjectCard();
   }
 
   // The battery keeps the RAM disk D: through power-off (HANDOFF 6.9), and
@@ -864,7 +893,7 @@ int wmain(int argc, wchar_t** argv) {
                " space + dot 4 answered, D: formatted on y, C:\\KARTA.TXT written and read on an SRAM card from a host"
                " folder, its subfolder's letter read and the card saved back into the folder,"
                " cards swapped after 2 s and at once without mixing, write protection prompted and kept,"
-               " card battery in the battery report,"
+               " card battery in the battery report, a blank card refused without a prompt,"
                " konec says vypnuto and switches off, D: kept through"
                " a memory snapshot without a new question, F1 starts the word processor)\n";
   return 0;

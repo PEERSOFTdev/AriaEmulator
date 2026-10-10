@@ -1,7 +1,8 @@
 // Folder cards without any firmware (HANDOFF 6.8, ar-aj1): a host folder
 // becomes an SRAM card image and the card's changes go back into the
 // folder. What the Aria would do to the card is played by a second folder
-// whose card is saved into the first one's home. Prints PASS on success.
+// whose card is saved into the first one's home. Also image cards and the
+// settings that remember cards. Prints PASS on success.
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -15,6 +16,7 @@
 #include <vector>
 
 #include "card_folder.h"
+#include "card_image.h"
 #include "fat12.h"
 #include "settings.h"
 #include "text_codec.h"
@@ -248,6 +250,7 @@ int main() {
     saved.RememberCard(folder, 2 * 1024 * 1024, true);
     saved.RememberCard((root / L"Jiná").wstring(), 512 * 1024, false);
     saved.SetLastCard(folder);
+    saved.SetImageFolder((root / L"Obrazy karet").wstring());
     std::wstring error;
     Check(saved.Save(error), "the settings save");
     Settings loaded(file);
@@ -255,9 +258,61 @@ int main() {
     const Settings::Card* card = loaded.FindCard(folder + L"\\");
     Check(card && card->size == 2 * 1024 * 1024 && card->locked, "a card's size and lock come back");
     Check(loaded.last_card() == folder, "the last card comes back");
+    Check(loaded.image_folder() == (root / L"Obrazy karet").wstring(), "the image folder comes back");
     const Settings::Card* other = loaded.FindCard((root / L"JINÁ").wstring());
     Check(other && other->size == 512 * 1024 && !other->locked, "folders compare without case");
     Check(!loaded.FindCard((root / L"Nikdy").wstring()), "an unknown folder is no card");
+  }
+
+  // A settings file as an earlier build wrote it, or as a user edits it:
+  // no BOM, a comment, spaces round the '=', and a line that makes no
+  // sense; an image path is a card line like any other.
+  {
+    const fs::path file = root / L"rucne.txt";
+    Put(file,
+        "# ručně\r\n"
+        "posledni-karta = D:\\Aria\\Karty\\Ariacard\r\n"
+        "karta1=16777216;0;D:\\Aria\\Karty\\Ariacard\r\n"
+        "karta2=nesmysl;1;D:\\X\r\n"
+        "karta3=1048576;1;D:\\Aria\\Karty\\Pokus.img\r\n");
+    Settings loaded(file);
+    loaded.Load();
+    const Settings::Card* folder = loaded.FindCard(L"d:/aria/karty/ariacard");
+    Check(loaded.last_card() == L"D:\\Aria\\Karty\\Ariacard" && folder && folder->size == 16u << 20 &&
+              !folder->locked,
+          "an older settings file reads");
+    Check(!loaded.FindCard(L"D:\\X"), "a broken card line is skipped");
+    const Settings::Card* image = loaded.FindCard(L"D:\\Aria\\Karty\\Pokus.img");
+    Check(image && image->locked, "an image card line reads");
+  }
+
+  // Image cards (card_image.h): a new formatted image is a FAT volume with
+  // the Aria's label; an image goes to its file and back byte for byte,
+  // over an older one too, with no temporary file left; a file of a size
+  // no card has is refused.
+  {
+    const std::vector<uint8_t> formatted = FolderCard::Formatted(1u << 20, L"Nová karta", TextEncoding::kCp852);
+    Fat12Volume volume;
+    std::wstring error;
+    std::vector<FatEntry> entries;
+    Check(formatted.size() == 1u << 20 && volume.Open(formatted, error) && volume.Label() == "NOV\xb5 KARTA" &&
+              volume.List("", entries) && entries.empty(),
+          "a new image is formatted with the Aria's label");
+    const fs::path file = root / L"Obrazy" / L"Karta.img";
+    fs::create_directories(file.parent_path());
+    std::vector<uint8_t> image(64 * 1024, 0xFF);
+    Check(card_image::Write(file, image, error), "an image is written");
+    image[100] = 0x42;
+    Check(card_image::Write(file, image, error), "an image is written over");
+    std::vector<uint8_t> back;
+    Check(card_image::Read(file, back, error) && back == image, "an image reads back as written");
+    Check(!fs::exists(file.wstring() + L".tmp"), "no temporary file stays");
+    Put(root / L"Obrazy" / L"Spatna.img", std::string(100000, '\0'));
+    Check(!card_image::Read(root / L"Obrazy" / L"Spatna.img", back, error) && !error.empty(),
+          "an image of no card's size is refused");
+    Check(card_image::ValidSize(64 * 1024) && card_image::ValidSize(64u << 20) && !card_image::ValidSize(32 * 1024) &&
+              !card_image::ValidSize(128u << 20) && !card_image::ValidSize(3u << 20),
+          "card sizes are powers of two from 64 KB to 64 MB");
   }
 
   RemoveAll(root);
