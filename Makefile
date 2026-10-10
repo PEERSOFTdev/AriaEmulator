@@ -50,7 +50,7 @@ ifneq ($(file < $(VERSION_H)),$(VERSION_TEXT))
 $(file > $(VERSION_H),$(VERSION_TEXT))
 endif
 
-EMU_NAMES  := main main_window snapshot text_codec zip_reader fat12 flash_image cpu80188 aria_machine pc_card hle_bios \
+EMU_NAMES  := main main_window snapshot text_codec zip_reader fat12 flash_image cpu80188 aria_machine pc_card card_folder hle_bios \
               rtc146818 dac_renderer adsp2105 audio_player emulator_thread
 # Jadro CPU prevzate z MAME (src/i86/LICENSE.mame-i86.txt, HANDOFF 6.12).
 I86_NAMES  := i86 i186
@@ -73,7 +73,7 @@ MACHINE_OBJS := $(BUILD)/aria_machine.o $(BUILD)/pc_card.o $(BUILD)/hle_bios.o $
 EMU        := $(BIN)/AriaEmulator.exe
 TEST_EXES  := $(BIN)/codec_test.exe $(BIN)/flash_selftest.exe $(BIN)/firmware_test.exe \
               $(BIN)/cpu_test.exe $(BIN)/cpu_selftest.exe $(BIN)/pklite_unpack.exe \
-              $(BIN)/boot_test.exe $(BIN)/dsp_selftest.exe $(BIN)/dsp_disasm.exe
+              $(BIN)/boot_test.exe $(BIN)/dsp_selftest.exe $(BIN)/dsp_disasm.exe $(BIN)/card_selftest.exe
 
 .PHONY: all tests check clean
 .DEFAULT_GOAL := all
@@ -143,7 +143,7 @@ $(BIN)/pklite_unpack.exe: $(BUILD)/test_pklite_unpack.o $(CPU_OBJS) $(CORE_OBJS)
 	$(CXX) $(STATIC) -municode -o $@ $^
 
 # Start jadra FreeDOS z disku B: na BIOSu emulatoru (ar-4cu). wmain.
-$(BIN)/boot_test.exe: $(BUILD)/test_boot_test.o $(BUILD)/snapshot.o $(MACHINE_OBJS) | $(BIN)
+$(BIN)/boot_test.exe: $(BUILD)/test_boot_test.o $(BUILD)/snapshot.o $(BUILD)/card_folder.o $(MACHINE_OBJS) | $(BIN)
 	$(CXX) $(STATIC) -municode -o $@ $^ -lshell32 -lole32 -luuid
 
 # Jadro DSP bez firmwaru: poradi bajtu zavadeci stranky a kratky program.
@@ -154,6 +154,10 @@ $(BIN)/dsp_selftest.exe: $(BUILD)/test_dsp_selftest.o $(DSP_OBJS) | $(BIN)
 # disasembler je z MAME. wmain.
 $(BIN)/dsp_disasm.exe: $(BUILD)/test_dsp_disasm.o $(BUILD)/adsp_2100dasm.o | $(BIN)
 	$(CXX) $(STATIC) -municode -o $@ $^
+
+# Karta ze slozky bez firmwaru (HANDOFF 6.8, ar-aj1).
+$(BIN)/card_selftest.exe: $(BUILD)/test_card_selftest.o $(BUILD)/card_folder.o $(BUILD)/fat12.o $(BUILD)/text_codec.o | $(BIN)
+	$(CXX) $(STATIC) -o $@ $^
 
 # Jadro CPU bez dat testu: kratke programy (PCB, preruseni, past ESC).
 $(BIN)/cpu_selftest.exe: $(BUILD)/test_cpu_selftest.o $(CPU_OBJS) | $(BIN)
@@ -177,7 +181,7 @@ MODES :=
 else
 MODES := $(FW_MODES)
 endif
-CHECKS := check-codec check-flash check-cpu check-dsp $(addprefix check-fw-,$(MODES))
+CHECKS := check-codec check-flash check-cpu check-dsp check-card $(addprefix check-fw-,$(MODES))
 # Rozbaleni PKLITE potrebuje firmware i jadro; jeden beh na ceskou 7.05.
 ifneq ($(SKIP_FIRMWARE),1)
 CHECKS += check-unpack
@@ -217,6 +221,9 @@ check-dsp: $(BIN)/dsp_selftest.exe
 
 check-cpu: $(BIN)/cpu_selftest.exe
 	$(BIN)/cpu_selftest.exe
+
+check-card: $(BIN)/card_selftest.exe
+	$(BIN)/card_selftest.exe
 
 check-unpack: $(BIN)/pklite_unpack.exe
 	$(BIN)/pklite_unpack.exe "$(FW)/CARD/CC0705.ZIP" --check

@@ -14,6 +14,8 @@ struct FatEntry {
   uint8_t attributes = 0;
   uint16_t first_cluster = 0;
   uint32_t size = 0;
+  uint16_t time = 0;  // DOS format, as in the directory entry.
+  uint16_t date = 0;
   bool IsDirectory() const { return (attributes & 0x10) != 0; }
 };
 

@@ -166,6 +166,8 @@ void Fat12Volume::ParseDirectory(const uint8_t* bytes, std::size_t count,
     item.attributes = entry[11];
     item.first_cluster = Read16(entry + 26);
     item.size = Read32(entry + 28);
+    item.time = Read16(entry + 22);
+    item.date = Read16(entry + 24);
     entries.push_back(item);
   }
 }

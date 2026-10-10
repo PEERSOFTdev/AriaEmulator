@@ -1223,6 +1223,36 @@ Dál napájení `0702h`, ochrana proti zápisu a baterie.
 `ar-3ap` je tím hotový. Vysunutí uprostřed zápisu zůstává jako návrh pro
 `ar-aj1` (výše).
 
+**Karta ze složky, 10. 10. 2026 (`ar-aj1`, krok 1).** `src/card_folder.*`
+(`FolderCard`) podle disket Eureky (`virtual_disk.*`), ale nad FAT12
+s podadresáři:
+
+- `Load` převede složku i s podsložkami na obraz karty zvolené velikosti
+  (64 KB až 64 MB, mocnina dvou). Jména velkými písmeny 8.3 v kódování
+  obrazu B: (Kamenický nebo CP852), takže česká písmena, která kódová
+  stránka má, zůstanou; mezery zmizí, nepovolené znaky jsou `_`, dlouhé
+  nebo kolidující jméno dostane `~1`, `~2`. Kořen má 512 položek (maximum
+  DLFMT), jmenovka svazku je jméno složky, datum a čas ze souborů
+  hostitele, příznak jen pro čtení se přenese. Když se složka nevejde,
+  `needed` řekne nejmenší kartu, která stačí (hláška v KB).
+- `Save` zapíše kartu zpět: soubor, který karta má, zůstane pod jménem
+  hostitele, odkud přišel, a zapíše se jen při změně obsahu (FNV-1a);
+  nový soubor dostane jméno 8.3 dekódované z kódování; smazaný se
+  přesune do `.aria-trash` ve složce (i s cestou), složka se smaže, jen
+  když je prázdná. `.aria-trash` se na kartu nikdy nedává.
+- `card_selftest` (bez dat, 18. řádek PASS): obě kódování, kolize, prázdný
+  soubor, podsložka, soubor přes mnoho clusterů, zápis zpět (změna,
+  ponechání, nový soubor i složka, koš), opakované uložení a odmítnutí
+  příliš velké složky s nabídkou 1024 KB. Mutace (bez koše) ho shodí.
+- `boot_test` teď vkládá kartu ze složky: Aria (DOS přes `INT 21h`)
+  přečte `C:\DOPISY\PRVNID~1.TXT` ze souboru „Dopisy\Prvni dopis.txt“
+  a soubor `KARTA.TXT`, který zapsala, se po `Save` objeví ve složce.
+
+Omezení: jen FAT12 — kartu, kterou Aria přeformátuje na FAT16 (DLFMT to
+umí), `Save` odmítne a složku nechá být **[ověřit, zda FORMAT na SRAM
+FAT16 dělá]**. Zatím se ukládá jen na výslovný `Save`; průběžné ukládání
+po utišení karty (jako Eureka po sekundě klidu) přijde s nabídkou.
+
 ### 6.9 Napájení
 
 `TURNOFF.COM` (16 B): `cli; mov dx,0701h; mov al,0; out dx,al; jmp $` —

@@ -1,6 +1,7 @@
 #!/bin/sh
-# Sestavi testy a pusti je naraz. Ocekava se SEDMNACT radku PASS:
-#   - ctyri bez dat: codec_test, flash_selftest, cpu_selftest, dsp_selftest;
+# Sestavi testy a pusti je naraz. Ocekava se OSMNACT radku PASS:
+#   - pet bez dat: codec_test, flash_selftest, cpu_selftest, dsp_selftest,
+#     card_selftest;
 #   - osm rezimu firmware_test (jedna aktualizace od Robotronu na rezim)
 #     a pklite_unpack --check, kdyz je firmware (ARIAFW);
 #   - dva behy cpu_test (8088 a rozsireni 80186 ze sady V20), kdyz jsou data
@@ -42,7 +43,7 @@ if [ $# -ge 1 ] && [ -n "$1" ]; then
 fi
 ARIAFW="${ARIAFW:-}"
 SKIP_FIRMWARE=0
-EXPECTED=4
+EXPECTED=5
 if [ -n "$ARIAFW" ]; then
   ARIAFW="$(to_unix "$ARIAFW")"
 fi

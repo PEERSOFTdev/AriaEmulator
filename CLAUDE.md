@@ -112,8 +112,8 @@ z `FlashImage` (`src/flash_image.h`).
 
 Z WSL krosovým mingw-w64: `./build.sh`, `./build-tests.sh`,
 `./run-tests.sh [složka firmwaru]` (jinak z proměnné `ARIAFW`). Výstup
-EXE do `bin/`, mezivýstupy do `build/`. Očekává se **sedmnáct** řádků
-`PASS`: čtyři bez dat, devět s firmwarem (`ARIAFW`; osm režimů
+EXE do `bin/`, mezivýstupy do `build/`. Očekává se **osmnáct** řádků
+`PASS`: pět bez dat, devět s firmwarem (`ARIAFW`; osm režimů
 `firmware_test` a `pklite_unpack --check`), dva s daty instrukčních
 testů CPU (`ARIA_CPUTESTS`, výchozí `D:\aria\cputests`, 562 MB,
 SingleStepTests) a dva běhy `boot_test` (7.05 a 6.87 v Kamenických),

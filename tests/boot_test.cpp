@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "aria_machine.h"
+#include "card_folder.h"
 #include "hle_bios.h"
 #include "snapshot.h"
 #include "zip_reader.h"
@@ -235,13 +236,32 @@ int wmain(int argc, wchar_t** argv) {
   AriaMachine machine(flash, kernel, [] { return int64_t{946728000}; });
   std::vector<std::string> disk_log;
   if (verbose) machine.bios().SetDiskLog([&](const std::string& line) { disk_log.push_back(line); });
-  // A formatted 512 KB SRAM card in the slot, drive C: (HANDOFF 6.8); the
-  // Aria's own drivers take it over, and DOS writes to it below.
+  // A 512 KB SRAM card in the slot, drive C: (HANDOFF 6.8), made from a host
+  // folder with a letter in a subfolder (card_folder.h); the Aria's own
+  // drivers take it over, DOS reads and writes it below, and the card goes
+  // back into the folder. One folder per run: the boots run in parallel.
   constexpr uint32_t kCardSize = 512 * 1024;
+  constexpr char kLetter[] = "Mila Ario,\r\nposilam dopis.\r\n";
   Fat12Format card_format;
   card_format.sectors = kCardSize / 512;
   card_format.label = "KARTA";
-  machine.InsertCard(PcCard::Sram(kCardSize, FormatFat12(card_format)));
+  const std::filesystem::path card_home = std::filesystem::temp_directory_path() /
+                                          ("aria_boot_test_karta_" +
+                                           std::to_string(Crc32(flash.bytes.data(), flash.bytes.size())));
+  std::error_code card_ec;
+  std::filesystem::remove_all(card_home, card_ec);
+  std::filesystem::create_directories(card_home / "Dopisy");
+  std::ofstream(card_home / "Dopisy" / "Prvni dopis.txt", std::ios::binary) << kLetter;
+  FolderCard folder_card;
+  {
+    std::vector<uint8_t> image;
+    std::wstring card_error;
+    if (!folder_card.Load(card_home, kCardSize, flash.encoding, image, card_error)) {
+      std::wcout << L"FAIL boot: the folder card: " << card_error << L"\n";
+      return 1;
+    }
+    machine.InsertCard(PcCard::Sram(kCardSize, std::move(image)));
+  }
   machine.PowerOn();  long long ran = 0;
   if (trace) {
     // Instruction by instruction, stopping where execution runs into
@@ -597,6 +617,37 @@ int wmain(int argc, wchar_t** argv) {
       return 1;
     }
 
+    // The letter from the host folder's subfolder, as the Aria reads it
+    // ("Prvni dopis.txt" is PRVNID~1.TXT on the card), and the card's new
+    // file back in the folder.
+    const char kLetterPath[] = "C:\\DOPISY\\PRVNID~1.TXT";
+    for (std::size_t i = 0; i < sizeof kLetterPath; ++i)
+      machine.Poke(base + 0x200 + i, static_cast<uint8_t>(kLetterPath[i]));
+    constexpr uint16_t kLetterLength = sizeof kLetter - 1;
+    std::string letter_step;
+    if (!dos(0x3D00, 0, 0, 0x200, r)) letter_step = "open";
+    const uint16_t letter = r.ax;
+    if (letter_step.empty() && (!dos(0x3F00, letter, 0x80, 0x280, r) || r.ax != kLetterLength)) letter_step = "read";
+    if (letter_step.empty() && !dos(0x3E00, letter, 0, 0, r)) letter_step = "close";
+    for (uint16_t i = 0; letter_step.empty() && i < kLetterLength; ++i) {
+      if (machine.Peek(base + 0x280 + i) != static_cast<uint8_t>(kLetter[i])) letter_step = "compare";
+    }
+    std::wstring save_error;
+    bool saved_back = folder_card.Save(machine.card()->Contents(), save_error);
+    if (saved_back) {
+      std::ifstream back(card_home / "KARTA.TXT", std::ios::binary);
+      const std::string text((std::istreambuf_iterator<char>(back)), std::istreambuf_iterator<char>());
+      saved_back = text == std::string(kCardText, kLength);
+    }
+    if (!letter_step.empty() || !saved_back) {
+      std::cout << "FAIL boot: folder card: "
+                << (!letter_step.empty() ? "INT 21h " + letter_step + " of C:\\DOPISY\\PRVNID~1.TXT"
+                                         : "KARTA.TXT did not come back into the folder")
+                << "\n";
+      return 1;
+    }
+    std::filesystem::remove_all(card_home, card_ec);
+
     // Swapping cards while the Aria runs (HANDOFF 6.8): DOS keeps 50
     // buffers (CONFIG.SYS), so unless the card driver reports the change,
     // DOS would go on with the old card's FAT and directory and could
@@ -810,7 +861,8 @@ int wmain(int argc, wchar_t** argv) {
     return 1;
   }
   std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, speech and harp from the DSP,"
-               " space + dot 4 answered, D: formatted on y, C:\\KARTA.TXT written and read on an SRAM card,"
+               " space + dot 4 answered, D: formatted on y, C:\\KARTA.TXT written and read on an SRAM card from a host"
+               " folder, its subfolder's letter read and the card saved back into the folder,"
                " cards swapped after 2 s and at once without mixing, write protection prompted and kept,"
                " card battery in the battery report,"
                " konec says vypnuto and switches off, D: kept through"
