@@ -123,6 +123,9 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   std::optional<PcCard> EjectCard();
   PcCard* card() { return card_ ? &*card_ : nullptr; }
   bool CardWaiting() const { return pending_card_.has_value(); }
+  // The card in the slot, or the one waiting to go in: what the host's
+  // write-protect switch acts on.
+  PcCard* SlotCard() { return card_ ? &*card_ : pending_card_ ? &*pending_card_ : nullptr; }
   uint8_t SlotPower() const { return slot_power_; }
   bool PoweredOff() const { return powered_off_; }
 

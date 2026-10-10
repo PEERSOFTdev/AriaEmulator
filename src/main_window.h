@@ -1,10 +1,13 @@
 #ifndef ARIA_MAIN_WINDOW_H
 #define ARIA_MAIN_WINDOW_H
 
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "card_folder.h"
 #include "emulator_thread.h"
+#include "text_codec.h"
 #include "win/window.h"
 
 // What the window says about the machine it runs: for the title and for
@@ -12,6 +15,7 @@
 struct MachineInfo {
   std::wstring version;   // Firmware build, e.g. "7.05".
   std::wstring encoding;  // Of drive B:, e.g. "Latin 2".
+  TextEncoding text_encoding = TextEncoding::kUnknown;  // The same, for card names.
   std::wstring flash;     // Path of drive B:'s image.
   std::wstring kernel;    // Path of KERNEL.SYS.
 };
@@ -37,6 +41,10 @@ class MainWindow : public win::Window {
   // it off on the way out.  Closing a running Aria otherwise is the battery
   // cut, as in the Eureka emulator.
   bool SaveMemoryOnExit() const { return poweredOff_ || switchOffOnExit_; }
+
+  // Takes the card out and writes it back into its folder, once the
+  // emulator thread has stopped. A failure is told in a message box.
+  void SaveCardOnExit();
 
  protected:
   LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) override;
@@ -65,6 +73,13 @@ class MainWindow : public win::Window {
   void SetPassOnce(bool armed);
   std::wstring AboutText() const;
 
+  // The card slot (HANDOFF 6.8, ar-aj1).
+  void InsertCardFromFolder();
+  // Takes the card out and writes it back into its folder. False, with the
+  // card put back in and the user told, when the folder could not take it.
+  bool EjectCard(bool quiet);
+  void ToggleCardLock();
+
   EmulatorThread& emulator_;
   MachineInfo info_;
   HACCEL accelerators_ = nullptr;
@@ -87,6 +102,10 @@ class MainWindow : public win::Window {
   bool switchOffOnExit_ = false;
   // Host keys down on the Aria, so that they can all be let go of.
   std::vector<WPARAM> held_;
+  // The card in the slot and its home folder; empty when the slot is.
+  std::unique_ptr<FolderCard> card_;
+  uint32_t cardSize_ = 0;
+  bool cardLocked_ = false;
 };
 
 #endif

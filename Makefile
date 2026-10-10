@@ -51,12 +51,12 @@ $(file > $(VERSION_H),$(VERSION_TEXT))
 endif
 
 EMU_NAMES  := main main_window snapshot text_codec zip_reader fat12 flash_image cpu80188 aria_machine pc_card card_folder hle_bios \
-              rtc146818 dac_renderer adsp2105 audio_player emulator_thread
+              rtc146818 dac_renderer adsp2105 audio_player emulator_thread card_dialogs
 # Jadro CPU prevzate z MAME (src/i86/LICENSE.mame-i86.txt, HANDOFF 6.12).
 I86_NAMES  := i86 i186
 I86_OBJS   := $(addprefix $(BUILD)/i86_,$(addsuffix .o,$(I86_NAMES)))
 # Tenky obal okna Win32 prevzaty z Eureky beze zmeny (src/win/).
-WIN_NAMES  := window
+WIN_NAMES  := window dialog
 EMU_OBJS   := $(addprefix $(BUILD)/,$(addsuffix .o,$(EMU_NAMES))) $(I86_OBJS) $(BUILD)/adsp_adsp2100.o \
               $(addprefix $(BUILD)/win_,$(addsuffix .o,$(WIN_NAMES))) $(BUILD)/aria_res.o
 # Objekty, proti kterym se linkuji testy. Bez main.o (ma vlastni wWinMain).

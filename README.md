@@ -145,6 +145,54 @@ i v české verzi; ne je `n`. Dokud otázka visí, bere všechny klávesy,
 takže ani konec nefunguje. Protože se teď paměť drží, otázka po
 vypnutí a zapnutí už nepřijde.
 
+## Karta (jednotka C:)
+
+Do slotu pro kartu PC Card se dá vložit **karta SRAM ze složky ve
+Windows**, tak jako se do emulátoru Eureky vkládá disketa ze složky. Aria
+ji vidí jako jednotku `C:` a pracuje s ní svými vlastními ovladači; soubory
+z PC se tak dostanou do Arie a zpět. Nabídka **Karta** (`F12`, `A`):
+
+- **`F11`, `Ctrl+I`** (Vložit kartu ze složky) se zeptá na složku a pak na
+  **velikost karty**. Nabídne jen skutečné velikosti, na které se složka
+  vejde (64 KB až 64 MB), a předvybere nejmenší z nich od 1 MB, aby měla
+  Aria kam psát. Karta, která ve slotu už je, se nejdřív zapíše zpět do
+  své složky.
+- **`F11`, `Ctrl+0`** (Vysunout kartu) kartu vysune a zapíše do složky.
+- **`F11`, `Ctrl+Z`** (Zamknout proti zápisu) přepne ochranu proti
+  zápisu. Aria pak při zápisu řekne „c chráněn proti zápisu“ a čeká na
+  `r` (zkusit znovu), `f` (zrušit) nebo `i` (ignorovat).
+
+Vložení ohlásí **dvě krátké stoupající tóny**, vysunutí **jeden nízký**,
+zamknutí dlouhý nízký a odemknutí dlouhý vysoký — stejně jako diskety
+v emulátoru Eureky. Titulek okna říká, která karta je ve slotu, její
+velikost a zda je zamčená, nebo „bez karty“.
+
+Při ukončení emulátoru se karta do složky zapíše sama, ať se s pamětí
+stane cokoli. Co se zapisuje:
+
+- Jména souborů na kartě jsou ve tvaru DOSu 8.3, velkými písmeny
+  a v kódování firmwaru, takže česká písmena zůstanou. Dlouhé jméno se
+  zkrátí s `~1`, `~2` (`Prvni dopis.txt` je na kartě `PRVNID~1.TXT`).
+  Podsložky se přenesou také. Jmenovka karty je jméno složky (nejvýš
+  11 znaků, bez znaků, které Aria v jmenovce nedovolí).
+- Atributy jen pro čtení, skrytý, systémový a archivovat jdou oběma
+  směry: co je nastaveno ve Windows, má soubor i na kartě, a co Aria na
+  kartě změní, dostane soubor ve složce při vysunutí, i když se jeho
+  obsah nezměnil. Skrytá a systémová může být i podsložka.
+- Soubor, který Aria jen četla, zůstane ve složce, jak byl. Změněný
+  soubor si ponechá své původní dlouhé jméno. Nový soubor dostane jméno
+  z karty.
+- **Co Aria smazala, se nemaže**: přesune se do podsložky `.aria-trash`,
+  odkud se dá vrátit. Ta podsložka na kartu nikdy nejde.
+- Složka, která se nevejde ani na největší kartu, se odmítne.
+
+Změny ve složce, které uděláte ve Windows, dokud je karta ve slotu, Aria
+neuvidí — karta je kopie z chvíle vložení; uvidí je až po novém vložení.
+Soubor, který mezitím změníte vy i Aria, dostane při vysunutí verzi
+z Arie. Karta se zatím zapisuje jen při vysunutí a při
+ukončení; karty z obrazu, nová prázdná karta a sloty `Ctrl+1` až
+`Ctrl+9` přijdou.
+
 ## Zvuk
 
 Zvuk jde do výchozího zvukového zařízení Windows. Když se ho nepodaří

@@ -12,7 +12,9 @@
 
 #include <atomic>
 #include <cstdint>
+#include <condition_variable>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -48,6 +50,12 @@ class EmulatorThread {
   // False when no audio device could be opened; the machine runs anyway.
   bool AudioOk() const { return audio_ok_.load(); }
 
+  // Runs `task` on the emulator thread between two slices and waits for it,
+  // so the window can hand the machine a card or take one out without a
+  // lock around every memory access. Runs it at once when the thread does
+  // not run.
+  void Call(const std::function<void(AriaMachine&)>& task);
+
   // A key of the Aria's matrix went down or up: `row` is 0, 1 or 2 for
   // ports 0581h, 0582h, 0584h, `bits` the key's bits in that row
   // (HANDOFF 6.4). Called from the window thread.
@@ -74,7 +82,16 @@ class EmulatorThread {
   // even the quickest chord whole.
   void ApplyKeys(int64_t now);
 
+  // Runs the tasks Call queued.
+  void RunTasks();
+
   std::unique_ptr<AriaMachine> machine_;
+  std::mutex tasks_mutex_;
+  std::condition_variable tasks_done_;
+  std::deque<const std::function<void(AriaMachine&)>*> tasks_;
+  uint64_t tasks_finished_ = 0;
+  uint64_t tasks_queued_ = 0;
+  bool thread_live_ = false;  // Started and not yet joined; under tasks_mutex_.
   std::mutex keys_mutex_;
   std::deque<KeyEvent> keys_;
   uint8_t rows_[3] = {};

@@ -27,5 +27,15 @@
 #define ID_HELP_ABOUT        40041
 // F12: the menu bar, on a key the Aria has no use for (aria.rc).
 #define ID_ACTIVATE_MENU     40050
+// The card slot, drive C: (HANDOFF 6.8), with the Eureka emulator's
+// Disketa shortcuts: Ctrl+I insert, Ctrl+0 eject, Ctrl+Z write protect.
+#define ID_CARD_INSERT       40060
+#define ID_CARD_EJECT        40061
+#define ID_CARD_PROTECT      40062
+
+// Dialogs.
+#define IDD_CARD_SIZE        200
+#define IDC_CARD_SIZE_LABEL  201
+#define IDC_CARD_SIZES       202
 
 #endif

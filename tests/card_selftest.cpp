@@ -52,6 +52,24 @@ bool Listed(const Fat12Volume& volume, const std::string& directory, const std::
   return std::any_of(entries.begin(), entries.end(), [&](const FatEntry& e) { return e.name == name; });
 }
 
+int Attributes(const Fat12Volume& volume, const std::string& directory, const std::string& name) {
+  std::vector<FatEntry> entries;
+  if (!volume.List(directory, entries)) return -1;
+  for (const FatEntry& e : entries) {
+    if (e.name == name) return e.attributes;
+  }
+  return -1;
+}
+
+// Read-only files would stop remove_all.
+void RemoveAll(const fs::path& root) {
+  std::error_code ec;
+  for (fs::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+    SetFileAttributesW(it->path().c_str(), it->is_directory() ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_NORMAL);
+  }
+  fs::remove_all(root, ec);
+}
+
 std::string Read(const Fat12Volume& volume, const std::string& path) {
   std::vector<uint8_t> data;
   if (!volume.ReadFile(path, data)) return "<missing>";
@@ -62,8 +80,7 @@ std::string Read(const Fat12Volume& volume, const std::string& path) {
 
 int main() {
   const fs::path root = fs::temp_directory_path() / ("aria_card_selftest_" + std::to_string(GetCurrentProcessId()));
-  std::error_code ec;
-  fs::remove_all(root, ec);
+  RemoveAll(root);
   const fs::path a = root / L"Moje karta";
   const fs::path b = root / L"Aria";
 
@@ -76,6 +93,9 @@ int main() {
   Put(a / L"Podzložka" / L"x.txt", "x\r\n");
   std::string big(70000, 'B');
   Put(a / L"Podzložka" / L"velky.bin", big);
+  Put(a / L"skryty.txt", "s");
+  SetFileAttributesW((a / L"skryty.txt").c_str(),
+                     FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_ARCHIVE);
 
   for (TextEncoding encoding : {TextEncoding::kCp852, TextEncoding::kKamenicky}) {
     FolderCard card;
@@ -85,7 +105,7 @@ int main() {
     Check(image.size() == 512 * 1024, "the image has the card's size");
     Fat12Volume volume;
     Check(volume.Open(image, error), "the image is a FAT12 volume");
-    Check(volume.Label() == "MOJEKARTA", "the folder's name is the volume label");
+    Check(volume.Label() == "MOJE KARTA", "the folder's name is the volume label, space kept");
     Check(Read(volume, "DOPIS.TXT") == "Mila Ario,\r\n", "a plain name keeps its 8.3 form and contents");
     Check(Listed(volume, "", Card(encoding, L"ŽLUŤOU~1.TXT")), "a Czech long name in the code page, with ~1");
     Check(Listed(volume, "", "LONGNA~1.TXT") && Listed(volume, "", "LONGNA~2.TXT"), "clashing names get ~1, ~2");
@@ -93,6 +113,8 @@ int main() {
     const std::string sub = Card(encoding, L"PODZLO~1");
     Check(Read(volume, sub + "\\X.TXT") == "x\r\n", "a file in a subfolder");
     Check(Read(volume, sub + "\\VELKY.BIN") == big, "a file across many clusters");
+    Check(Attributes(volume, "", "SKRYTY.TXT") == 0x23, "hidden, read-only and archive go onto the card");
+    Check(Attributes(volume, "", "DOPIS.TXT") == 0x20, "a plain file has archive only");
   }
 
   // The card the Aria hands back: Dopis changed, Podzložka\x.txt kept,
@@ -102,6 +124,13 @@ int main() {
   Put(b / L"LONGNA~1.TXT", "1");
   Put(b / L"NOVY.TXT", "novy\r\n");
   Put(b / L"NOVA" / L"Y.TXT", "y\r\n");
+  // Attributes the Aria set or cleared without touching the contents:
+  // skryty.txt is plain again, longname1 read-only, the new folder hidden.
+  Put(b / L"SKRYTY.TXT", "s");
+  SetFileAttributesW((b / L"LONGNA~1.TXT").c_str(), FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_ARCHIVE);
+  SetFileAttributesW((b / L"NOVA").c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_DIRECTORY);
+  // A hidden file the Aria rewrites: Windows will not simply overwrite it.
+  SetFileAttributesW((a / L"Dopis.txt").c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_ARCHIVE);
   {
     FolderCard home, aria;
     std::vector<uint8_t> image, changed;
@@ -120,6 +149,12 @@ int main() {
     Check(Get(a / FolderCard::kTrash / L"Podzložka" / L"velky.bin") == big,
           "a deleted file in a subfolder keeps its place in the trash");
     Check(fs::exists(a / L"Podzložka"), "a folder that still has files stays");
+    auto host = [](const fs::path& path) { return GetFileAttributesW(path.c_str()) & 0x27; };
+    Check(host(a / L"skryty.txt") == FILE_ATTRIBUTE_ARCHIVE, "attributes cleared on the card are cleared in the folder");
+    Check(host(a / L"longname1.txt") == (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_ARCHIVE),
+          "read-only set on the card is set in the folder");
+    Check(GetFileAttributesW((a / L"NOVA").c_str()) & FILE_ATTRIBUTE_HIDDEN, "a hidden folder stays hidden");
+    Check(host(a / L"Dopis.txt") == FILE_ATTRIBUTE_ARCHIVE, "a hidden file is rewritten and takes the card's attributes");
 
     // Saving the same card again changes nothing and loses nothing.
     Check(home.Save(changed, error), "a second save");
@@ -134,6 +169,19 @@ int main() {
           "the trash is not on the card");
   }
 
+  // A label by the Aria's rules (README.DOC): forbidden characters dropped,
+  // spaces kept once, eleven characters in the code page.
+  for (TextEncoding encoding : {TextEncoding::kCp852, TextEncoding::kKamenicky}) {
+    Put(root / L"Dopisy (stará) & spol." / L"a.txt", "a");
+    FolderCard card;
+    std::vector<uint8_t> image;
+    std::wstring error;
+    Fat12Volume volume;
+    Check(card.Load(root / L"Dopisy (stará) & spol.", 64 * 1024, encoding, image, error) &&
+              volume.Open(image, error) && volume.Label() == Card(encoding, L"DOPISY STAR"),
+          "a label without ( ) & . and cut to eleven characters");
+  }
+
   // Too big: the user hears what would fit.
   {
     Put(root / L"Velka" / L"data.bin", std::string(600 * 1024, 'D'));
@@ -145,9 +193,15 @@ int main() {
           "a folder bigger than the card is refused");
     Check(needed == 1024 * 1024, "and the smallest card that fits is named");
     Check(error.find(L"1024 KB") != std::wstring::npos, "in the message too");
+    std::vector<uint32_t> sizes;
+    uint64_t bytes = 0;
+    Check(FolderCard::FittingSizes(root / L"Velka", TextEncoding::kCp852, sizes, bytes, error) &&
+              bytes == 600 * 1024 && !sizes.empty() && sizes.front() == 1024 * 1024 &&
+              sizes.back() == FolderCard::kMaxSize && sizes.size() == 7,
+          "the sizes offered for it are 1 MB to 64 MB");
   }
 
-  fs::remove_all(root, ec);
+  RemoveAll(root);
   if (failures == 0) std::cout << "PASS card_selftest\n";
   return failures == 0 ? 0 : 1;
 }

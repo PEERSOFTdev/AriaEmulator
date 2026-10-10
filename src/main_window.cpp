@@ -1,10 +1,15 @@
 #include "main_window.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <iterator>
+#include <optional>
 
 #include "aria_version.h"
+#include "card_dialogs.h"
+#include "pc_card.h"
 #include "res/resource.h"
+#include "win/dialog.h"
 
 namespace {
 
@@ -24,6 +29,14 @@ void ToneLeaving() { Tone(880, 70); Tone(440, 90); }
 void ToneReturning() { Tone(440, 70); Tone(880, 90); }
 void ToneArmed() { Tone(1200, 50); }
 void ToneDisarmed() { Tone(600, 50); }
+
+// A card going in and coming out, and its write-protect switch: the Eureka
+// emulator's diskette tones note for note, two short notes up for in, one
+// low for out, one long note low for locked and high for unlocked.
+void ToneInserted() { Tone(660, 45); Tone(990, 45); }
+void ToneEjected() { Tone(330, 90); }
+void ToneLocked() { Tone(400, 140); }
+void ToneUnlocked() { Tone(1000, 140); }
 
 // The power switch, the only three-note shape: what follows switching off
 // is silence, and silence is also what a crashed emulator sounds like.
@@ -111,7 +124,17 @@ const wchar_t kShortcutHelp[] =
     L"od začátku. Emulátor se nejdřív zeptá.\r\n"
     L"\r\n"
     L"Když Arii vypnete a pak zavřete okno, paměť se uloží a příští\r\n"
-    L"spuštění na ni naváže. Zavření běžící Arie se zeptá, co s pamětí.";
+    L"spuštění na ni naváže. Zavření běžící Arie se zeptá, co s pamětí.\r\n"
+    L"\r\n"
+    L"Karta:\r\n"
+    L"\r\n"
+    L"F11, Ctrl+I vloží do slotu kartu SRAM ze složky ve Windows; Aria ji\r\n"
+    L"vidí jako jednotku C:. Emulátor se zeptá na velikost karty a nabídne\r\n"
+    L"jen ty, na které se složka vejde. F11, Ctrl+0 kartu vysune a zapíše\r\n"
+    L"zpět do složky; při ukončení emulátoru se zapíše sama. Co Aria\r\n"
+    L"smazala, najdete ve složce .aria-trash. F11, Ctrl+Z kartu zamkne\r\n"
+    L"proti zápisu a znovu odemkne. Vložení zní dvěma krátkými stoupajícími\r\n"
+    L"tóny, vysunutí jedním nízkým; karta je i v titulku okna.";
 
 }  // namespace
 
@@ -161,6 +184,9 @@ void MainWindow::RegisterCommands() {
     emulator_.Key(2, 0x0F, true);
     emulator_.Key(2, 0x0F, false);
   });
+  OnCommand(ID_CARD_INSERT, [this] { InsertCardFromFolder(); });
+  OnCommand(ID_CARD_EJECT, [this] { EjectCard(/*quiet=*/false); });
+  OnCommand(ID_CARD_PROTECT, [this] { ToggleCardLock(); });
   OnCommand(ID_ACTIVATE_MENU, [this] {
     // What Alt and F10 would do, on a key the Aria has no use for.  Posted
     // rather than sent, so the menu loop does not start inside the
@@ -173,6 +199,92 @@ void MainWindow::RegisterCommands() {
   OnCommand(ID_HELP_ABOUT, [this] {
     MessageBoxW(hwnd_, AboutText().c_str(), L"O programu", MB_OK | MB_ICONINFORMATION);
   });
+}
+
+void MainWindow::InsertCardFromFolder() {
+  const std::wstring folder = win::PickFolder(hwnd_, L"Vyberte složku, ze které bude karta");
+  if (folder.empty()) return;
+  std::vector<uint32_t> sizes;
+  uint64_t bytes = 0;
+  std::wstring error;
+  if (!FolderCard::FittingSizes(folder, info_.text_encoding, sizes, bytes, error)) {
+    MessageBoxW(hwnd_, error.c_str(), L"Karta", MB_OK | MB_ICONERROR);
+    return;
+  }
+  if (sizes.empty()) {
+    MessageBoxW(hwnd_,
+                (L"Složka „" + folder + L"“ se nevejde ani na největší kartu, 64 MB, nebo má v kořeni víc "
+                 L"než 511 položek.").c_str(),
+                L"Karta", MB_OK | MB_ICONERROR);
+    return;
+  }
+  CardSizeDialog dialog(std::filesystem::path(folder).filename().wstring(), bytes, sizes);
+  if (dialog.ShowModal(hwnd_, IDD_CARD_SIZE) != IDOK) return;
+  auto card = std::make_unique<FolderCard>();
+  std::vector<uint8_t> image;
+  if (!card->Load(folder, dialog.chosen(), info_.text_encoding, image, error)) {
+    MessageBoxW(hwnd_, error.c_str(), L"Karta", MB_OK | MB_ICONERROR);
+    return;
+  }
+  // The card in the slot goes back to its folder first; the machine keeps
+  // the slot empty long enough for the drivers to see the change
+  // (AriaMachine::kCardSwapTicks).
+  if (card_ && !EjectCard(/*quiet=*/true)) return;
+  const uint32_t size = dialog.chosen();
+  emulator_.Call([&](AriaMachine& machine) { machine.InsertCard(PcCard::Sram(size, std::move(image))); });
+  card_ = std::move(card);
+  cardSize_ = size;
+  cardLocked_ = false;
+  ToneInserted();
+  RefreshTitle();
+}
+
+bool MainWindow::EjectCard(bool quiet) {
+  if (!card_) {
+    // The shortcut on an empty slot: not silence, which sounds like a hang.
+    if (!quiet) MessageBeep(MB_ICONASTERISK);
+    return true;
+  }
+  std::optional<PcCard> out;
+  emulator_.Call([&](AriaMachine& machine) { out = machine.EjectCard(); });
+  std::wstring error;
+  if (out && !card_->Save(out->Contents(), error)) {
+    // The card holds the only copy of what the Aria wrote: back in it goes.
+    emulator_.Call([&](AriaMachine& machine) { machine.InsertCard(std::move(*out)); });
+    MessageBoxW(hwnd_, (error + L"\r\n\r\nKarta zůstala ve slotu.").c_str(), L"Karta", MB_OK | MB_ICONERROR);
+    return false;
+  }
+  card_.reset();
+  cardLocked_ = false;
+  if (!quiet) ToneEjected();
+  RefreshTitle();
+  return true;
+}
+
+void MainWindow::ToggleCardLock() {
+  if (!card_) {
+    MessageBeep(MB_ICONASTERISK);
+    return;
+  }
+  const bool locked = !cardLocked_;
+  emulator_.Call([&](AriaMachine& machine) {
+    if (PcCard* card = machine.SlotCard()) card->write_protected = locked;
+  });
+  cardLocked_ = locked;
+  if (locked) ToneLocked(); else ToneUnlocked();
+  RefreshTitle();
+}
+
+void MainWindow::SaveCardOnExit() {
+  if (!card_) return;
+  std::optional<PcCard> out;
+  emulator_.Call([&](AriaMachine& machine) { out = machine.EjectCard(); });
+  std::wstring error;
+  if (out && !card_->Save(out->Contents(), error)) {
+    MessageBoxW(nullptr, (error + L"\r\n\r\nCo Aria na kartu zapsala od jejího vložení, se do složky nedostalo.")
+                             .c_str(),
+                L"Karta", MB_OK | MB_ICONERROR);
+  }
 }
 
 std::wstring MainWindow::AboutText() const {
@@ -199,6 +311,13 @@ void MainWindow::RefreshTitle() const {
                        (poweredOff_ ? L" — vypnutá"
                         : released_ ? L" — klávesnice uvolněná"
                                     : L" — klávesy do Arie");
+  // The card: the folder it lives in, as Eureka names a diskette's.
+  if (card_) {
+    title += L" — karta " + card_->home().filename().wstring() + L", " + CardSizeText(cardSize_) +
+             (cardLocked_ ? L", zamčená" : L"");
+  } else {
+    title += L" — bez karty";
+  }
   if (noAudio_) title += L" — bez zvuku";
   SetTitle(title);
 }
@@ -216,6 +335,10 @@ void MainWindow::RefreshMenu() const {
   EnableMenuItem(menu, ID_MACHINE_POWEROFF, MF_BYCOMMAND | (poweredOff_ ? MF_GRAYED : MF_ENABLED));
   // A key for an off machine would go nowhere, in silence.
   EnableMenuItem(menu, ID_KEYBOARD_SEND_KONEC, MF_BYCOMMAND | (poweredOff_ ? MF_GRAYED : MF_ENABLED));
+  // Nothing to take out or lock in an empty slot.
+  EnableMenuItem(menu, ID_CARD_EJECT, MF_BYCOMMAND | (card_ ? MF_ENABLED : MF_GRAYED));
+  EnableMenuItem(menu, ID_CARD_PROTECT, MF_BYCOMMAND | (card_ ? MF_ENABLED : MF_GRAYED));
+  CheckMenuItem(menu, ID_CARD_PROTECT, MF_BYCOMMAND | (cardLocked_ ? MF_CHECKED : MF_UNCHECKED));
   CheckMenuItem(menu, ID_KEYBOARD_PASSONCE, MF_BYCOMMAND | (passOnce_ ? MF_CHECKED : MF_UNCHECKED));
   // Meaningless while the keyboard is released: every key already goes to
   // Windows.  Greyed says so where a screen reader reads it.
@@ -230,7 +353,8 @@ void MainWindow::RefreshMenu() const {
 // the only place that names them.
 void MainWindow::RefreshShortcutText(HMENU menu) const {
   static constexpr wchar_t kPrefix[] = L"F11, ";
-  for (UINT id : {ID_FILE_EXIT, ID_MACHINE_RESET, ID_MACHINE_POWERON, ID_MACHINE_POWEROFF, ID_HELP_KEYS}) {
+  for (UINT id : {ID_FILE_EXIT, ID_MACHINE_RESET, ID_MACHINE_POWERON, ID_MACHINE_POWEROFF, ID_CARD_INSERT,
+                  ID_CARD_EJECT, ID_CARD_PROTECT, ID_HELP_KEYS}) {
     wchar_t text[128];
     // MF_BYCOMMAND searches the submenus too, so the ids are enough.
     if (!GetMenuStringW(menu, id, text, static_cast<int>(std::size(text)), MF_BYCOMMAND)) continue;

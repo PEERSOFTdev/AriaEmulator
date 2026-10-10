@@ -64,6 +64,14 @@ BEGIN
         MENUITEM "T&eplý reset\tF11, Ctrl+P",                   ID_MACHINE_POWERON
         MENUITEM "&Vypnout Arii\tF11, Ctrl+V",                  ID_MACHINE_POWEROFF
     END
+    /* As the Eureka emulator's Disketa: the slot holds an SRAM card made
+       from a folder, written back when it comes out (HANDOFF 6.8). */
+    POPUP "K&arta"
+    BEGIN
+        MENUITEM "&Vložit kartu ze složky…\tF11, Ctrl+I",       ID_CARD_INSERT
+        MENUITEM "V&ysunout kartu\tF11, Ctrl+0",                ID_CARD_EJECT
+        MENUITEM "&Zamknout proti zápisu\tF11, Ctrl+Z",         ID_CARD_PROTECT
+    END
     POPUP "&Klávesnice"
     BEGIN
         MENUITEM "&Uvolnit klávesnici\tShift+F11",              ID_KEYBOARD_RELEASE
@@ -113,4 +121,22 @@ BEGIN
     "P",        ID_MACHINE_POWERON,  VIRTKEY, CONTROL
     "V",        ID_MACHINE_POWEROFF, VIRTKEY, CONTROL
     "H",        ID_HELP_KEYS,        VIRTKEY, CONTROL
+    "I",        ID_CARD_INSERT,      VIRTKEY, CONTROL
+    "0",        ID_CARD_EJECT,       VIRTKEY, CONTROL
+    "Z",        ID_CARD_PROTECT,     VIRTKEY, CONTROL
+END
+
+
+/* The card's size, asked when a folder goes in: real card sizes the folder
+   fits on (FolderCard::FittingSizes). The label carries what the folder
+   takes, so the screen reader reads it with the list. */
+IDD_CARD_SIZE DIALOGEX 0, 0, 240, 112
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Velikost karty"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "&Velikost karty:", IDC_CARD_SIZE_LABEL, 7, 7, 226, 20
+    LISTBOX         IDC_CARD_SIZES, 7, 29, 226, 58, LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP
+    DEFPUSHBUTTON   "OK", IDOK, 129, 91, 50, 14
+    PUSHBUTTON      "Storno", IDCANCEL, 183, 91, 50, 14
 END

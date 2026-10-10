@@ -30,6 +30,11 @@ class FolderCard {
   // The trash inside the home folder; never put on the card.
   static constexpr const wchar_t* kTrash = L".aria-trash";
 
+  // The card sizes `folder` fits on, smallest first, and the bytes its
+  // files take. False with a Czech message when it cannot be read.
+  static bool FittingSizes(const std::filesystem::path& folder, TextEncoding encoding, std::vector<uint32_t>& sizes,
+                           uint64_t& bytes, std::wstring& error);
+
   // Reads `folder` into a `size`-byte card image. On failure returns false
   // with a Czech message; when the folder is simply too big, `needed` gets
   // the smallest card size that would take it (0 when none would).
@@ -45,6 +50,7 @@ class FolderCard {
     std::filesystem::path host;
     bool directory = false;
     uint64_t hash = 0;  // Of the contents, for files.
+    uint8_t attributes = 0;  // DOS read-only, hidden, system, archive.
   };
 
   std::filesystem::path home_;

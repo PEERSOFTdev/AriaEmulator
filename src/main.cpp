@@ -5,6 +5,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <objbase.h>
 #include <shellapi.h>
 
 #include <cstdlib>
@@ -80,6 +81,8 @@ const wchar_t* kUsage =
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show) {
+  // The shell's folder picker (win::PickFolder) is a COM object.
+  CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   int count = 0;
   wchar_t** arguments = CommandLineToArgvW(GetCommandLineW(), &count);
   std::wstring flash_path, kernel_path;
@@ -119,6 +122,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show) {
   MachineInfo info;
   info.version = image.version.empty() ? std::wstring(L"neznámá verze") : image.version;
   info.encoding = EncodingName(image.encoding);
+  info.text_encoding = image.encoding;
   info.flash = flash_path;
   info.kernel = kernel_path;
 
@@ -161,6 +165,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show) {
   win::RunMessageLoop(window.handle(), window.accelerators(), window.hostAccelerators(),
                       [&window] { return window.HostShortcutsActive(); });
   emulator.Stop();
+  // The card is the user's files, kept by its own battery: it goes back to
+  // its folder whatever happens to the memory.
+  window.SaveCardOnExit();
   if (window.SaveMemoryOnExit()) {
     std::vector<uint8_t> state;
     emulator.machine().SaveState(state);

@@ -30,6 +30,33 @@ constexpr int64_t kMinHoldCycles = kScanCycles * 5;
 
 }  // namespace
 
+void EmulatorThread::Call(const std::function<void(AriaMachine&)>& task) {
+  std::unique_lock<std::mutex> lock(tasks_mutex_);
+  if (!thread_live_) {
+    task(*machine_);
+    return;
+  }
+  tasks_.push_back(&task);
+  const uint64_t mine = ++tasks_queued_;
+  tasks_done_.wait(lock, [&] { return tasks_finished_ >= mine || !thread_live_; });
+  // Stopped before the thread got to it: joined by now, so the machine is
+  // free.
+  if (tasks_finished_ < mine) {
+    tasks_.erase(std::remove(tasks_.begin(), tasks_.end(), &task), tasks_.end());
+    task(*machine_);
+  }
+}
+
+void EmulatorThread::RunTasks() {
+  std::lock_guard<std::mutex> lock(tasks_mutex_);
+  while (!tasks_.empty()) {
+    (*tasks_.front())(*machine_);
+    tasks_.pop_front();
+    ++tasks_finished_;
+  }
+  tasks_done_.notify_all();
+}
+
 void EmulatorThread::Key(int row, uint8_t bits, bool down) {
   std::lock_guard<std::mutex> lock(keys_mutex_);
   keys_.push_back({row, bits, down});
@@ -100,12 +127,21 @@ EmulatorThread::~EmulatorThread() { Stop(); }
 
 void EmulatorThread::Start() {
   if (running_.exchange(true)) return;
+  {
+    std::lock_guard<std::mutex> lock(tasks_mutex_);
+    thread_live_ = true;
+  }
   thread_ = std::thread([this] { Loop(); });
 }
 
 void EmulatorThread::Stop() {
   if (!running_.exchange(false)) return;
   if (thread_.joinable()) thread_.join();
+  {
+    std::lock_guard<std::mutex> lock(tasks_mutex_);
+    thread_live_ = false;
+  }
+  tasks_done_.notify_all();
 }
 
 void EmulatorThread::Loop() {
@@ -139,6 +175,7 @@ void EmulatorThread::Loop() {
     guest_clock += static_cast<long double>(rate) * delta;
 
     ApplyCommand();
+    RunTasks();
     ApplyKeys(static_cast<int64_t>(done));
     const long double owed = guest_clock - done;
     if (owed >= 1) {

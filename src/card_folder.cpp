@@ -59,6 +59,30 @@ void SetHostTime(const fs::path& path, uint16_t time, uint16_t date) {
   CloseHandle(file);
 }
 
+// The attributes a folder card carries both ways: read-only 01h, hidden
+// 02h, system 04h and archive 20h, the same bits in a FAT directory entry
+// and in Windows' FILE_ATTRIBUTE_*. A directory carries hidden and system.
+constexpr uint8_t kFileAttributes = 0x27;
+constexpr uint8_t kDirectoryAttributes = 0x06;
+
+uint8_t HostAttributes(const fs::path& path, bool directory) {
+  const DWORD host = GetFileAttributesW(path.c_str());
+  if (host == INVALID_FILE_ATTRIBUTES) return directory ? 0 : 0x20;
+  return static_cast<uint8_t>(host & (directory ? kDirectoryAttributes : kFileAttributes));
+}
+
+// Sets the carried bits of a host file or directory to `dos`, leaving the
+// others (compressed, not indexed...) as they are.
+bool SetHostAttributes(const fs::path& path, uint8_t dos, bool directory) {
+  const DWORD host = GetFileAttributesW(path.c_str());
+  if (host == INVALID_FILE_ATTRIBUTES) return false;
+  const uint8_t carried = directory ? kDirectoryAttributes : kFileAttributes;
+  DWORD wanted = (host & ~static_cast<DWORD>(carried)) | (dos & carried);
+  if (directory) wanted |= FILE_ATTRIBUTE_DIRECTORY;
+  if (wanted == host) return true;
+  return SetFileAttributesW(path.c_str(), wanted == 0 ? FILE_ATTRIBUTE_NORMAL : wanted) != 0;
+}
+
 // One part of an 8.3 name in the card's encoding: upper case, spaces
 // dropped, what DOS does not take as '_'. `exact` turns false when anything
 // but the case changed.
@@ -130,8 +154,16 @@ struct Node {
   bool directory = false;
   uint64_t size = 0;
   uint16_t time = 0, date = 0;
-  bool read_only = false;
+  uint8_t attributes = 0;  // The carried bits (HostAttributes).
   std::vector<Node> children;
+};
+
+// What Writer put on the card, by card path.
+struct Placed {
+  fs::path host;
+  bool directory = false;
+  uint64_t hash = 0;
+  uint8_t attributes = 0;
 };
 
 bool Scan(const fs::path& folder, TextEncoding encoding, bool top, Node& node, std::wstring& error) {
@@ -156,8 +188,7 @@ bool Scan(const fs::path& folder, TextEncoding encoding, bool top, Node& node, s
     child.name = ShortName(entry.path().filename().wstring(), encoding, taken);
     taken.insert(child.name);
     HostTime(entry.path(), child.time, child.date);
-    const DWORD attributes = GetFileAttributesW(entry.path().c_str());
-    child.read_only = attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_READONLY);
+    child.attributes = HostAttributes(entry.path(), child.directory);
     if (child.directory) {
       if (!Scan(entry.path(), encoding, false, child, error)) return false;
     } else {
@@ -207,12 +238,34 @@ uint64_t ClustersOf(const Node& node, uint32_t cluster_bytes, bool root) {
   return total;
 }
 
+// A volume label by the Aria's own rules (README.DOC on drive B:, "VOLUME
+// LABELS"): up to eleven characters, spaces allowed, none of
+// * ? / \ | . , ; : + = [ ] ( ) & ^ < > " ' -- those are dropped here, as is
+// what the code page lacks, and runs of spaces become one.
+std::string VolumeLabel(const std::wstring& name, TextEncoding encoding) {
+  std::wstring upper = name;
+  if (!upper.empty()) CharUpperBuffW(upper.data(), static_cast<DWORD>(upper.size()));
+  std::string label;
+  for (wchar_t ch : upper) {
+    if (ch == L' ') {
+      if (!label.empty() && label.back() != ' ') label.push_back(' ');
+      continue;
+    }
+    for (uint8_t byte : Encode(encoding, std::wstring_view(&ch, 1))) {
+      if (byte < 0x20 || std::strchr("*?/\\|.,;:+=[]()&^<>\"'", byte) != nullptr) continue;
+      label.push_back(static_cast<char>(byte));
+    }
+  }
+  if (label.size() > 11) label.resize(11);
+  while (!label.empty() && label.back() == ' ') label.pop_back();
+  return label;
+}
+
 Fat12Format CardFormat(uint32_t size, const std::wstring& label, TextEncoding encoding) {
   Fat12Format format;
   format.sectors = size / kSector;
   format.root_entries = kRootEntries;
-  bool ignored = true;
-  format.label = NamePart(label, encoding, ignored).substr(0, 11);
+  format.label = VolumeLabel(label, encoding);
   return format;
 }
 
@@ -225,7 +278,7 @@ bool Fits(const Node& root, uint32_t size) {
 
 class Writer {
  public:
-  Writer(std::vector<uint8_t>& image, std::map<std::string, std::pair<fs::path, uint64_t>>& files)
+  Writer(std::vector<uint8_t>& image, std::map<std::string, Placed>& files)
       : image_(image), layout_(LayoutOf(image)), files_(files) {}
 
   bool WriteRoot(const Node& root, std::wstring& error) {
@@ -295,8 +348,8 @@ class Writer {
           const std::size_t length = std::min<std::size_t>(layout_.cluster_bytes, inner.size() > from ? inner.size() - from : 0);
           if (length) std::memcpy(Cluster(static_cast<uint16_t>(first + i)), inner.data() + from, length);
         }
-        files_[card_path] = {child.host, 0};
-        Record(records, child.name, 0x10, child.time, child.date, first, 0);
+        files_[card_path] = {child.host, true, 0, child.attributes};
+        Record(records, child.name, static_cast<uint8_t>(0x10 | child.attributes), child.time, child.date, first, 0);
       } else {
         std::vector<uint8_t> data;
         if (!ReadHostFile(child.host, data)) {
@@ -305,8 +358,8 @@ class Writer {
         }
         const uint16_t first = Allocate(ClustersFor(data.size(), layout_.cluster_bytes));
         if (!data.empty()) std::memcpy(Cluster(first), data.data(), data.size());
-        files_[card_path] = {child.host, Hash(data)};
-        Record(records, child.name, child.read_only ? 0x21 : 0x20, child.time, child.date, first,
+        files_[card_path] = {child.host, false, Hash(data), child.attributes};
+        Record(records, child.name, child.attributes, child.time, child.date, first,
                static_cast<uint32_t>(data.size()));
       }
     }
@@ -315,7 +368,7 @@ class Writer {
 
   std::vector<uint8_t>& image_;
   Layout layout_;
-  std::map<std::string, std::pair<fs::path, uint64_t>>& files_;
+  std::map<std::string, Placed>& files_;
   uint32_t next_ = 2;
 };
 
@@ -330,6 +383,27 @@ fs::path TrashPlace(const fs::path& path) {
 }
 
 }  // namespace
+
+bool FolderCard::FittingSizes(const fs::path& folder, TextEncoding encoding, std::vector<uint32_t>& sizes,
+                              uint64_t& bytes, std::wstring& error) {
+  Node root;
+  if (!Scan(folder, encoding, true, root, error)) return false;
+  sizes.clear();
+  for (uint32_t candidate = kMinSize; candidate <= kMaxSize; candidate *= 2) {
+    if (Fits(root, candidate)) sizes.push_back(candidate);
+  }
+  bytes = 0;
+  std::vector<const Node*> pending = {&root};
+  while (!pending.empty()) {
+    const Node* node = pending.back();
+    pending.pop_back();
+    for (const Node& child : node->children) {
+      bytes += child.size;
+      if (child.directory) pending.push_back(&child);
+    }
+  }
+  return true;
+}
 
 bool FolderCard::Load(const fs::path& folder, uint32_t size, TextEncoding encoding, std::vector<uint8_t>& image,
                       std::wstring& error, uint32_t* needed) {
@@ -350,17 +424,18 @@ bool FolderCard::Load(const fs::path& folder, uint32_t size, TextEncoding encodi
     return false;
   }
   image = FormatFat12(CardFormat(size, folder.filename().wstring(), encoding));
-  std::map<std::string, std::pair<fs::path, uint64_t>> files;
+  std::map<std::string, Placed> files;
   Writer writer(image, files);
   if (!writer.WriteRoot(root, error)) return false;
   home_ = folder;
   encoding_ = encoding;
   imported_.clear();
-  for (const auto& [path, host] : files) {
+  for (const auto& [path, placed] : files) {
     Imported item;
-    item.host = host.first;
-    item.hash = host.second;
-    item.directory = fs::is_directory(host.first);
+    item.host = placed.host;
+    item.hash = placed.hash;
+    item.directory = placed.directory;
+    item.attributes = placed.attributes;
     imported_[path] = item;
   }
   return true;
@@ -393,10 +468,13 @@ bool FolderCard::Save(const std::vector<uint8_t>& image, std::wstring& error) {
       item.host = known != imported_.end() && known->second.directory == item.directory
                       ? known->second.host
                       : host_directory / Decode(encoding_, reinterpret_cast<const uint8_t*>(raw.data()), raw.size());
+      item.attributes = static_cast<uint8_t>(entry.attributes &
+                                             (item.directory ? kDirectoryAttributes : kFileAttributes));
+      const bool attributes_changed = known == imported_.end() || known->second.attributes != item.attributes;
       if (item.directory) {
         fs::create_directories(item.host, ec);
-        if (ec) {
-          error = L"Nelze vytvořit složku „" + item.host.wstring() + L"“.";
+        if (ec || (attributes_changed && !SetHostAttributes(item.host, item.attributes, true))) {
+          error = L"Nelze vytvořit složku „" + item.host.wstring() + L"“ nebo jí nastavit atributy.";
           return false;
         }
         pending.emplace_back(path, item.host);
@@ -413,10 +491,18 @@ bool FolderCard::Save(const std::vector<uint8_t>& image, std::wstring& error) {
       now[path] = item;
       if (known != imported_.end() && !known->second.directory && known->second.hash == item.hash &&
           fs::exists(item.host)) {
+        // Same contents; the Aria may still have changed the attributes
+        // (ATTRIB, the file manager), and they go to the host alone.
+        if (attributes_changed && !SetHostAttributes(item.host, item.attributes, false)) {
+          error = L"Souboru „" + item.host.wstring() + L"“ nelze nastavit atributy.";
+          return false;
+        }
         continue;
       }
-      // The Aria changed it, so it was not read-only on the card.
-      if (fs::exists(item.host)) fs::permissions(item.host, fs::perms::owner_write, fs::perm_options::add, ec);
+      // Windows refuses to overwrite a read-only file, and a hidden or
+      // system one through a plain create, so those go first; the card's
+      // attributes come back after the write.
+      if (fs::exists(item.host)) SetFileAttributesW(item.host.c_str(), FILE_ATTRIBUTE_NORMAL);
       std::ofstream file(item.host, std::ios::binary | std::ios::trunc);
       file.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
       file.close();
@@ -425,6 +511,10 @@ bool FolderCard::Save(const std::vector<uint8_t>& image, std::wstring& error) {
         return false;
       }
       SetHostTime(item.host, entry.time, entry.date);
+      if (!SetHostAttributes(item.host, item.attributes, false)) {
+        error = L"Souboru „" + item.host.wstring() + L"“ nelze nastavit atributy.";
+        return false;
+      }
     }
   }
   // What the Aria deleted goes to the trash, files first; a directory goes

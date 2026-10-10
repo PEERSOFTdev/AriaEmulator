@@ -1232,7 +1232,10 @@ s podadresáři:
   obrazu B: (Kamenický nebo CP852), takže česká písmena, která kódová
   stránka má, zůstanou; mezery zmizí, nepovolené znaky jsou `_`, dlouhé
   nebo kolidující jméno dostane `~1`, `~2`. Kořen má 512 položek (maximum
-  DLFMT), jmenovka svazku je jméno složky, datum a čas ze souborů
+  DLFMT), jmenovka svazku je jméno složky podle pravidel Arie
+  (README.DOC na B:, „VOLUME LABELS“: nejvýš 11 znaků, mezera smí, znaky
+  `* ? / \ | . , ; : + = [ ] ( ) & ^ < > " '` se vypustí, víc mezer za
+  sebou se sleje), datum a čas ze souborů
   hostitele, příznak jen pro čtení se přenese. Když se složka nevejde,
   `needed` řekne nejmenší kartu, která stačí (hláška v KB).
 - `Save` zapíše kartu zpět: soubor, který karta má, zůstane pod jménem
@@ -1252,6 +1255,37 @@ Omezení: jen FAT12 — kartu, kterou Aria přeformátuje na FAT16 (DLFMT to
 umí), `Save` odmítne a složku nechá být **[ověřit, zda FORMAT na SRAM
 FAT16 dělá]**. Zatím se ukládá jen na výslovný `Save`; průběžné ukládání
 po utišení karty (jako Eureka po sekundě klidu) přijde s nabídkou.
+
+**Nabídka Karta, 10. 10. 2026 (`ar-aj1`, krok 2).** Nabídka Karta se
+zkratkami Disketa z Eureky: `Ctrl+I` vložit ze složky, `Ctrl+0` vysunout,
+`Ctrl+Z` zamknout; tóny diskety z Eureky; titulek „karta <složka>,
+<velikost>[, zamčená]“, jinak „bez karty“. Dialog `IDD_CARD_SIZE` nabídne
+jen velikosti, na které se složka vejde (`FolderCard::FittingSizes`),
+s předvolbou nejmenší od 1 MB; popisek seznamu nese, kolik složka
+zabírá, aby ho NVDA přečetla se seznamem. `win/dialog.*` převzaté
+z Eureky beze změny. `EmulatorThread::Call` spustí úlohu na vlákně
+emulátoru mezi úseky a počká na ni (vložení, vysunutí, zámek). Vysunutí,
+které se do složky nepodaří zapsat, vrátí kartu do slotu a řekne to;
+při ukončení se karta zapíše po zastavení vlákna, ať se s pamětí stane
+cokoli. Zkratka bez karty pípne (`MessageBeep`), nemlčí.
+
+Ověřeno: sestavení bez varování, 18 PASS, řetězce v EXE v UTF-16.
+**Neověřeno v okně** — ovládání s NVDA zkusí uživatel.
+
+**Oprava atributů, týž den (nahlásil uživatel po zkoušce v okně).**
+Atributy nastavené v Arii se do složky nedostaly a z Windows šel na kartu
+jen příznak jen pro čtení. Příčiny: `Save` porovnával jen obsah, takže
+změna samotných atributů se přeskočila, a ani přepsaný soubor atributy
+z karty nedostal. Teď nesou oba směry čtení, skrytý, systémový a archiv
+(01h, 02h, 04h, 20h — stejné bity ve FAT i ve `FILE_ATTRIBUTE_*`),
+podsložka skrytý a systémový; ostatní bity hostitele zůstanou. Skrytý
+nebo systémový soubor Windows běžným vytvořením nepřepíše, proto se před
+zápisem atributy shodí a po něm nastaví z karty. `card_selftest` to
+zkouší (mutace „změna atributů se ignoruje“ shodí tři kontroly). Že
+změny ve Windows uvidí Aria až po novém vložení, je záměr: karta je
+kopie z chvíle vložení (README). Další krok:
+karty z obrazu, nová prázdná karta, průběžné ukládání a zapamatování
+karty mezi spuštěními; pak sloty.
 
 ### 6.9 Napájení
 
