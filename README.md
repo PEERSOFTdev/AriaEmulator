@@ -248,6 +248,20 @@ otevřít, emulátor pípne a do titulku připíše „bez zvuku“; Arie to nev
 běží dál. Vzorkovací frekvence řeči Arie se nedochovala ani v dokumentaci;
 emulátor používá 32 kHz pro českou řeč, podle poslechu (HANDOFF 6.3).
 
+## Známé chyby firmwaru
+
+Chyby, které dělá sám firmware Arie a které by udělala i skutečná Aria.
+Emulátor je neopravuje, protože firmware nemění; každá je doložená místem
+v programu (podrobnosti v HANDOFF).
+
+- **Správa souborů hlásí miliony označených souborů** (sestavení 7.05).
+  Po označení souborů řekne stav (`Shift+F8`) místo skutečného počtu
+  obrovské číslo. Zpráva počítá s 32bitovým číslem, ale program jí dá jen
+  16bitový počet a horní polovinu doplní, co zbylo v paměti
+  (`FILEMGR.EXE+5B8Dh`, HANDOFF 6.8). Ostatní údaje stavu, například
+  kolik místo soubory zabírají, jsou správně. Sestavení 6.87 říká počet
+  správně.
+
 ## Licence
 
 MIT, viz `LICENSE.txt`. Firmware a technická dokumentace Arie pod ni

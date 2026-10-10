@@ -1406,6 +1406,21 @@ soubor s běžnou pamětí karty bajt po bajtu (`src/card_image.*`).
   miliony označených souborů. Zda je to chyba firmwaru, nebo emulátoru
   (např. paměť, kterou emulátor nuluje a skutečná RAM ne), není
   rozhodnuto.
+  **Miliony rozhodnuty, týž den: chyba firmwaru 7.05.** Postup uživatele
+  (F7, šipky dolů+vlevo na C:, nahoru+vpravo do `src`, Shift+F3 označit
+  vše, Shift+F8 stav) zopakován dočasným `boot_test` (nezapsaný) s kopií
+  jeho karty. Stav čte zprávy 630h–634h z `MESSAGES.DAT`; v 7.05 je 633h
+  „%lu označených souborů“ (32 bitů), ale `FILEMGR.EXE+5B8Dh` (rozbalený)
+  uloží jen 16bitový počet (`push word [bp-1Ah]`, pak 633h). Horní slovo
+  si formátovací funkce vezme ze zásobníku, kde zůstalo po předchozím
+  volání, takže počet vyjde o násobek 65 536 větší. Sousední 632h
+  „%lu volných kilobajtů“ dostává 32 bitů (`push dx`, `push ax`) a je
+  správně. V 6.87 je zpráva „%u označených souborů“ a test řekl správně
+  „39 označených souborů“. Skutečná Aria se 7.05 by tedy hlásila totéž;
+  emulátor to neopravuje (firmware se nemění). Řečový log `boot_test`
+  zachytí jen `INT 61h` AX=0200h/0201h; řádky 631h a 633h v něm v 7.05
+  chyběly, ač je Aria říká — log není úplný, proč, otevřené.
+  Zbývá z `ar-pdw` jen prázdný `B:\SYSTEM`.
 
 **Sloty, 10. 10. 2026 (`ar-aj1`, krok 5).** Devět slotů `Ctrl+1` až
 `Ctrl+9` a dialog „Sloty s kartami“ (Karta → Spravovat sloty) podle
