@@ -1467,6 +1467,55 @@ HRY (1 MB, zapamatovaná, tedy ve slotu už při zapnutí); správce souborů
   i bez něj. Příčina neznámá; zda jde o chybu emulátoru, nerozhodnuto
   (`ar-z2e`).
 
+**Flash karta: čipy a příkazy, 10. 10. 2026 (`ar-ibv`, krok 1, jen
+rozbor).** Rozbalené programy 7.05; tabulky z dat souborů (offsety
+v souboru), kód z `tools/dis.py`.
+
+- **Tabulka čipů `DLFFSA.EXE`** (soubor +4CD6h, za běhu DS:0116h, záznamy
+  po 20 B, konec FFFFh; čte ji `DLFFSA.EXE+04C2h`): slova výrobce, typ,
+  blok mazání v KB na pár, velikost páru v KB, dvě časové konstanty,
+  algoritmus, ?, ukazatel zápisu, ukazatel mazání. Čipy jsou vždy
+  **v páru**, sudý bajt jeden čip, lichý druhý (slovo `9090h` = příkaz
+  oběma).
+  - Intel 28F010 (89h B4h) 256 KB, 28F020 (89h BDh) 512 KB, Catalyst
+    28F010 (31h B4h), AMD 28F010/020 (01h A2h, 01h 29h): mazání celého
+    čipu, algoritmus 1.
+  - **Intel 28F008SA (89h A2h): pár 2 MB, blok 128 KB, algoritmus 0**;
+    Intel 28F016SA (89h A0h): pár 4 MB.
+  - AMD 29F040 (01h A4h), 29F016 (01h ADh), Fujitsu (04h A4h, D5h, ADh):
+    algoritmus 2 (AMD, reset `F0F0h`).
+- `TRICKSS2.EXE` (soubor +5120h) a `FORMAT.EXE` (rozbalený +7A78h) mají
+  vlastní, kratší tabulku: 28F010, 28F020, **28F008SA**, Catalyst, AMD
+  28F010/020, AMD 29F010 (01h 20h) a 29F040 — **28F016SA ani 29F016
+  neznají**. Čip, který znají všechny tři programy a vejde se do 4 MB
+  starého formátu: **Intel 28F008SA** (karty Intel Series 2 byly z nich,
+  2, 4, 10 a 20 MB — **[z paměti, neověřeno]**).
+- **Rozpoznání** (`DLFFSA.EXE+04C2h`): příkaz `9090h` na adresu 0 karty,
+  bajt výrobce na offsetu 0, typ na offsetu 2 (adresa 1 sudého čipu),
+  pak `F0F0h`. Velikost karty: smyčka od `+0680h` čte ID na násobcích
+  velikosti páru, dokud souhlasí — karta se tedy **nesmí zrcadlit** jako
+  SRAM, za posledním párem musí číst něco jiného (FFh).
+- **Zápis 28F008SA** (`DLFFSA.EXE+1382h`): `4040h`, datové slovo, čte
+  stav, dokud `AND 8080h` = `8080h` (SR.7 obou čipů), `TEST 2020h` ≠ 0 =
+  chyba (`5050h` smaže stav), nakonec `FFFFh`.
+  **Mazání** (`+140Fh`): `00FFh`, `2020h`, `D0D0h` na adresu bloku, čeká
+  na `8080h`, chyba `2020h`, `5050h`, `00FFh`, `FFFFh`. Kolem zápisu
+  zapíná Vpp (`0702h` bit 0, `+0D58h`/`+0D84h`, výše).
+- 80C188 má 8bitovou sběrnici, slovo přijde jako dva bajty, nižší
+  první — emulace tedy může vést každý čip zvlášť (stav, registr SR),
+  sudé adresy jeden, liché druhý.
+
+**Návrh emulace (k odsouhlasení):** `PcCard` druhého druhu, flash
+z párů 28F008SA (ID 89h A2h, bloky 64 KB na čip = 128 KB karty), každý
+čip se stavem čtení pole / ID / stavu, příkazy FFh, 90h, 70h, 50h,
+40h/10h (programování jen nuluje bity), 20h+D0h (blok na FFh); hotovo
+hned (SR.7 = 1), bez Vpp chyba SR.3. Za posledním párem čte FFh, bez
+zrcadlení. CIS s typem flash (5). Obraz = běžná paměť karty bajt po
+bajtu; velikost násobek 2 MB, takže 2 MB a 4 MB se s obrazem SRAM
+neodliší — druh karty musí nést přípona nebo hlavička. Vyzkouší se
+`boot_test`: formát z Arie (`FORMAT.EXE`), zápis a čtení přes DLFFSA,
+pak totéž se starou podporou přes TRICKSS2 (E:).
+
 ### 6.9 Napájení
 
 `TURNOFF.COM` (16 B): `cli; mov dx,0701h; mov al,0; out dx,al; jmp $` —
