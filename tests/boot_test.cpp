@@ -260,7 +260,12 @@ int wmain(int argc, wchar_t** argv) {
       std::wcout << L"FAIL boot: the folder card: " << card_error << L"\n";
       return 1;
     }
-    machine.InsertCard(PcCard::Sram(kCardSize, std::move(image)));
+    // Locked from power-on, as a remembered locked card is: the drivers
+    // cannot tell it is SRAM by writing to it and must read its CIS
+    // (pc_card.cpp). Unlocked below once DOS has read from it.
+    PcCard first_card = PcCard::Sram(kCardSize, std::move(image));
+    first_card.write_protected = true;
+    machine.InsertCard(std::move(first_card));
   }
   machine.PowerOn();  long long ran = 0;
   if (trace) {
@@ -591,7 +596,17 @@ int wmain(int argc, wchar_t** argv) {
     Cpu80188::Registers r;
     constexpr uint16_t kLength = sizeof kCardText - 1;
     std::string step;
-    if (!dos(0x3C00, 0, 0, 0, r)) step = "create";
+    // The card locked since power-on must be a drive DOS can ask about.
+    // Without a CIS the driver took it for an unknown card and every access
+    // said "celkové selhání c" (user's report, 10. 10. 2026, HANDOFF 6.8).
+    // Only the free space is asked: opening a file here, on 6.87, left the
+    // battery report silent later on, for reasons not yet known.
+    if (!dos(0x3600, 0, 0, 3, r) || r.ax == 0xFFFF || r.cx != 512 || r.dx == 0)
+      step = "36h (free space) on a card locked since power-on";
+    else if (machine.card()->Writes() != 0)
+      step = "36h wrote to a locked card";
+    machine.card()->write_protected = false;
+    if (step.empty() && !dos(0x3C00, 0, 0, 0, r)) step = "create";
     const uint16_t handle = r.ax;
     if (step.empty() && (!dos(0x4000, handle, kLength, 0x20, r) || r.ax != kLength)) step = "write";
     if (step.empty() && !dos(0x3E00, handle, 0, 0, r)) step = "close";
@@ -892,6 +907,7 @@ int wmain(int argc, wchar_t** argv) {
   std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, speech and harp from the DSP,"
                " space + dot 4 answered, D: formatted on y, C:\\KARTA.TXT written and read on an SRAM card from a host"
                " folder, its subfolder's letter read and the card saved back into the folder,"
+               " a card locked since power-on read through its CIS,"
                " cards swapped after 2 s and at once without mixing, write protection prompted and kept,"
                " card battery in the battery report, a blank card refused without a prompt,"
                " konec says vypnuto and switches off, D: kept through"

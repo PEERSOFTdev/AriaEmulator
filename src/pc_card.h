@@ -19,10 +19,12 @@ class PcCard {
   static PcCard Sram(uint32_t size, std::vector<uint8_t> contents = {});
 
   // REG# low (0480h bit 7 = 0) selects attribute memory, where a card keeps
-  // its CIS (FORMAT.EXE+1DA9h). SRAM cards here have none: attribute space
-  // reads FFh, an empty tuple chain, and ignores writes. FORMAT.EXE takes a
-  // card for SRAM by writing to common memory before it looks at the CIS
-  // (FORMAT.EXE+2954h).
+  // its CIS (FORMAT.EXE+1DA9h), one byte per even address; writes are
+  // ignored. The drivers take a card for SRAM by writing to common memory
+  // and only then look at the CIS (FORMAT.EXE+2954h), so a card locked
+  // since power-on is known as SRAM only by its CIS: without one, every
+  // access said "celkové selhání c" (HANDOFF 6.8). SRAM cards therefore
+  // carry a CISTPL_DEVICE naming SRAM and their size, as real ones did.
   uint8_t Read(uint32_t address, bool attribute) const;
   void Write(uint32_t address, bool attribute, uint8_t value);
 
@@ -46,6 +48,7 @@ class PcCard {
 
  private:
   std::vector<uint8_t> common_;
+  std::vector<uint8_t> cis_;  // Attribute memory, one byte per even address.
   bool modified_ = false;
   uint64_t writes_ = 0;
 };

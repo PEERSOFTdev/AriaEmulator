@@ -1425,7 +1425,32 @@ neuložená karta „*pamat“ z Eureky nemá protějšek.
   s tónem (`ToggleCardLock`).
 - Volba slotu v dialogu Nová karta (Eureka ji má) zatím chybí.
 - `card_selftest`: sloty a zámek bez velikosti tam a zpět. Dialog a
-  vkládání ze slotu ověří uživatel.
+  vkládání ze slotu ověří uživatel. **Ověřeno uživatelem** týž den.
+
+**Karta zamčená od zapnutí a CIS, 10. 10. 2026.** Uživatel zamkl kartu
+HRY (1 MB, zapamatovaná, tedy ve slotu už při zapnutí); správce souborů
+(F7, na C: šipky dolů a vlevo naráz) i F8 pak na každý pokus řekly
+„celkové selhání c“, i po teplém resetu. Stará podpora byla vypnutá.
+
+- Reprodukováno dočasným `boot_test`: karta zamčená **od zapnutí** →
+  „celkové selhání c“; zamčená až po startu, nebo odemčená od zapnutí →
+  v pořádku. Odemčenou kartu ovladač při startu zkusmo přepíše (66 B)
+  a vrátí; zamčenou ne.
+- Výklad podle rozpoznání typu (`FORMAT.EXE+2954h`, výše): zápis zkušebního
+  bajtu neprojde, paměť atributů (dřív samé FFh) se liší od společné,
+  tedy se čte CIS — a ten chyběl, takže karta byla „jiná“. Skutečné karty
+  SRAM CIS nesou.
+- **Opraveno:** `PcCard::Sram` má v paměti atributů CIS: `CISTPL_DEVICE`
+  (01h), typ 6 = SRAM, rychlost 150 ns, velikost kódem jednotky
+  (512 B × 4^k, nejvýš 32 jednotek), pak `CISTPL_END`. Se zamčenou kartou
+  od zapnutí správce souborů v testu vypíše `C:\` a `hryaria`.
+- `boot_test` teď vkládá první kartu zamčenou od zapnutí a ptá se na volné
+  místo na C: (`INT 21h` 36h); bez CIS to selže, s ním projde. Pak kartu
+  odemkne.
+- **Otevřené:** když se v tom místě místo 36h soubor otevřel a přečetl,
+  na 6.87 (ne 7.05) zůstalo pozdější hlášení baterie úplně tiché, s CIS
+  i bez něj. Příčina neznámá; zda jde o chybu emulátoru, nerozhodnuto
+  (`ar-z2e`).
 
 ### 6.9 Napájení
 
