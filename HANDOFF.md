@@ -1515,6 +1515,36 @@ bajtu; velikost násobek 2 MB, takže 2 MB a 4 MB se s obrazem SRAM
 neodliší — druh karty musí nést přípona nebo hlavička. Vyzkouší se
 `boot_test`: formát z Arie (`FORMAT.EXE`), zápis a čtení přes DLFFSA,
 pak totéž se starou podporou přes TRICKSS2 (E:).
+Odsouhlaseno uživatelem 10. 10. 2026: páry 28F008SA, velikosti 2, 4, 10
+a 20 MB, obraz s příponou `.flash`.
+
+**Flash karta v emulátoru, 10. 10. 2026 (`ar-ibv`, krok 2).**
+`PcCard::Flash` (`src/pc_card.*`): páry 28F008SA podle návrhu výše,
+každý čip se svým režimem a registrem SR; Vpp z `0702h` bit 0 jde do
+`PcCard::Write`.
+
+- **CIS musí mít i `CISTPL_JEDEC_C` (18h).** Bez něj DLFFSA kartu
+  nepřijal: rozpoznání (`DLFFSA.EXE+0B3Dh`) porovná 32 B paměti atributů
+  s 32 B společné, a když se liší a začínají n-ticí 01h, rozebere CIS
+  (`+089Eh`); ten vyžaduje n-tici 01h **i** 18h, jinak vrátí 0, typ
+  zařízení 5 = flash, 6/7 = SRAM, a čip hledá podle kódů z n-tice 18h
+  (`+0981h`). Bez 18h DLFMT hlásil „Error: No card in drive - 2H“.
+  Karta SRAM n-tici 18h nemá a projde zkušebním zápisem (`+0ADDh`).
+- DLFFSA při zkoumání posílá i příkazy AMD (AAh na AAAAh, 55h na 5554h,
+  90h, F0h; `+167Ah`); 28F008SA je bere jako čtení pole, jako skutečný.
+- **`boot_test`:** prázdná karta 4 MB, `DLFMT.EXE C: /C` přes `INT 21h`
+  4B00h (blok paměti pro EXEC alokovaný `48h`), 22 820 změněných bajtů,
+  pak C: hlásí **3 792 KB volných**; soubor 4 KB zapsaný, karta vysunutá
+  a vrácená, soubor přečtený beze změny. 7.05 i 6.87. DLFMT píše přes
+  `INT 21h` AH=06h, teletype log ho nevidí.
+- `card_selftest`: ID jen na sudém čipu, programování jen nuluje bity,
+  SR po programování, bez Vpp SR.3+SR.4, mazání bloku jednoho čipu (každý
+  druhý bajt), chyba posloupnosti 20h bez D0h, druhý pár zvlášť, za kartou
+  FFh bez zrcadlení, zámek.
+- **Neověřeno:** formát z Arie (`FORMAT.EXE` přes správce souborů, „fleš
+  1/2“), starý formát přes TRICKSS2 (E:), karta zasunutá už při zapnutí.
+- Další krok: nabídka a obrazy `.flash` (nová karta flash, vložení
+  obrazu), pak zkouška uživatele.
 
 ### 6.9 Napájení
 

@@ -806,6 +806,101 @@ int wmain(int argc, wchar_t** argv) {
       return 1;
     }
     machine.EjectCard();
+    // A flash card (HANDOFF 6.8, ar-ibv): a blank 4 MB card of two pairs
+    // of Intel 28F008SA, formatted with Datalight's own DLFMT.EXE C: /C
+    // (FTL, through DLFFSA's chip commands), then a 4 KB file written,
+    // the card taken out and put back, and the file read again.
+    {
+      machine.InsertCard(PcCard::Flash(4u << 20));
+      for (int i = 0; i < 100 && machine.CardWaiting(); ++i) machine.Run(kSlice);
+      // A DOS block of our own for the EXEC's names and stack, so that the
+      // child loads above it and not over it.
+      Cpu80188::Registers a{};
+      a.ax = 0x4800;
+      a.bx = 0x100;
+      a.ds = a.es = data;
+      if (!DosCall(machine, speech, waiting, top, a) || (a.flags & 0x0001)) {
+        std::cout << "FAIL boot: flash card: no DOS memory for DLFMT's EXEC\n";
+        return 1;
+      }
+      const uint16_t own = a.ax;
+      const uint32_t ob = static_cast<uint32_t>(own) << 4;
+      auto put = [&](uint32_t at, const char* text, std::size_t n) {
+        for (std::size_t i = 0; i < n; ++i) machine.Poke(ob + at + i, static_cast<uint8_t>(text[i]));
+      };
+      const char prog[] = "B:\\SYSTEM\\DLFMT.EXE";
+      put(0x00, prog, sizeof prog);
+      const std::string tail = " C: /C";
+      machine.Poke(ob + 0x40, static_cast<uint8_t>(tail.size()));
+      put(0x41, tail.c_str(), tail.size());
+      machine.Poke(ob + 0x41 + tail.size(), 0x0D);
+      // Parameter block at 0x80: env 0, tail far ptr, two FCB pointers.
+      machine.PokeWord(ob + 0x80, 0);
+      machine.PokeWord(ob + 0x82, 0x40);
+      machine.PokeWord(ob + 0x84, own);
+      machine.PokeWord(ob + 0x86, 0xA0);
+      machine.PokeWord(ob + 0x88, own);
+      machine.PokeWord(ob + 0x8A, 0xA0);
+      machine.PokeWord(ob + 0x8C, own);
+      for (int i = 0; i < 16; ++i) machine.Poke(ob + 0xA0 + i, 0);
+      Cpu80188::Registers e{};
+      e.ax = 0x4B00;
+      e.dx = 0;
+      e.bx = 0x80;
+      e.ds = e.es = own;
+      // DLFMT prints through INT 21h AH=06h, which the teletype log does not
+      // see; what it did is judged by the card and by DOS afterwards.
+      const bool formatted = DosCall(machine, speech, waiting, static_cast<uint16_t>(own + 0x100), e);
+      const uint64_t format_writes = machine.card()->Writes();
+      Cpu80188::Registers f{};
+      f.ax = 0x3600;
+      f.dx = 3;
+      f.ds = f.es = data;
+      const bool sized = DosCall(machine, speech, waiting, top, f) && f.ax != 0xFFFF;
+      const uint64_t free_kb = static_cast<uint64_t>(f.ax) * f.bx * f.cx / 1024;
+      if (verbose) std::cout << "flash card: DLFMT " << (formatted ? "returned" : "did not return") << ", "
+                             << format_writes << " bytes changed, C: free " << free_kb << " KB\n";
+      // Two pairs, less the FTL's spare blocks and tables: measured 3792 KB.
+      if (!formatted || format_writes == 0 || !sized || free_kb < 3000 || free_kb > 4096) {
+        std::cout << "FAIL boot: flash card: DLFMT C: /C "
+                  << (!formatted ? "did not return" : format_writes == 0 ? "wrote nothing"
+                      : !sized ? "left C: without a size" : "left " + std::to_string(free_kb) + " KB free")
+                  << "\n";
+        return 1;
+      }
+      // A file of 4 KB through DLFFSA, then the card out and in again.
+      const char fpath[] = "C:\\FLASH.TXT";
+      for (std::size_t i = 0; i < sizeof fpath; ++i) machine.Poke(base + 0x300 + i, static_cast<uint8_t>(fpath[i]));
+      for (uint32_t i = 0; i < 4096; ++i) machine.Poke(base + 0x400 + i, static_cast<uint8_t>(i * 7 + 3));
+      Cpu80188::Registers fr;
+      std::string fstep;
+      if (!dos(0x3C00, 0, 0, 0x300, fr)) fstep = "create";
+      uint16_t fh = fr.ax;
+      if (fstep.empty() && (!dos(0x4000, fh, 4096, 0x400, fr) || fr.ax != 4096)) fstep = "write";
+      if (fstep.empty() && !dos(0x3E00, fh, 0, 0, fr)) fstep = "close";
+      std::optional<PcCard> out = machine.EjectCard();
+      for (int i = 0; i < 10; ++i) machine.Run(kSlice);
+      machine.InsertCard(std::move(*out));
+      for (int i = 0; i < 100 && machine.CardWaiting(); ++i) machine.Run(kSlice);
+      for (int i = 0; i < 10; ++i) machine.Run(kSlice);
+      for (uint32_t i = 0; i < 4096; ++i) machine.Poke(base + 0x400 + i, 0);
+      if (fstep.empty() && !dos(0x3D00, 0, 0, 0x300, fr)) fstep = "open after reinsert";
+      fh = fr.ax;
+      if (fstep.empty() && (!dos(0x3F00, fh, 4096, 0x400, fr) || fr.ax != 4096)) fstep = "read after reinsert";
+      if (fstep.empty() && !dos(0x3E00, fh, 0, 0, fr)) fstep = "close after reading";
+      for (uint32_t i = 0; fstep.empty() && i < 4096; ++i)
+        if (machine.Peek(base + 0x400 + i) != static_cast<uint8_t>(i * 7 + 3)) fstep = "compare";
+      if (!fstep.empty()) {
+        std::cout << "FAIL boot: flash card: C:\\FLASH.TXT, INT 21h " << fstep << " (AX " << std::hex << fr.ax
+                  << std::dec << ")\n";
+        return 1;
+      }
+      Cpu80188::Registers freed{};
+      freed.ax = 0x4900;
+      freed.ds = freed.es = own;
+      DosCall(machine, speech, waiting, top, freed);
+      machine.EjectCard();
+    }
   }
 
   // The battery keeps the RAM disk D: through power-off (HANDOFF 6.9), and
@@ -910,6 +1005,7 @@ int wmain(int argc, wchar_t** argv) {
                " a card locked since power-on read through its CIS,"
                " cards swapped after 2 s and at once without mixing, write protection prompted and kept,"
                " card battery in the battery report, a blank card refused without a prompt,"
+               " a 4 MB flash card formatted by DLFMT and a file kept through eject and reinsert,"
                " konec says vypnuto and switches off, D: kept through"
                " a memory snapshot without a new question, F1 starts the word processor)\n";
   return 0;

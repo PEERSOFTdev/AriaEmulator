@@ -17,6 +17,7 @@
 
 #include "card_folder.h"
 #include "card_image.h"
+#include "pc_card.h"
 #include "fat12.h"
 #include "settings.h"
 #include "text_codec.h"
@@ -322,6 +323,77 @@ int main() {
     Check(card_image::ValidSize(64 * 1024) && card_image::ValidSize(64u << 20) && !card_image::ValidSize(32 * 1024) &&
               !card_image::ValidSize(128u << 20) && !card_image::ValidSize(3u << 20),
           "card sizes are powers of two from 64 KB to 64 MB");
+  }
+
+  // A flash card of two 28F008SA pairs (pc_card.h, HANDOFF 6.8): what
+  // DLFFSA relies on, chip by chip. Even bytes are one chip, odd the other.
+  {
+    PcCard card = PcCard::Flash(4u << 20);
+    Check(card.kind() == PcCard::Kind::kFlash && card.Size() == 4u << 20 && card.Read(0, false) == 0xFF,
+          "a new flash card is erased");
+    // CIS: CISTPL_DEVICE type 5 (flash), CISTPL_JEDEC_C 89h A2h, end.
+    const uint8_t cis[] = {0x01, 0x03, 0x53, 0x00, 0xFF, 0x18, 0x02, 0x89, 0xA2, 0xFF};
+    bool cis_ok = true;
+    for (uint32_t i = 0; i < sizeof cis; ++i) {
+      if (i != 3 && card.Read(2 * i, true) != cis[i]) cis_ok = false;
+    }
+    Check(cis_ok && card.Read(1, true) == 0xFF, "the flash CIS names flash and the chips' JEDEC codes");
+    // The ID on the even chip of the first pair only.
+    card.Write(0, false, 0x90);
+    Check(card.Read(0, false) == 0x89 && card.Read(2, false) == 0xA2 && card.Read(1, false) == 0xFF,
+          "90h shows Intel and 28F008SA on that chip alone");
+    card.Write(0, false, 0xFF);
+    // Programming only clears bits, and leaves the chip in status mode.
+    card.Write(4, false, 0x40);
+    card.Write(4, false, 0x5A);
+    const uint8_t status = card.Read(4, false);
+    card.Write(4, false, 0xFF);
+    Check(status == 0x80 && card.Read(4, false) == 0x5A, "40h programs a byte and reports ready");
+    card.Write(4, false, 0x40);
+    card.Write(4, false, 0xA5);
+    card.Write(4, false, 0xFF);
+    Check(card.Read(4, false) == 0x00, "programming cannot set a bit");
+    // Without the programming voltage: SR.3 and SR.4, nothing written,
+    // until 50h clears them.
+    card.Write(6, false, 0x40);
+    card.Write(6, false, 0x00, /*vpp=*/false);
+    const uint8_t no_vpp = card.Read(6, false);
+    card.Write(6, false, 0x50);
+    const uint8_t cleared = card.Read(6, false);
+    card.Write(6, false, 0xFF);
+    Check(no_vpp == 0x98 && cleared == 0x80 && card.Read(6, false) == 0xFF, "no Vpp fails programming with SR.3");
+    // Erase: the 64 KB block of the even chip holding card address 20000h
+    // is that chip's bytes 10000h-1FFFFh, card bytes 20000h-3FFFEh even.
+    for (uint32_t at : {0x1FFFEu, 0x20000u, 0x3FFFEu, 0x40000u, 0x20001u}) {
+      card.Write(at, false, 0x40);
+      card.Write(at, false, 0x00);
+    }
+    card.Write(0x20000, false, 0x20);
+    card.Write(0x20000, false, 0xD0);
+    const uint8_t erased = card.Read(0x20000, false);
+    card.Write(0x20000, false, 0xFF);
+    card.Write(0x20001, false, 0xFF);
+    Check(erased == 0x80 && card.Read(0x20000, false) == 0xFF && card.Read(0x3FFFE, false) == 0xFF &&
+              card.Read(0x1FFFE, false) == 0x00 && card.Read(0x40000, false) == 0x00 &&
+              card.Read(0x20001, false) == 0x00,
+          "20h D0h erases one chip's block, every other byte");
+    card.Write(8, false, 0x20);
+    card.Write(8, false, 0xFF);
+    const uint8_t sequence = card.Read(8, false);
+    card.Write(8, false, 0x50);
+    card.Write(8, false, 0xFF);
+    Check(sequence == 0xB0, "20h without D0h is a command sequence error");
+    // The second pair has chips of its own; past the last there are none,
+    // and nothing mirrors.
+    card.Write(2u << 20, false, 0x90);
+    Check(card.Read(2u << 20, false) == 0x89 && card.Read(0, false) == 0xFF && card.Read(4u << 20, false) == 0xFF &&
+              card.Read((4u << 20) + 4, false) == 0xFF,
+          "each pair answers alone and nothing answers past the card");
+    card.Write(2u << 20, false, 0xFF);
+    // The write-protect switch stops every command.
+    card.write_protected = true;
+    card.Write(0, false, 0x90);
+    Check(card.Read(0, false) == 0xFF, "a locked flash card takes no command");
   }
 
   RemoveAll(root);

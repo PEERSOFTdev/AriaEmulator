@@ -240,7 +240,9 @@ void AriaMachine::WriteMemory(uint32_t address, uint8_t value) {
   if (WindowMapped(address)) {
     // Card memory takes writes; the internal flash's programming is not
     // emulated (HANDOFF 6.11).
-    if ((latch_580_ & 0x03) == 3 && CardPowered()) card_->Write(CardAddress(address), !(latch_480_ & 0x80), value);
+    // 0702h bit 0 is the slot's programming voltage (DLFFSA.EXE+0D58h).
+    if ((latch_580_ & 0x03) == 3 && CardPowered())
+      card_->Write(CardAddress(address), !(latch_480_ & 0x80), value, (slot_power_ & 0x01) != 0);
     return;
   }
   if (address >= ucs_start_) {
