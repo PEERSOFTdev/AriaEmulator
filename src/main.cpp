@@ -20,6 +20,7 @@
 #include "emulator_thread.h"
 #include "flash_image.h"
 #include "main_window.h"
+#include "settings.h"
 #include "snapshot.h"
 #include "text_codec.h"
 #include "zip_reader.h"
@@ -154,13 +155,18 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show) {
     }
   }
 
+  Settings settings(Settings::FindFile());
+  settings.Load();
   EmulatorThread emulator(std::move(machine));
-  MainWindow window(emulator, std::move(info));
+  MainWindow window(emulator, std::move(info), settings);
   if (!window.Create()) {
     MessageBoxW(nullptr, L"Nepodařilo se vytvořit okno emulátoru.", kTitle, MB_OK | MB_ICONERROR);
     return 1;
   }
   window.Show(show);
+  // The card the last run ended with, in before the machine starts, as it
+  // would have stayed in the slot.
+  window.InsertRememberedCard();
   emulator.Start();
   win::RunMessageLoop(window.handle(), window.accelerators(), window.hostAccelerators(),
                       [&window] { return window.HostShortcutsActive(); });

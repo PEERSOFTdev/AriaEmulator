@@ -31,6 +31,10 @@ class PcCard {
   // True once anything was written since the last ClearModified().
   bool Modified() const { return modified_; }
   void ClearModified() { modified_ = false; }
+  // Bytes changed since the card was made: the host saves a folder card
+  // once this has stood still for a while, as the Eureka emulator saves a
+  // diskette after a second of quiet.
+  uint64_t Writes() const { return writes_; }
 
   // The card's write-protect switch, 0480h bit 5 (FORMAT.EXE+06BAh).
   bool write_protected = false;
@@ -43,6 +47,7 @@ class PcCard {
  private:
   std::vector<uint8_t> common_;
   bool modified_ = false;
+  uint64_t writes_ = 0;
 };
 
 #endif

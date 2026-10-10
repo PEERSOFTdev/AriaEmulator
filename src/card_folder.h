@@ -40,8 +40,11 @@ class FolderCard {
   // the smallest card size that would take it (0 when none would).
   bool Load(const std::filesystem::path& folder, uint32_t size, TextEncoding encoding, std::vector<uint8_t>& image,
             std::wstring& error, uint32_t* needed = nullptr);
-  // Writes `image` back into the home folder Load read.
-  bool Save(const std::vector<uint8_t>& image, std::wstring& error);
+  // Writes `image` back into the home folder Load read. A file the card
+  // holds but cannot be read (a broken cluster chain) does not stop the
+  // rest: its folder copy is left alone, never trashed, and its card path
+  // goes to `damaged`. False only when nothing could be done.
+  bool Save(const std::vector<uint8_t>& image, std::wstring& error, std::vector<std::wstring>* damaged = nullptr);
 
   const std::filesystem::path& home() const { return home_; }
 

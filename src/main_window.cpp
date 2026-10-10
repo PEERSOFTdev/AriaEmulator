@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <iterator>
 #include <optional>
 
@@ -9,6 +10,7 @@
 #include "card_dialogs.h"
 #include "pc_card.h"
 #include "res/resource.h"
+#include "snapshot.h"
 #include "win/dialog.h"
 
 namespace {
@@ -138,8 +140,8 @@ const wchar_t kShortcutHelp[] =
 
 }  // namespace
 
-MainWindow::MainWindow(EmulatorThread& emulator, MachineInfo info)
-    : emulator_(emulator), info_(std::move(info)) {}
+MainWindow::MainWindow(EmulatorThread& emulator, MachineInfo info, Settings& settings)
+    : emulator_(emulator), info_(std::move(info)), settings_(settings) {}
 
 bool MainWindow::Create() {
   const HINSTANCE instance = GetModuleHandleW(nullptr);
@@ -218,25 +220,142 @@ void MainWindow::InsertCardFromFolder() {
                 L"Karta", MB_OK | MB_ICONERROR);
     return;
   }
-  CardSizeDialog dialog(std::filesystem::path(folder).filename().wstring(), bytes, sizes);
+  // A folder that was a card before comes back with its size offered first
+  // and its lock, as the same real card would.
+  const Settings::Card* known = settings_.FindCard(folder);
+  CardSizeDialog dialog(std::filesystem::path(folder).filename().wstring(), bytes, sizes, known ? known->size : 0);
   if (dialog.ShowModal(hwnd_, IDD_CARD_SIZE) != IDOK) return;
+  if (!MountCard(folder, dialog.chosen(), known && known->locked)) return;
+  ToneInserted();
+  if (cardLocked_) ToneLocked();
+}
+
+bool MainWindow::MountCard(const std::wstring& folder, uint32_t size, bool locked) {
   auto card = std::make_unique<FolderCard>();
   std::vector<uint8_t> image;
-  if (!card->Load(folder, dialog.chosen(), info_.text_encoding, image, error)) {
+  std::wstring error;
+  if (!card->Load(folder, size, info_.text_encoding, image, error)) {
     MessageBoxW(hwnd_, error.c_str(), L"Karta", MB_OK | MB_ICONERROR);
-    return;
+    return false;
   }
   // The card in the slot goes back to its folder first; the machine keeps
   // the slot empty long enough for the drivers to see the change
   // (AriaMachine::kCardSwapTicks).
-  if (card_ && !EjectCard(/*quiet=*/true)) return;
-  const uint32_t size = dialog.chosen();
-  emulator_.Call([&](AriaMachine& machine) { machine.InsertCard(PcCard::Sram(size, std::move(image))); });
+  if (card_ && !EjectCard(/*quiet=*/true)) return false;
+  PcCard inserted = PcCard::Sram(size, std::move(image));
+  inserted.write_protected = locked;
+  emulator_.Call([&](AriaMachine& machine) { machine.InsertCard(std::move(inserted)); });
   card_ = std::move(card);
   cardSize_ = size;
-  cardLocked_ = false;
-  ToneInserted();
+  cardLocked_ = locked;
+  cardWrites_ = 0;
+  cardQuietLooks_ = 0;
+  autosaveFailed_ = false;
+  RememberCard();
   RefreshTitle();
+  return true;
+}
+
+void MainWindow::RememberCard() {
+  if (card_) {
+    settings_.RememberCard(card_->home().wstring(), cardSize_, cardLocked_);
+    settings_.SetLastCard(card_->home().wstring());
+  } else {
+    settings_.SetLastCard(L"");
+  }
+  std::wstring error;
+  if (!settings_.Save(error)) MessageBoxW(hwnd_, error.c_str(), L"Karta", MB_OK | MB_ICONWARNING);
+}
+
+bool MainWindow::SaveCard(const std::vector<uint8_t>& image, std::wstring& error) {
+  std::vector<std::wstring> damaged;
+  if (!card_->Save(image, error, &damaged)) return false;
+  if (damaged.empty() || damaged == damagedTold_) {
+    damagedTold_ = damaged;
+    return true;
+  }
+  damagedTold_ = damaged;
+  // The image as the Aria left it, for a look at what broke (HANDOFF 6.8).
+  std::wstring kept;
+  const std::filesystem::path dump = snapshot::ConfigDirectory() / L"karta-poskozena.img";
+  std::error_code ec;
+  std::filesystem::create_directories(dump.parent_path(), ec);
+  std::ofstream out(dump, std::ios::binary | std::ios::trunc);
+  out.write(reinterpret_cast<const char*>(image.data()), static_cast<std::streamsize>(image.size()));
+  if (out) kept = L"\r\n\r\nObraz karty je uložen pro rozbor v „" + dump.wstring() + L"“.";
+  std::wstring names;
+  for (const std::wstring& name : damaged) names += L"\r\n" + name;
+  // At exit the window is gone already.
+  MessageBoxW(IsWindow(hwnd_) ? hwnd_ : nullptr,
+              (L"Tyto soubory jsou na kartě poškozené a do složky „" + card_->home().wstring() +
+               L"“ se nezapsaly; jejich kopie ve složce zůstala, jak byla:" + names +
+               L"\r\n\r\nOstatní soubory se zapsaly." + kept)
+                  .c_str(),
+              L"Karta", MB_OK | MB_ICONWARNING);
+  return true;
+}
+
+void MainWindow::InsertRememberedCard() {
+  const std::wstring folder = settings_.last_card();
+  if (folder.empty()) return;
+  const Settings::Card* known = settings_.FindCard(folder);
+  std::error_code ec;
+  if (!known || !std::filesystem::is_directory(folder, ec)) {
+    MessageBoxW(hwnd_, (L"Karta ze složky „" + folder + L"“ z minulého spuštění se nevložila: složka "
+                        L"neexistuje.").c_str(),
+                L"Karta", MB_OK | MB_ICONWARNING);
+    settings_.SetLastCard(L"");
+    std::wstring ignored;
+    settings_.Save(ignored);
+    return;
+  }
+  // MountCard says why when the folder has outgrown its card.
+  if (!MountCard(folder, known->size, known->locked)) {
+    settings_.SetLastCard(L"");
+    std::wstring ignored;
+    settings_.Save(ignored);
+  }
+}
+
+void MainWindow::AutosaveCard() {
+  if (!card_) return;
+  // Every half second: the card's write count; once it has stood still for
+  // two looks after a change, the card goes to its folder -- not mid-write,
+  // when a directory being rewritten would make a file look deleted (the
+  // Eureka emulator's rule, a second of quiet).
+  uint64_t writes = 0;
+  bool modified = false;
+  emulator_.Call([&](AriaMachine& machine) {
+    if (const PcCard* card = machine.SlotCard()) {
+      writes = card->Writes();
+      modified = card->Modified();
+    }
+  });
+  if (writes != cardWrites_) {
+    cardWrites_ = writes;
+    cardQuietLooks_ = 0;
+    autosaveFailed_ = false;
+    return;
+  }
+  // After a failed save, the next try waits for the next change: a folder
+  // that refused once will refuse again a second later.
+  if (!modified || autosaveFailed_ || ++cardQuietLooks_ < 2) return;
+  std::vector<uint8_t> image;
+  emulator_.Call([&](AriaMachine& machine) {
+    if (const PcCard* card = machine.SlotCard()) image = card->Contents();
+  });
+  std::wstring error;
+  if (!image.empty() && !SaveCard(image, error)) {
+    // Said once; eject and exit try again and say it too.
+    autosaveFailed_ = true;
+    MessageBoxW(hwnd_, (error + L"\r\n\r\nEmulátor to zkusí znovu po další změně a při vysunutí.").c_str(),
+                L"Karta", MB_OK | MB_ICONWARNING);
+    return;
+  }
+  // Saved: owed nothing, unless the Aria wrote again meanwhile.
+  emulator_.Call([&](AriaMachine& machine) {
+    if (PcCard* card = machine.SlotCard(); card && card->Writes() == writes) card->ClearModified();
+  });
 }
 
 bool MainWindow::EjectCard(bool quiet) {
@@ -248,7 +367,7 @@ bool MainWindow::EjectCard(bool quiet) {
   std::optional<PcCard> out;
   emulator_.Call([&](AriaMachine& machine) { out = machine.EjectCard(); });
   std::wstring error;
-  if (out && !card_->Save(out->Contents(), error)) {
+  if (out && !SaveCard(out->Contents(), error)) {
     // The card holds the only copy of what the Aria wrote: back in it goes.
     emulator_.Call([&](AriaMachine& machine) { machine.InsertCard(std::move(*out)); });
     MessageBoxW(hwnd_, (error + L"\r\n\r\nKarta zůstala ve slotu.").c_str(), L"Karta", MB_OK | MB_ICONERROR);
@@ -256,6 +375,7 @@ bool MainWindow::EjectCard(bool quiet) {
   }
   card_.reset();
   cardLocked_ = false;
+  RememberCard();
   if (!quiet) ToneEjected();
   RefreshTitle();
   return true;
@@ -271,6 +391,7 @@ void MainWindow::ToggleCardLock() {
     if (PcCard* card = machine.SlotCard()) card->write_protected = locked;
   });
   cardLocked_ = locked;
+  RememberCard();
   if (locked) ToneLocked(); else ToneUnlocked();
   RefreshTitle();
 }
@@ -280,7 +401,7 @@ void MainWindow::SaveCardOnExit() {
   std::optional<PcCard> out;
   emulator_.Call([&](AriaMachine& machine) { out = machine.EjectCard(); });
   std::wstring error;
-  if (out && !card_->Save(out->Contents(), error)) {
+  if (out && !SaveCard(out->Contents(), error)) {
     MessageBoxW(nullptr, (error + L"\r\n\r\nCo Aria na kartu zapsala od jejího vložení, se do složky nedostalo.")
                              .c_str(),
                 L"Karta", MB_OK | MB_ICONERROR);
@@ -549,6 +670,7 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
       return 0;
 
     case WM_TIMER:
+      if (wParam == kAudioTimer) AutosaveCard();
       if (wParam == kAudioTimer && !noAudio_ && !emulator_.AudioOk()) {
         // No sound device: say so in a way that is not the Aria's voice, and
         // keep it in the title.  The machine runs on regardless.

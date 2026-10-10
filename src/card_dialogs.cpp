@@ -18,6 +18,9 @@ bool CardSizeDialog::OnInit() {
   // Sizes come smallest first: the first of 1 MB or more.
   std::size_t pick = 0;
   while (pick + 1 < sizes_.size() && sizes_[pick] < 1024u * 1024u) ++pick;
+  for (std::size_t i = 0; i < sizes_.size(); ++i) {
+    if (sizes_[i] == preferred_) pick = i;
+  }
   SendMessageW(list, LB_SETCURSEL, pick, 0);
   SetFocus(list);
   return true;

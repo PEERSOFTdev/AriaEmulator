@@ -16,6 +16,7 @@
 
 #include "card_folder.h"
 #include "fat12.h"
+#include "settings.h"
 #include "text_codec.h"
 
 namespace fs = std::filesystem;
@@ -199,6 +200,64 @@ int main() {
               bytes == 600 * 1024 && !sizes.empty() && sizes.front() == 1024 * 1024 &&
               sizes.back() == FolderCard::kMaxSize && sizes.size() == 7,
           "the sizes offered for it are 1 MB to 64 MB");
+  }
+
+  // A file the card cannot read (a directory entry claiming 3.9 MB over a
+  // 1-cluster chain, as the user saw SYMDEB.EXE) stops nothing else: the
+  // new file arrives, the damaged one is named, its folder copy stays and
+  // is not taken for deleted.
+  {
+    const fs::path home = root / L"Poskozena";
+    const fs::path aria = root / L"PoskozenaAria";
+    Put(home / L"a.txt", "a");
+    Put(home / L"b.txt", "b");
+    Put(aria / L"A.TXT", "a");
+    Put(aria / L"B.TXT", "b");
+    Put(aria / L"POKUS.TXT", "pokus\r\n");
+    FolderCard card, other;
+    std::vector<uint8_t> image, changed;
+    std::wstring error;
+    Check(card.Load(home, 1024 * 1024, TextEncoding::kCp852, image, error) &&
+              other.Load(aria, 1024 * 1024, TextEncoding::kCp852, changed, error),
+          "the cards for the damage test build");
+    const uint32_t root_offset = (changed[14] | changed[15] << 8) * 512u +
+                                 changed[16] * (changed[22] | changed[23] << 8) * 512u;
+    bool hit = false;
+    for (uint32_t at = root_offset; at < root_offset + 512 * 32; at += 32) {
+      if (std::string(reinterpret_cast<const char*>(&changed[at]), 11) == "A       TXT") {
+        const uint32_t size = 0x003E0000;
+        for (int i = 0; i < 4; ++i) changed[at + 28 + i] = static_cast<uint8_t>(size >> (8 * i));
+        hit = true;
+      }
+    }
+    std::vector<std::wstring> damaged;
+    Check(hit && card.Save(changed, error, &damaged), "a card with a damaged file still saves");
+    Check(damaged.size() == 1 && damaged.front() == L"A.TXT", "the damaged file is named");
+    Check(Get(home / L"a.txt") == "a" && !fs::exists(home / FolderCard::kTrash / L"a.txt"),
+          "its folder copy stays and is not trashed");
+    Check(Get(home / L"POKUS.TXT") == "pokus\r\n", "the new file arrives anyway");
+  }
+
+  // What the emulator remembers about cards survives a save and a load,
+  // diacritics and a ';' in the path included, and a folder typed another
+  // way is the same card.
+  {
+    const fs::path file = root / L"nastaveni.txt";
+    const std::wstring folder = (root / L"Dopisy; staré").wstring();
+    Settings saved(file);
+    saved.RememberCard(folder, 2 * 1024 * 1024, true);
+    saved.RememberCard((root / L"Jiná").wstring(), 512 * 1024, false);
+    saved.SetLastCard(folder);
+    std::wstring error;
+    Check(saved.Save(error), "the settings save");
+    Settings loaded(file);
+    loaded.Load();
+    const Settings::Card* card = loaded.FindCard(folder + L"\\");
+    Check(card && card->size == 2 * 1024 * 1024 && card->locked, "a card's size and lock come back");
+    Check(loaded.last_card() == folder, "the last card comes back");
+    const Settings::Card* other = loaded.FindCard((root / L"JINÁ").wstring());
+    Check(other && other->size == 512 * 1024 && !other->locked, "folders compare without case");
+    Check(!loaded.FindCard((root / L"Nikdy").wstring()), "an unknown folder is no card");
   }
 
   RemoveAll(root);

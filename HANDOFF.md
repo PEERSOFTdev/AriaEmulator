@@ -1288,6 +1288,65 @@ kopie z chvíle vložení (README). Další krok:
 karty z obrazu, nová prázdná karta, průběžné ukládání a zapamatování
 karty mezi spuštěními; pak sloty.
 
+Uživatel nabídku vyzkoušel v okně s NVDA; kromě atributů vše fungovalo.
+
+**Průběžné ukládání a nastavení, 10. 10. 2026 (`ar-aj1`, krok 3).**
+
+- `PcCard::Writes()` počítá změněné bajty. Časovač okna (500 ms) se přes
+  `EmulatorThread::Call` dívá na počet; když se po změně dva pohledy
+  nehne (sekunda klidu, pravidlo Eureky), okno zkopíruje obraz a zapíše
+  ho do složky. Příznak změny se smaže jen po úspěchu a jen když Aria
+  mezitím nepsala. Po neúspěchu hlášení jednou, další pokus až po další
+  změně (a při vysunutí, které chybu hlásí samo).
+- `src/settings.*` (podle `Settings` z Eureky: key=value v UTF-8 s BOM,
+  zápis přes dočasný soubor) v `nastaveni.txt` vedle souboru paměti:
+  `posledni-karta=` a `kartaN=<bajty>;<0|1 zámek>;<složka>`. Velikost
+  a zámek patří kartě (složce), jako u Eureky zámek disketě; při vložení
+  je zapamatovaná velikost v dialogu předvybraná a zámek platí. Karta ve
+  slotu při ukončení se při startu vloží znovu (`InsertRememberedCard`,
+  před spuštěním vlákna, bez tónu); vysunutí zapamatovanou kartu smaže.
+  Složka, která zmizela nebo přerostla kartu, se ohlásí a zapomene.
+- `card_selftest`: nastavení tam a zpět (diakritika i `;` v cestě, jiná
+  velikost písmen = táž karta). Průběžné ukládání samo test nemá —
+  logika sedí v okně; ověří ho uživatel.
+
+**Poškozená karta při zkoušce uživatele, týž den (otevřené).** Složka
+`D:\aria\Karty\ARIACARD` (23 souborů, 660 KB) jako karta 16 MB. V AWP
+uživatel vytvořil `POKUS.TXT`; Aria ho viděla, složka ne. Průběžné
+ukládání pak hlásilo, že `SYMDEB.EXE` je na kartě poškozený, a v Arii měl
+SYMDEB 3,9 MB místo 25 KB, ač na něj uživatel nesáhl. Výklad: položka
+SYMDEB leží ve stejném sektoru kořenového adresáře (položky 16–31) jako
+nová `POKUS.TXT`; DOS sektor přečte, doplní položku a zapíše celý zpět,
+takže zápis špatné nebo zastaralé kopie toho sektoru poškodí sousední
+položku.
+
+- **Nereprodukováno:** dočasný `boot_test` (nezapsaný) s kopií té složky
+  na 16 MB: DOS přes `INT 21h` vytvoří, zapíše a přečte soubor a `Save`
+  projde. Rozložení karty samo je tedy v pořádku; rozdíl je v AWP.
+- **Kandidát:** se zapnutou starou podporou (výchozí „R“ v CMOS
+  emulátoru) slouží tutéž kartu i `TRICKSS2` jako **E:** — DOS přes E:
+  otevře `SYMDEB.EXE` a vytvoří soubor, karta se změní na čekaném místě
+  (20 B, položka kořene). Dva ovladače se dvěma sadami bufferů nad jednou
+  kartou mohou zapsat zastaralý sektor. Uživatel měl na skutečné Arii
+  starou podporu vypnutou.
+- **Druhý kandidát:** přerušení (řeč, AAPI) přemapuje okno D000h na
+  flash uprostřed přenosu DLFFSA; test bez souběžné řeči to nepozná.
+- **Opraveno hned:** `FolderCard::Save` kvůli jednomu nečitelnému souboru
+  vzdal celé uložení, proto se `POKUS.TXT` do složky nedostal. Teď
+  nečitelný soubor přeskočí (kopie ve složce zůstane, nejde do koše),
+  zbytek zapíše a ohlásí poškozené soubory; okno je řekne jednou a obraz
+  karty uloží jako `karta-poskozena.img` vedle nastavení pro rozbor.
+  `card_selftest` to zkouší s položkou, která tvrdí 3,9 MB.
+- Dál: obraz karty od uživatele a přesný postup v AWP.
+- **Doplněno:** uživatel chybu s novým sestavením nezopakoval. Druhý
+  kandidát zkoušen dočasným `boot_test` (nezapsaný): šest kol „kde jsem“
+  (řeč běží, vzorky přibývají) a v každém čtyři soubory po 3 000 B přes
+  `INT 21h` na kartu 16 MB z jeho složky — 24 souborů, žádná chyba DOS,
+  `Save` bez poškozených souborů. Přemapování okna během řeči tím
+  nepotvrzeno. Zůstává kandidát E: (dva ovladače) a cokoli specifického
+  pro AWP. Diagnostika (`karta-poskozena.img`, hlášení poškozených
+  souborů) zůstává v sestavení, aby další výskyt přinesl obraz.
+
 ### 6.9 Napájení
 
 `TURNOFF.COM` (16 B): `cli; mov dx,0701h; mov al,0; out dx,al; jmp $` —

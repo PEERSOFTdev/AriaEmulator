@@ -18,4 +18,5 @@ void PcCard::Write(uint32_t address, bool attribute, uint8_t value) {
   if (cell == value) return;
   cell = value;
   modified_ = true;
+  ++writes_;
 }

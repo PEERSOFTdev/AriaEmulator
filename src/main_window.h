@@ -7,6 +7,7 @@
 
 #include "card_folder.h"
 #include "emulator_thread.h"
+#include "settings.h"
 #include "text_codec.h"
 #include "win/window.h"
 
@@ -27,7 +28,7 @@ struct MachineInfo {
 // because the machine's output is speech.
 class MainWindow : public win::Window {
  public:
-  MainWindow(EmulatorThread& emulator, MachineInfo info);
+  MainWindow(EmulatorThread& emulator, MachineInfo info, Settings& settings);
 
   bool Create();
   HACCEL accelerators() const { return accelerators_; }
@@ -45,6 +46,9 @@ class MainWindow : public win::Window {
   // Takes the card out and writes it back into its folder, once the
   // emulator thread has stopped. A failure is told in a message box.
   void SaveCardOnExit();
+  // Puts back the card that was in the slot when the last run ended, with
+  // its size and lock, before the machine starts. Told only when it cannot.
+  void InsertRememberedCard();
 
  protected:
   LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) override;
@@ -75,6 +79,17 @@ class MainWindow : public win::Window {
 
   // The card slot (HANDOFF 6.8, ar-aj1).
   void InsertCardFromFolder();
+  // Builds the card from `folder` and puts it in, the one in the slot going
+  // back to its folder first. False, with the user told, when it cannot.
+  bool MountCard(const std::wstring& folder, uint32_t size, bool locked);
+  // Writes what the card holds now back into its folder while it stays in:
+  // the autosave after a second of quiet.
+  void AutosaveCard();
+  // Records the card in the settings and saves them; a failure is told.
+  void RememberCard();
+  // Writes `image` back into the card's folder; files the card could not
+  // read are told (once per set) and the image kept for a look.
+  bool SaveCard(const std::vector<uint8_t>& image, std::wstring& error);
   // Takes the card out and writes it back into its folder. False, with the
   // card put back in and the user told, when the folder could not take it.
   bool EjectCard(bool quiet);
@@ -82,6 +97,7 @@ class MainWindow : public win::Window {
 
   EmulatorThread& emulator_;
   MachineInfo info_;
+  Settings& settings_;
   HACCEL accelerators_ = nullptr;
   HACCEL hostAccelerators_ = nullptr;
 
@@ -106,6 +122,13 @@ class MainWindow : public win::Window {
   std::unique_ptr<FolderCard> card_;
   uint32_t cardSize_ = 0;
   bool cardLocked_ = false;
+  // The autosave: the card's write count at the last look, how many looks
+  // it has stood still, and whether the last save failed (told once).
+  uint64_t cardWrites_ = 0;
+  int cardQuietLooks_ = 0;
+  bool autosaveFailed_ = false;
+  // The damaged files last told about, so the autosave does not repeat it.
+  std::vector<std::wstring> damagedTold_;
 };
 
 #endif

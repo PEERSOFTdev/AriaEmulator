@@ -441,7 +441,8 @@ bool FolderCard::Load(const fs::path& folder, uint32_t size, TextEncoding encodi
   return true;
 }
 
-bool FolderCard::Save(const std::vector<uint8_t>& image, std::wstring& error) {
+bool FolderCard::Save(const std::vector<uint8_t>& image, std::wstring& error, std::vector<std::wstring>* damaged) {
+  if (damaged) damaged->clear();
   Fat12Volume volume;
   if (!volume.Open(image, error)) {
     error = L"Kartu nelze zapsat do složky „" + home_.wstring() + L"“: " + error;
@@ -483,9 +484,11 @@ bool FolderCard::Save(const std::vector<uint8_t>& image, std::wstring& error) {
       }
       std::vector<uint8_t> data;
       if (!volume.ReadFile(path, data)) {
-        error = L"Soubor " + Decode(encoding_, reinterpret_cast<const uint8_t*>(path.data()), path.size()) +
-                L" na kartě je poškozený, složka „" + home_.wstring() + L"“ ho nedostala.";
-        return false;
+        // Keep what the folder has and remember it as it was, so it is
+        // neither overwritten nor taken for deleted; the rest goes on.
+        if (damaged) damaged->push_back(Decode(encoding_, reinterpret_cast<const uint8_t*>(path.data()), path.size()));
+        if (known != imported_.end()) now[path] = known->second;
+        continue;
       }
       item.hash = Hash(data);
       now[path] = item;

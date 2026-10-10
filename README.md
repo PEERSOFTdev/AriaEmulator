@@ -167,8 +167,20 @@ zamknutí dlouhý nízký a odemknutí dlouhý vysoký — stejně jako diskety
 v emulátoru Eureky. Titulek okna říká, která karta je ve slotu, její
 velikost a zda je zamčená, nebo „bez karty“.
 
-Při ukončení emulátoru se karta do složky zapíše sama, ať se s pamětí
-stane cokoli. Co se zapisuje:
+Karta se do složky zapisuje **sama, průběžně**: jakmile do ní Aria
+zapíše a pak se na sekundu odmlčí (jako diskety v emulátoru Eureky), a
+dále při vysunutí a při ukončení emulátoru, ať se s pamětí stane cokoli.
+Když se zápis do složky nepodaří, emulátor to řekne jednou a zkusí to
+znovu po další změně a při vysunutí.
+
+**Emulátor si karty pamatuje** (soubor `nastaveni.txt` vedle souboru
+paměti): karta, která byla ve slotu při ukončení, se při dalším spuštění
+vloží sama. Každá složka si navíc pamatuje svou velikost a zámek, jako
+skutečná karta — při dalším vložení je její velikost v nabídce
+předvybraná a zámek platí dál. Vysunutá karta se při dalším spuštění
+nevkládá.
+
+Co se zapisuje:
 
 - Jména souborů na kartě jsou ve tvaru DOSu 8.3, velkými písmeny
   a v kódování firmwaru, takže česká písmena zůstanou. Dlouhé jméno se
@@ -188,10 +200,9 @@ stane cokoli. Co se zapisuje:
 
 Změny ve složce, které uděláte ve Windows, dokud je karta ve slotu, Aria
 neuvidí — karta je kopie z chvíle vložení; uvidí je až po novém vložení.
-Soubor, který mezitím změníte vy i Aria, dostane při vysunutí verzi
-z Arie. Karta se zatím zapisuje jen při vysunutí a při
-ukončení; karty z obrazu, nová prázdná karta a sloty `Ctrl+1` až
-`Ctrl+9` přijdou.
+Soubor, který mezitím změníte vy i Aria, dostane při zápisu verzi
+z Arie. Karty z obrazu, nová prázdná karta a sloty `Ctrl+1` až `Ctrl+9`
+přijdou.
 
 ## Zvuk
 

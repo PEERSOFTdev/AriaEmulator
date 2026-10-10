@@ -12,12 +12,14 @@ std::wstring CardSizeText(uint32_t bytes);
 
 // The card's size for a folder going into the slot (HANDOFF 6.8, ar-aj1):
 // a list of the real sizes it fits on, as a real card is bought in one
-// size. The default is the smallest of them that is at least 1 MB, so a
-// nearly empty folder still leaves the Aria room to write.
+// size. The default is `preferred` -- the size this folder had as a card
+// before -- when it is still on the list, else the smallest of them that is
+// at least 1 MB, so a nearly empty folder still leaves the Aria room to
+// write.
 class CardSizeDialog : public win::Dialog {
  public:
-  CardSizeDialog(std::wstring folder, uint64_t bytes, std::vector<uint32_t> sizes)
-      : folder_(std::move(folder)), bytes_(bytes), sizes_(std::move(sizes)) {}
+  CardSizeDialog(std::wstring folder, uint64_t bytes, std::vector<uint32_t> sizes, uint32_t preferred = 0)
+      : folder_(std::move(folder)), bytes_(bytes), sizes_(std::move(sizes)), preferred_(preferred) {}
 
   uint32_t chosen() const { return chosen_; }
 
@@ -30,6 +32,7 @@ class CardSizeDialog : public win::Dialog {
   std::wstring folder_;
   uint64_t bytes_;
   std::vector<uint32_t> sizes_;
+  uint32_t preferred_;
   uint32_t chosen_ = 0;
 };
 
