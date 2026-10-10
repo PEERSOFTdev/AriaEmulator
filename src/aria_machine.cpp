@@ -1,7 +1,6 @@
 #include "aria_machine.h"
 
 #include <algorithm>
-#include <cstring>
 
 #include "hle_bios.h"
 
@@ -177,8 +176,20 @@ bool AriaMachine::WindowMapped(uint32_t address) const {
   return (mode == 2 || mode == 3) && address >= kWindowBase && address < kWindowBase + kWindowSize;
 }
 
+uint32_t AriaMachine::CardAddress(uint32_t address) const {
+  // Mode 3 (FORMAT.EXE+1DA9h, INT 69h mode 3 in VOICE.SYS, HANDOFF 6.2,
+  // 6.8): card address bits 16-19 in 0580h bits 2-5, bits 20-25 in 0480h
+  // bits 0-5.
+  return static_cast<uint32_t>(latch_480_ & 0x3F) << 20 | static_cast<uint32_t>((latch_580_ >> 2) & 0x0F) << 16 |
+         (address - kWindowBase);
+}
+
 uint8_t AriaMachine::ReadWindow(uint32_t address) const {
-  if ((latch_580_ & 0x03) == 3) return 0xFF;  // Card: none inserted yet (HANDOFF 6.8).
+  if ((latch_580_ & 0x03) == 3) {
+    // 0480h bit 7 is REG#: 0 selects attribute memory (FORMAT.EXE+1DA9h).
+    // An empty slot reads as a floating bus.
+    return card_ ? card_->Read(CardAddress(address), !(latch_480_ & 0x80)) : 0xFF;
+  }
   // Flash page = 0580h bits 7-2; flash address = offset in the B: image.
   const uint32_t page = latch_580_ >> 2;
   const std::size_t flat = static_cast<std::size_t>(page) * kWindowSize + (address - kWindowBase);
@@ -198,7 +209,12 @@ uint8_t AriaMachine::ReadMemory(uint32_t address) {
 }
 
 void AriaMachine::WriteMemory(uint32_t address, uint8_t value) {
-  if (WindowMapped(address)) return;  // Flash programming is not emulated (HANDOFF 6.11).
+  if (WindowMapped(address)) {
+    // Card memory takes writes; the internal flash's programming is not
+    // emulated (HANDOFF 6.11).
+    if ((latch_580_ & 0x03) == 3 && card_) card_->Write(CardAddress(address), !(latch_480_ & 0x80), value);
+    return;
+  }
   if (address >= ucs_start_) {
     if (address >= kRomArea && address < kRomStub) rom_area_[address - kRomArea] = value;
     return;
@@ -220,9 +236,19 @@ uint8_t AriaMachine::ReadIo(uint16_t port) {
   if (port >= 0x0500 && port <= 0x057F) return rtc_.Read(static_cast<uint8_t>(port - 0x0500));
   switch (port) {
     case 0x0480:
-      // Card slot status: bits 0-1 card detect, active low; both high = no
-      // card (HANDOFF 6.8). Bits 2-3 (BVD) high = battery good.
-      return 0x0F;
+    {
+      // Card slot status (HANDOFF 6.8): bits 0-1 card detect, active low,
+      // both 0 = card in (FORMAT.EXE+1E00h); bits 2-3 BVD1/BVD2, both 1 =
+      // battery good (BKB.COM+1622h); bit 5 write protect (FORMAT.EXE+06BAh).
+      // A weak battery as BVD1 alone, a flat one as neither: BKB picks one
+      // of its two warnings by bit 2, and that is the PCMCIA convention
+      // (assumption, HANDOFF 6.8).
+      if (!card_) return 0x0F;
+      uint8_t status = card_->write_protected ? 0x20 : 0x00;
+      if (card_->battery == PcCard::Battery::kGood) status |= 0x0C;
+      if (card_->battery == PcCard::Battery::kLow) status |= 0x04;
+      return status;
+    }
     case 0x0581: return key_rows_[0];
     case 0x0582: return key_rows_[1];
     case 0x0584: return key_rows_[2];
@@ -268,30 +294,14 @@ BiosDisk AriaMachine::MakeRomDisk() const {
   disk.sectors_per_track = 8;
   disk.heads = 2;
   disk.sectors = 128;  // 64 KB.
-  disk.data.assign(disk.sectors * 512, 0);
-  uint8_t* boot = disk.data.data();
-  const uint8_t header[] = {0xEB, 0x3C, 0x90, 'A', 'R', 'I', 'A', 'R', 'O', 'M', ' ',
-                            0x00, 0x02,   // 512 bytes per sector
-                            0x01,         // 1 sector per cluster
-                            0x01, 0x00,   // 1 reserved
-                            0x02,         // 2 FATs
-                            0x10, 0x00,   // 16 root entries
-                            0x80, 0x00,   // 128 sectors
-                            0xF8,         // media
-                            0x01, 0x00,   // 1 sector per FAT
-                            0x08, 0x00,   // sectors per track
-                            0x02, 0x00};  // heads
-  std::memcpy(boot, header, sizeof header);
-  boot[510] = 0x55;
-  boot[511] = 0xAA;
-  for (int fat = 0; fat < 2; ++fat) {
-    uint8_t* table = disk.data.data() + (1 + fat) * 512;
-    table[0] = 0xF8;
-    table[1] = table[2] = 0xFF;
-  }
-  uint8_t* root = disk.data.data() + 3 * 512;
-  std::memcpy(root, "ARIA ROM   ", 11);
-  root[11] = 0x08;  // Volume label.
+  Fat12Format format;
+  format.sectors = disk.sectors;
+  format.root_entries = 16;
+  format.sectors_per_track = disk.sectors_per_track;
+  format.heads = disk.heads;
+  format.oem = "ARIAROM ";
+  format.label = "ARIA ROM";
+  disk.data = FormatFat12(format);
   return disk;
 }
 

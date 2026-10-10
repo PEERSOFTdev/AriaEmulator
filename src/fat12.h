@@ -17,6 +17,20 @@ struct FatEntry {
   bool IsDirectory() const { return (attributes & 0x10) != 0; }
 };
 
+// An empty FAT12 volume: 512-byte sectors, one reserved sector, two FATs,
+// media F8h, 55AAh signature, and the volume label in the root directory
+// when one is given. Sectors per cluster is the smallest power of two that
+// keeps FAT12 under 4085 clusters.
+struct Fat12Format {
+  uint32_t sectors = 0;
+  uint16_t root_entries = 112;
+  uint16_t sectors_per_track = 0;  // BPB geometry; 0 for media without one.
+  uint16_t heads = 0;
+  std::string oem = "ARIAEMU ";    // 8 characters.
+  std::string label;               // Up to 11 characters, in the volume's encoding.
+};
+std::vector<uint8_t> FormatFat12(const Fat12Format& format);
+
 class Fat12Volume {
  public:
   // `image` must outlive the volume.

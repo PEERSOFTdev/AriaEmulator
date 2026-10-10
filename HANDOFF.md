@@ -969,6 +969,26 @@ na disku B: (od 702): mechaniky Backpack se připojují kabelem k redukci,
 která „converts the Aria's printer port into a full size female plug“,
 tiskárna se zapojí za poslední mechaniku, disky dostanou písmena od E:.
 
+**10. 10. 2026.** Oba ovladače jsou od **Micro Solutions** (DeKalb, IL):
+`BACKPACK.SYS` („Copyright 1996 by Micro Solutions, Inc., Written by Ron
+Proesel“, zařízení `BPDRV$`, tabulka typů mechanik 360 KB až 2,88 MB) je
+ve všech verzích od 6.87; `BPHDARIA.SYS` (vlastním jménem „BPHDDRV.SYS“,
+1998, hlášky o tabulce oddílů) až od 7.04. README.DOC na B: přitom
+uvádí podporu „od 702“ — 6.87 tedy disketový ovladač má, i když ho
+dokument nezmiňuje **[ověřit během]**. Protokol paralelního portu zatím
+neznámý; stopa k hledání: ovladače `paride` v jádře Linuxu `bpck`
+a `bpck6` (Micro Solutions Backpack). `BACKPACK.SYS` sahá i na porty
+`0042h`, `0043h`, `0061h` (časovač a reproduktor PC, `BACKPACK.SYS+3600h`
+až `+364Bh`; stejnou trojici mají ARIACLK, ARIADY, ARIALARM a CALC, nejspíš
+`sound()`/`nosound()` z knihovny Borlandu). Na Arii je ale PCB 80188 na
+I/O 0 (6.2), takže `0061h` padne do horního bajtu čítače časovače 2
+(`60h`) a `0042h`/`0043h` do vyhrazené části PCB. Zápisy mohou rozhodit
+časovač 2 nebo časování ovladače **[předpoklad, ověřit během]**.
+Disketa se bude emulovat jako surový obraz 720 KB a 1,44 MB, pevný disk
+jako obraz s tabulkou oddílů. Podle README.DOC: písmena od E:, nejdřív
+diskety, pak pevné disky, každá skupina podle posledních dvou číslic
+sériového čísla; disk nad 2 GB jako dvě jednotky.
+
 ### 6.8 PCMCIA
 
 `CARDMAN.EXE` (PKLITE); `TRICKSS2.EXE` čte `057Fh`, `ATKBD.COM` `057Eh`.
@@ -1002,6 +1022,129 @@ Robotronu pro slot Arie. `DLFFSA.EXE` je flash souborový systém k ní
   čte přes `INT 14h` — tedy přes sériový port, zřejmě s převodníkem;
   zapíná ho volba MODE „IBM keyboard“ (CMOS `057Eh` = „C“, 6.14).
   Uživatel ji nikdy nepoužil a neví, jak se připojovala.
+
+**Rozbor karet, 10. 10. 2026** (požadavek uživatele: trvalé úložiště,
+karty flash i SRAM a mechaniky Backpack, z pohledu uživatele jako
+diskety v emulátoru Eureky).
+
+*„Stará fleš karta“ je formát a ovladač, ne jiný druh karty.* Na disku
+B: jsou **dva celé zásobníky** Datalight a oba jsou ve všech verzích,
+které máme (6.87, 6.90, 6.99, 7.04, 7.05):
+
+- **Nový:** `DLFFSA.EXE` z CONFIG.SYS (CardTrick 3.01.13, Datalight
+  1993–96) a formátovač `DLFMT.EXE` (CardTrick 3.01.19, řetězec
+  `FTL100`). Flash karta má na sobě **FTL** (Flash Translation Layer),
+  DOS vidí FAT nad ním. Hláška DLFMT „The installed driver is configured
+  to only support up to %dMB flash cards“.
+- **Starý:** `TRICKSS2.EXE` z AUTOEXEC (CardTrick 1993–94, Socket
+  Services Robotronu SS2OEM, řetězec „Datalight FlashDisk 1.0“)
+  a formátovač `CARDMAN.EXE` („Enter Disk Type (D=DOS-FAT,
+  F=Flash-FAT)“, „Format card with a CIS“, typ 1 SRAM / 2 FLASH,
+  velikost karty se zadává ručně). Nainstaluje se jen s „R“ v CMOS
+  `057Fh`, tedy se zapnutou volbou MODE „podpora staré fleš karty“
+  (výše a 6.14). Hlášky MESSAGES.DAT: „p c karta, starý formát fleš
+  karty“, „použít starý formát fleš karty“, „nemůže formátovat více než
+  čtyři megabajty se starým formátem fleš karty“ a „please disable old
+  flash card support in mode“.
+- `FORMAT.EXE` („ARIA formatter, rev 1.5a, 1996–1999“) volí mezi nimi:
+  řetězce `%Fscardman <%s >%s` a `%Fsdlfmt %c: /c > %s`, nabídka
+  jednotek „PC CARD“, „Old PC CARD“, „BackPack“. `FORMAT.EXE+1E5Fh` se
+  bez „R“ v `057Fh` vrátí (cesta staré karty).
+
+Výklad: karty uživatele mohly být fyzicky tytéž flash karty; rozhoduje,
+**jakým formátem byly naformátované**. Karta ze starého formátu se
+s vypnutou volbou nejspíš nepřečte a naopak **[předpoklad]**. Zda oba
+ovladače běží zároveň (DLFFSA je rezidentní dřív, TRICKSS2 má hlášku
+„CardTrick already resident“), ověří až běh s kartou.
+
+*Hardware slotu, doplnění z `FORMAT.EXE` (rozbalený, 7.05):*
+
+- `FORMAT.EXE+1DA9h` mapuje 32bitovou adresu na kartě: bity 16–19 do
+  `0580h` bitů 2–5 s režimem 3, bity 20–25 do `0480h` bitů 0–5 a **bit 7
+  `0480h` = 1 společná paměť, 0 paměť atributů** (třetí argument ≠ 0 =
+  atributy). To je signál REG# slotu; okno 64 KB na D000h, adresovatelných
+  64 MB. Sedí s režimem 3 `INT 69h` (6.2), kde bit 7 dává `CL=0`.
+- **`0480h` bit 5 = ochrana proti zápisu**, doloženo:
+  `FORMAT.EXE+06BAh` při nastaveném bitu řekne
+  `IDS_FM_FORMAT_CARD_WRITE_PROTECTED` (666h). Tím padá „?“ výše.
+- `0480h` bity 0–1 obě 0 = karta zasunutá (`FORMAT.EXE+1E00h`).
+- `0702h` při formátování: 7 (s Vpp) a pak 6 (`FORMAT.EXE+1E13h`, `+1E1Dh`).
+- **Rozpoznání typu** (`FORMAT.EXE+2954h`, cesta staré karty):
+  1. na adrese 0 společné paměti zapíše negovaný bajt a čte zpět; když
+     drží, je to **SRAM** (typ 0) a velikost zjistí `+25D0h`;
+  2. jinak porovná 32 bajtů paměti atributů s 32 bajty společné; když se
+     shodují (karta nemá zvlášť atributy, tedy ani CIS), zkusí flash
+     příkazy (`+274Ch`);
+  3. jinak čte CIS: první n-tice `01h` (CISTPL_DEVICE), typ zařízení
+     5–7 a z kódu velikosti spočte kapacitu; jiná karta je typ 4.
+- **Flash má příkazy Intel**, zapisované slovem na dva prokládané čipy:
+  `FFFFh` (čtení pole) a `9090h` (čtení identifikace), `FORMAT.EXE+27E9h`
+  až `+2863h`. Které kódy čipů zná a z čeho vzniká „fleš 1“ a „fleš 2“,
+  je otevřené; druhá cesta (`FORMAT.EXE+076Bh`, údaje z ovladače přes
+  `INT 2Fh` AX=2F14h/2F01h) dává „fleš 1“, když je nějaká 32bitová
+  hodnota větší než 20000h **[význam neznámý, snad velikost bloku]**.
+- `FORMAT.EXE+02C3h` po formátu přes CARDMAN namapuje stránku 0
+  společné paměti a opraví v zaváděcím sektoru na D000:0015 bajt média
+  F0h na F8h a na D000:0013 počet sektorů zaokrouhlí nahoru na násobek
+  128. Karta typu DOS-FAT (SRAM) tedy nese **obyčejný svazek FAT od
+  bajtu 0** společné paměti — takovou kartu by šlo ukázat i ze složky
+  hostitele jako disketu v Eurece; flash (FTL i Flash-FAT) ne.
+- Programy, které porty slotu používají přímo: `DLFFSA.EXE`,
+  `TRICKSS2.EXE`, `FORMAT.EXE` (`0480h`, `0580h`, `0702h`, `057Fh`);
+  `BKB.COM` a `MAINMENU.EXE` čtou `0480h` (baterie karty).
+
+*Návrh postupu (beady pod `ar-1ln`):* karta se emuluje **na úrovni
+hardwaru** (okno v režimu 3, REG#, `0480h`, `0702h`) a originální
+ovladače běží beze změny. Obsah karty je **surový obraz** v souboru
+hostitele: FTL ani Flash-FAT nejdou namapovat na složku, jak to dělá
+Eureka. Pořadí: (1) karta SRAM — lineární paměť, BVD a ochrana proti
+zápisu; (2) uživatelská vrstva podle Eureky (vložit, vysunout, nová
+karta, sloty, titulek, tóny); (3) flash karta s příkazy Intel, oba
+formáty; (4) Backpack (6.7). RAM disk D: už mezi spuštěními přežívá
+(`ar-ram`, 6.9).
+
+**Rozhodnutí uživatele, 10. 10. 2026:** pořadí platí. Karta SRAM se
+bude dát vložit **ze složky hostitele** (hlavní cesta, jak dostat
+soubory z PC do Arie; dnes žádná není), obraz karty jako druhá možnost.
+Složka se při vložení přeloží na svazek FAT (s podadresáři, jména 8.3
+v kódování obrazu B: z `FlashImage`) a při vysunutí a ukončení zapíše
+zpět — stejná logika jako diskety Eureky (`virtual_disk.*`), jen nad FAT
+místo CP/M. Flash karta zůstane obrazem: emulátor ji vyrobí prázdnou
+a naformátuje ji Aria sama; soubory se na ni dostanou kopírováním
+v Arii (karta SRAM ze složky → RAM disk D: → výměna karty → flash).
+Na skutečné Arii se data přenášela **sériovým kabelem** (čtečka karet
+pro PC nebyla), proto má přijít i přenos po sériové lince (6.6).
+
+**Karta SRAM v emulátoru, 10. 10. 2026 (`ar-3ap`, krok 1).**
+`src/pc_card.*`: karta SRAM jako lineární paměť, nad svou velikostí se
+zrcadlí (FORMAT.EXE+25D0h zjišťuje velikost právě přetočením po 64 KB),
+paměť atributů čte `FFh` (žádný CIS). `AriaMachine` mapuje režim 3 okna
+na kartu podle `FORMAT.EXE+1DA9h`, `0480h` vrací detekci, BVD a ochranu
+proti zápisu; `InsertCard`/`EjectCard`. `FormatFat12` (`src/fat12.*`)
+vyrobí prázdný svazek FAT12 (používá ho i náhradní ROM disk A:).
+
+Doloženo během (`boot_test`, 7.05 i 6.87): s naformátovanou kartou
+512 KB se hlásí `DLFFSA` „Drive(s) C“ a zároveň `TRICKSS2` „Card
+Drive(s) E:“ (stará podpora je v CMOS zapnutá). Když MAINMENU čeká na
+klávesu, test zavolá v emulované Arii `INT 21h`: vytvoří, zapíše
+a přečte `C:\KARTA.TXT`, a soubor pak najde čtečka FAT přímo v bajtech
+karty. Mutace (karta zahodí zápisy) test shodí už na vytvoření souboru.
+
+Zjištěno mimochodem: **TRICKSS2 si bere písmeno E:**, které README.DOC
+přisuzuje první mechanice Backpack — se zapnutou starou podporou karet
+by Backpack nejspíš dostal až F: **[předpoklad, ověřit s `ar-l5v`]**.
+Při tom se ukázal i souběh v `run-tests`: oba běhy `boot_test` sdílely
+dočasný soubor snímku paměti; teď má jméno podle CRC obrazu.
+
+Baterie karty: `BKB.COM+1622h` při zasunuté kartě a bitech 2–3 ≠ 11b
+vybere hlášku podle bitu 2 (`[2BFh]` při bitu 2, jinak `[2C1h]`).
+Emulátor dává slabé baterii jen bit 2 (BVD1) a vybité žádný, podle
+zvyklosti PCMCIA **[předpoklad]**; která hláška je LOW a která FLAT,
+neověřeno.
+
+Zbývá v `ar-3ap`: napájení slotu `0702h` (okno teď funguje bez ohledu na
+něj), vysunutí za běhu (detekce výměny v DLFFSA), test ochrany proti
+zápisu a slabé baterie (hlášky BKB).
 
 ### 6.9 Napájení
 

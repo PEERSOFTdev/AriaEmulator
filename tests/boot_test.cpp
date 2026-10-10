@@ -105,6 +105,10 @@ class SpeechLog {
     m.PokeWord(0x61 * 4, 0x0240);
     m.PokeWord(0x61 * 4 + 2, 0xFFC0);
     m.cpu().SetTrapHandler([this, &m](uint8_t number) {
+      if (number == 0xF4) {
+        returned_ = true;  // DosCall's stub.
+        return;
+      }
       if (number != 0xF3) {
         m.bios().Trap(number);
         return;
@@ -120,11 +124,65 @@ class SpeechLog {
     });
   }
   const std::string& text() const { return text_; }
+  bool hooked() const { return hooked_; }
+  // True once since the last call if DosCall's stub came back.
+  bool TakeReturn() {
+    const bool was = returned_;
+    returned_ = false;
+    return was;
+  }
 
  private:
   bool hooked_ = false;
+  bool returned_ = false;
   std::string text_;
 };
+
+// INT 21h inside the running machine, as a program on the Aria would call
+// it, to see drive C: the way DOS shows it. It waits until the CPU runs in
+// one of the `waiting` blocks with interrupts enabled and no hardware
+// interrupt in service (PCB in-service register 2Ch): MAINMENU waits for a
+// key inside AAPI's INT 60h, outside DOS and outside every driver's
+// interrupt handler. Then it runs "int 21h; trap F4h; jmp $" from the ROM
+// stub's free space at FFC0:0260h with the registers in `io` (CS:IP, SS:SP
+// and FLAGS are its own: the stack ends just below `scratch_top`, in a
+// free DOS block), and puts every register back afterwards. `io` gets the
+// registers after the call.
+bool DosCall(AriaMachine& m, SpeechLog& speech, const std::vector<Mcb>& waiting, uint16_t scratch_top,
+             Cpu80188::Registers& io) {
+  if (!speech.hooked()) return false;
+  for (int i = 0;; ++i) {
+    const auto r = m.cpu().GetRegisters();
+    const uint32_t at = (static_cast<uint32_t>(r.cs) << 4) + r.ip;
+    bool inside = false;
+    for (const Mcb& block : waiting) {
+      const uint32_t begin = static_cast<uint32_t>(block.segment + 1) << 4;
+      inside = inside || (at >= begin && at < begin + (static_cast<uint32_t>(block.paragraphs) << 4));
+    }
+    if (inside && (r.flags & 0x0200) && m.cpu().InWord(0x2C) == 0) break;
+    if (i > 2'000'000) return false;
+    m.cpu().Step();
+  }
+  const Cpu80188::Registers saved = m.cpu().GetRegisters();
+  const uint8_t stub[] = {0xCD, 0x21, 0x0F, 0xF4, 0xEB, 0xFE};
+  std::memcpy(m.RomStub() + 0x260, stub, sizeof stub);
+  Cpu80188::Registers call = io;
+  call.cs = 0xFFC0;
+  call.ip = 0x0260;
+  call.ss = static_cast<uint16_t>(scratch_top - 0x1000);
+  call.sp = 0;  // The first push lands just below `scratch_top`.
+  call.flags = saved.flags;
+  m.cpu().SetRegisters(call);
+  speech.TakeReturn();
+  bool back = false;
+  for (long long t = 0; t < AriaMachine::kCpuHz * 20LL && !back; t += 10'000) {
+    m.Run(10'000);
+    back = speech.TakeReturn();
+  }
+  io = m.cpu().GetRegisters();
+  m.cpu().SetRegisters(saved);
+  return back;
+}
 
 }  // namespace
 
@@ -174,6 +232,13 @@ int wmain(int argc, wchar_t** argv) {
   AriaMachine machine(flash, kernel, [] { return int64_t{946728000}; });
   std::vector<std::string> disk_log;
   if (verbose) machine.bios().SetDiskLog([&](const std::string& line) { disk_log.push_back(line); });
+  // A formatted 512 KB SRAM card in the slot, drive C: (HANDOFF 6.8); the
+  // Aria's own drivers take it over, and DOS writes to it below.
+  constexpr uint32_t kCardSize = 512 * 1024;
+  Fat12Format card_format;
+  card_format.sectors = kCardSize / 512;
+  card_format.label = "KARTA";
+  machine.InsertCard(PcCard::Sram(kCardSize, FormatFat12(card_format)));
   machine.PowerOn();  long long ran = 0;
   if (trace) {
     // Instruction by instruction, stopping where execution runs into
@@ -466,6 +531,70 @@ int wmain(int argc, wchar_t** argv) {
     return 1;
   }
 
+  // Drive C: on the SRAM card (HANDOFF 6.8, ar-3ap): while MAINMENU waits,
+  // DOS creates C:\KARTA.TXT, writes it, and reads it back through the
+  // Aria's card driver; then the file must be in the card's own bytes, as
+  // a FAT volume a host could read.
+  {
+    const char kCardText[] = "Aria, karta SRAM\r\n";
+    const std::vector<Mcb> blocks = McbChain(machine);
+    std::vector<Mcb> waiting;  // MAINMENU and AAPI, where it waits for a key.
+    const Mcb* free_block = nullptr;
+    for (const Mcb& block : blocks) {
+      if (block.name == "MAINMENU" || block.name == "AAPI") waiting.push_back(block);
+      if (block.owner == 0 && (!free_block || block.paragraphs > free_block->paragraphs)) free_block = &block;
+    }
+    if (waiting.size() != 2 || !free_block || free_block->paragraphs < 0x100) {
+      std::cout << "FAIL boot: no MAINMENU and AAPI blocks or no free DOS memory for the drive C: check\n";
+      return 1;
+    }
+    // Scratch data at the start of the free block, the stack at its top.
+    const uint16_t data = static_cast<uint16_t>(free_block->segment + 1);
+    const uint16_t top = static_cast<uint16_t>(data + std::min<uint32_t>(free_block->paragraphs, 0x1000));
+    const uint32_t base = static_cast<uint32_t>(data) << 4;
+    const char kPath[] = "C:\\KARTA.TXT";
+    for (std::size_t i = 0; i < sizeof kPath; ++i) machine.Poke(base + i, static_cast<uint8_t>(kPath[i]));
+    for (std::size_t i = 0; i + 1 < sizeof kCardText; ++i)
+      machine.Poke(base + 0x20 + i, static_cast<uint8_t>(kCardText[i]));
+    auto dos = [&](uint16_t ax, uint16_t bx, uint16_t cx, uint16_t dx, Cpu80188::Registers& out) {
+      out = {};
+      out.ax = ax;
+      out.bx = bx;
+      out.cx = cx;
+      out.dx = dx;
+      out.ds = out.es = data;
+      return DosCall(machine, speech, waiting, top, out) && !(out.flags & 0x0001);
+    };
+    Cpu80188::Registers r;
+    constexpr uint16_t kLength = sizeof kCardText - 1;
+    std::string step;
+    if (!dos(0x3C00, 0, 0, 0, r)) step = "create";
+    const uint16_t handle = r.ax;
+    if (step.empty() && (!dos(0x4000, handle, kLength, 0x20, r) || r.ax != kLength)) step = "write";
+    if (step.empty() && !dos(0x3E00, handle, 0, 0, r)) step = "close";
+    if (step.empty() && !dos(0x3D00, 0, 0, 0, r)) step = "open";
+    const uint16_t again = r.ax;
+    if (step.empty() && (!dos(0x3F00, again, 0x40, 0x80, r) || r.ax != kLength)) step = "read";
+    if (step.empty() && !dos(0x3E00, again, 0, 0, r)) step = "close after reading";
+    for (uint16_t i = 0; step.empty() && i < kLength; ++i) {
+      if (machine.Peek(base + 0x80 + i) != static_cast<uint8_t>(kCardText[i])) step = "compare";
+    }
+    if (!step.empty()) {
+      std::cout << "FAIL boot: drive C: on an SRAM card, INT 21h " << step << " (AX " << std::hex << r.ax << std::dec
+                << ")\n";
+      return 1;
+    }
+    Fat12Volume card_volume;
+    std::wstring card_error;
+    std::vector<uint8_t> on_card;
+    if (!machine.card() || !machine.card()->Modified() || !card_volume.Open(machine.card()->Contents(), card_error) ||
+        !card_volume.ReadFile("KARTA.TXT", on_card) ||
+        std::string(on_card.begin(), on_card.end()) != std::string(kCardText, kLength)) {
+      std::cout << "FAIL boot: C:\\KARTA.TXT is not in the SRAM card's FAT volume\n";
+      return 1;
+    }
+  }
+
   // The battery keeps the RAM disk D: through power-off (HANDOFF 6.9), and
   // the emulator keeps it between runs (snapshot.h): plant a file entry in
   // D:'s root directory, switch off the Aria's own way, save to a snapshot
@@ -505,7 +634,11 @@ int wmain(int argc, wchar_t** argv) {
   }
 
   const uint32_t firmware = Crc32(flash.bytes.data(), flash.bytes.size());
-  const std::filesystem::path memory_file = std::filesystem::temp_directory_path() / "aria_boot_test_pamet.bin";
+  // One file per firmware: run-tests runs the boots of 7.05 and 6.87 in
+  // parallel, and a shared name let one overwrite or delete the other's.
+  char memory_name[48];
+  std::snprintf(memory_name, sizeof memory_name, "aria_boot_test_pamet-%08X.bin", firmware);
+  const std::filesystem::path memory_file = std::filesystem::temp_directory_path() / memory_name;
   std::vector<uint8_t> state, loaded;
   std::wstring snapshot_error;
   machine.SaveState(state);
@@ -559,7 +692,8 @@ int wmain(int argc, wchar_t** argv) {
     return 1;
   }
   std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, speech and harp from the DSP,"
-               " space + dot 4 answered, D: formatted on y, konec says vypnuto and switches off, D: kept through"
+               " space + dot 4 answered, D: formatted on y, C:\\KARTA.TXT written and read on an SRAM card,"
+               " konec says vypnuto and switches off, D: kept through"
                " a memory snapshot without a new question, F1 starts the word processor)\n";
   return 0;
 }

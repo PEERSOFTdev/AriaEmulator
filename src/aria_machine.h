@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -11,6 +12,7 @@
 #include "cpu80188.h"
 #include "dac_renderer.h"
 #include "flash_image.h"
+#include "pc_card.h"
 #include "rtc146818.h"
 
 class HleBios;
@@ -104,6 +106,18 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   // Key matrix rows (0581h, 0582h, 0584h) and battery status (0700h).
   void SetKeyRow(int row, uint8_t bits) { key_rows_[row % 3] = bits; }
   void SetBatteryStatus(uint8_t value) { battery_ = value; }
+
+  // The PCMCIA slot, drive C: (HANDOFF 6.8). The drivers poll the card
+  // detect bits of 0480h from INT 1Ch, so a card can come and go while the
+  // machine runs, as on the Aria.
+  void InsertCard(PcCard card) { card_ = std::move(card); }
+  std::optional<PcCard> EjectCard() {
+    std::optional<PcCard> out = std::move(card_);
+    card_.reset();
+    return out;
+  }
+  PcCard* card() { return card_ ? &*card_ : nullptr; }
+  uint8_t SlotPower() const { return slot_power_; }
   bool PoweredOff() const { return powered_off_; }
 
   // The DSP side (HANDOFF 6.3): every byte SPEAK sends to the data port
@@ -160,6 +174,7 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
 
   bool WindowMapped(uint32_t address) const;
   uint8_t ReadWindow(uint32_t address) const;
+  uint32_t CardAddress(uint32_t address) const;
   BiosDisk MakeRomDisk() const;
   BiosDisk MakeFlashDisk(const FlashImage& flash) const;
 
@@ -180,6 +195,7 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   uint8_t key_rows_[3] = {};
   uint8_t battery_ = 0x2F;        // Adapter connected, fully charged (HANDOFF 6.4).
   uint8_t slot_power_ = 0;
+  std::optional<PcCard> card_;
   bool powered_off_ = false;
   Adsp2105 dsp_;
   enum class DspState { kReset, kBooting, kRunning };

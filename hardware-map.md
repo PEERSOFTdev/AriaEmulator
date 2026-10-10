@@ -45,8 +45,10 @@ Sken portů pochází z `tools/ports.py` (7.05, bez PKLITE programů).
 - **Okno 64 KB na D0000h–DFFFFh** (segment D000h), stránky po 64 KB,
   vybírá je latch `0580h` (bity 1–0 režim: 0 vypnuto, 2 interní flash,
   3 karta; bity 7–2 stránka) a pro kartu i `0480h` (bity 5–0 vyšší bity
-  stránky, bit 7 nejasný) **[binárka]**; správce `INT 69h` ve
-  `VOICE.SYS`, HANDOFF 6.2.
+  stránky) **[binárka]**; správce `INT 69h` ve `VOICE.SYS`, HANDOFF 6.2.
+  Karta: adresa bity 16–19 v `0580h` bitech 2–5, bity 20–25 v `0480h`
+  bitech 0–5, **bit 7 `0480h` = REG#** (1 společná paměť, 0 paměť
+  atributů), `FORMAT.EXE+1DA9h` **[binárka]**, HANDOFF 6.8.
 - **RAM disk D: na B0000h–FFBFFh (319 KB)** pod oblastí boot ROM: vidět
   jen s UMCS = FFF8h, kdy horní chip select pokrývá jen FFC00h–FFFFFh
   (`RAMDISK.EXE+037Eh`) **[binárka]**. Stránka Robotronu z 1997 uvádí
@@ -73,8 +75,9 @@ s `ARIA_UNPACKED`, HANDOFF 6.1). Nové porty a uživatelé:
   `AAPI.EXE+DE17`; `0702h` zapisují i `AAPI.EXE` a `FORMAT.EXE`
 - `0480h` — čtou i `FORMAT.EXE` a `MAINMENU.EXE`, `FORMAT.EXE` i zapisuje.
   **Čtení = stav slotu karty** (bity 0–1 detekce, aktivní nulou; bity 2–3
-  nejspíš BVD; bit 5 další stav), **zápis = vyšší bity stránky okna**
-  **[binárka]** (HANDOFF 6.2, 6.8)
+  BVD, obě 1 = baterie karty dobrá, `BKB.COM+1622h`; **bit 5 ochrana
+  proti zápisu**, `FORMAT.EXE+06BAh`), **zápis = vyšší bity stránky okna
+  a REG#** **[binárka]** (HANDOFF 6.2, 6.8)
 - `0702h` — napájení slotu: 6 s kartou, 4 bez ní, 7 během zápisu
   (`TRICKSS2.EXE+14EDh`, `+1549h`) **[binárka]**; výklad bitů
   **[předpoklad]** (HANDOFF 6.8)
