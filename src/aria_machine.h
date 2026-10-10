@@ -109,14 +109,20 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
 
   // The PCMCIA slot, drive C: (HANDOFF 6.8). The drivers poll the card
   // detect bits of 0480h from INT 1Ch, so a card can come and go while the
-  // machine runs, as on the Aria.
-  void InsertCard(PcCard card) { card_ = std::move(card); }
-  std::optional<PcCard> EjectCard() {
-    std::optional<PcCard> out = std::move(card_);
-    card_.reset();
-    return out;
-  }
+  // machine runs, as on the Aria. DLFFSA takes a media change only from an
+  // empty slot seen on a tick: swapped within 30 ms DOS went on with the
+  // old card's directory, from 60 ms on it never did (boot_test, 10. 10.
+  // 2026). A card inserted before the empty slot has lived through
+  // kCardSwapTicks ticks (about 0.27 s) therefore waits, out of the slot,
+  // until it has; at power-on it goes straight in. Ticks, not time: only a
+  // tick runs the drivers' INT 1Ch.
+  static constexpr int kCardSwapTicks = 5;
+  // The slot must be empty (EjectCard first).
+  void InsertCard(PcCard card);
+  // The card in the slot, or the one still waiting to go in.
+  std::optional<PcCard> EjectCard();
   PcCard* card() { return card_ ? &*card_ : nullptr; }
+  bool CardWaiting() const { return pending_card_.has_value(); }
   uint8_t SlotPower() const { return slot_power_; }
   bool PoweredOff() const { return powered_off_; }
 
@@ -196,6 +202,8 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   uint8_t battery_ = 0x2F;        // Adapter connected, fully charged (HANDOFF 6.4).
   uint8_t slot_power_ = 0;
   std::optional<PcCard> card_;
+  std::optional<PcCard> pending_card_;  // Inserted, waiting for kCardSwapTicks.
+  int empty_slot_ticks_ = kCardSwapTicks;  // Ticks since the last eject; a new slot has been empty long.
   bool powered_off_ = false;
   Adsp2105 dsp_;
   enum class DspState { kReset, kBooting, kRunning };

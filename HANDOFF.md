@@ -1142,9 +1142,60 @@ Emulátor dává slabé baterii jen bit 2 (BVD1) a vybité žádný, podle
 zvyklosti PCMCIA **[předpoklad]**; která hláška je LOW a která FLAT,
 neověřeno.
 
+**Kapacity karet, 10. 10. 2026.**
+
+- **Vzpomínka uživatele:** jeho flash karta byla na **E:**, C: skoro
+  nepoužíval. E: je písmeno `TRICKSS2` (výše), takže karta byla ve
+  **starém formátu** (Datalight FlashDisk 1.0, Flash-FAT) se zapnutou
+  starou podporou v MODE.
+- **Hardware:** okno adresuje 26 bitů (6 bitů `0480h` + 4 bity `0580h`
+  + 16 bitů offsetu), tedy **64 MB**; stejnou mez má zkouška velikosti
+  SRAM ve `FORMAT.EXE+25D0h` (nejvýš 400h kroků po 64 KB).
+- **SRAM přes DLFFSA, změřeno:** dočasná úprava `boot_test` (nezapsaná)
+  s kartami 0,5–64 MB naformátovanými `FormatFat12`: DOS přes `INT 21h`
+  AH=36h vidí celou kartu (64 MB: 2 047 alokačních jednotek po 32 KB,
+  65 504 KB) a zápis 16 B na pozici 64 MB − 256 KB našla čtečka FAT
+  v bajtech karty na správném místě. SRAM tedy funguje **až do 64 MB**;
+  jaké velikosti se skutečně prodávaly, nevíme (u karet SRAM té doby
+  obvykle do jednotek MB **[předpoklad]**).
+- **Starý formát flash:** nejvýš **4 MB** (hláška `FORMAT.EXE`, výše).
+- **Nový formát FTL:** mez je v konfiguraci ovladače; `DLFMT.EXE` se na
+  ni ptá za běhu (`DLFMT.EXE+1123h`–`+1141h` vypíše „support up to
+  %dMB flash cards“ s hodnotou z `[160Ch]`), v souboru napsaná není.
+  Zjistí se během s flash kartou (`ar-ibv`).
+
+Pro uživatelskou vrstvu (`ar-aj1`): karta ze složky má pevnou velikost
+zvolenou při založení, jako skutečná karta (zápisy z Arie ji pak
+nepřeplní, FAT má danou velikost). Když složka při vložení přesahuje,
+emulátor to řekne i s potřebnou velikostí a kartu nevloží — jako
+diskety Eureky.
+
 Zbývá v `ar-3ap`: napájení slotu `0702h` (okno teď funguje bez ohledu na
 něj), vysunutí za běhu (detekce výměny v DLFFSA), test ochrany proti
 zápisu a slabé baterie (hlášky BKB).
+
+**Výměna karty za běhu, 10. 10. 2026 (`ar-3ap`, krok 2).** Vysunutí za
+běhu tím přestává být otevřené. `boot_test`: karta A s `KARTA.TXT` ven,
+slot prázdný, karta B dovnitř; DOS pak nesmí vidět soubor z A, nový
+soubor musí přistát na B a bajty vytažené A se nesmějí změnit. Pak
+zpět na A bez čekání.
+
+- Se slotem prázdným **30 ms** DOS výměnu nepoznal a dál pracoval
+  s adresářem předchozí karty (z bufferů, `buffers = 50`); od **60 ms**
+  (0,06; 0,12; 0,25; 0,5; 1 s) vždy poznal. DLFFSA tedy bere výměnu
+  z prázdného slotu, který uvidí v obsluze `INT 1Ch` (jeden tik 55 ms).
+- Proto `AriaMachine` drží slot prázdný sám: karta vložená dřív, než
+  prázdný slot prožil `kCardSwapTicks` = 5 tiků (asi 0,27 s), čeká
+  mimo slot (`CardWaiting`). Počítají se **tiky, ne čas**: test hledá
+  bezpečné místo krokováním CPU bez tiků a čas měřený cykly tam uplynul,
+  aniž by ovladač slot viděl. Při zapnutí jde čekající karta rovnou
+  dovnitř.
+- Mutace (vložení vždy hned) test shodí.
+
+Zbývá: vysunutí uprostřed zápisu emulátor nehlídá (karta se vytáhne
+mezi dvěma úseky běhu, jako by ji vytáhla ruka); uživatelská vrstva
+(`ar-aj1`) může vysunutí odložit, dokud okno není v režimu 3 **[návrh]**.
+Dál napájení `0702h`, ochrana proti zápisu a baterie.
 
 ### 6.9 Napájení
 

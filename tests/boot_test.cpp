@@ -593,6 +593,64 @@ int wmain(int argc, wchar_t** argv) {
       std::cout << "FAIL boot: C:\\KARTA.TXT is not in the SRAM card's FAT volume\n";
       return 1;
     }
+
+    // Swapping cards while the Aria runs (HANDOFF 6.8): DOS keeps 50
+    // buffers (CONFIG.SYS), so unless the card driver reports the change,
+    // DOS would go on with the old card's FAT and directory and could
+    // write them onto the new one. `wait` is how long the host leaves the
+    // slot empty: DLFFSA polls 0480h from INT 1Ch, and an instant swap is
+    // safe only because the machine keeps the slot empty for
+    // kCardSwapTicks itself.
+    auto has = [](const PcCard& card, const char* name) {
+      Fat12Volume volume;
+      std::wstring ignored;
+      std::vector<uint8_t> bytes;
+      return volume.Open(card.Contents(), ignored) && volume.ReadFile(name, bytes);
+    };
+    auto swap = [&](PcCard next, double wait, const char* expect, const char* absent, const char* create,
+                    PcCard& out) -> std::string {
+      std::optional<PcCard> taken = machine.EjectCard();
+      for (long long t = 0; t < static_cast<long long>(AriaMachine::kCpuHz * wait); t += kSlice) machine.Run(kSlice);
+      const std::vector<uint8_t> before = taken->Contents();
+      machine.InsertCard(std::move(next));
+      // Swapped at once, the new card must wait out AriaMachine::kCardSwapTicks.
+      if (machine.CardWaiting() != (wait == 0.0)) return "swap gap not kept";
+      for (int i = 0; i < 100 && machine.CardWaiting(); ++i) machine.Run(kSlice);
+      auto put =[&](uint32_t at, const char* path) {
+        for (std::size_t i = 0; i < 4; ++i) machine.Poke(base + at + i, static_cast<uint8_t>("C:\\"[i]));
+        for (std::size_t i = 0; i <= std::strlen(path); ++i) machine.Poke(base + at + 3 + i, static_cast<uint8_t>(path[i]));
+      };
+      put(0x100, expect);
+      put(0x120, absent);
+      put(0x140, create);
+      Cpu80188::Registers s;
+      if (expect[0] && (!dos(0x3D00, 0, 0, 0x100, s) || !dos(0x3E00, s.ax, 0, 0, s))) return "the card's own file not found";
+      if (dos(0x3D00, 0, 0, 0x120, s)) return "the old card's file still seen";
+      if (!dos(0x3C00, 0, 0, 0x140, s)) return "create failed";
+      const uint16_t h = s.ax;
+      if (!dos(0x4000, h, kLength, 0x20, s) || !dos(0x3E00, h, 0, 0, s)) return "write failed";
+      if (taken->Contents() != before) return "the card taken out changed";
+      if (!has(*machine.card(), create)) return "the new file is not on the card";
+      if (has(*machine.card(), absent)) return "the old card's file was written onto the new card";
+      out = std::move(*taken);
+      return {};
+    };
+    Fat12Format second_format = card_format;
+    second_format.label = "DRUHA";
+    PcCard first;
+    std::string why = swap(PcCard::Sram(kCardSize, FormatFat12(second_format)), 2.0, "", "KARTA.TXT", "DRUHA.TXT", first);
+    std::string fast_why;
+    if (why.empty()) {
+      PcCard second;
+      fast_why = swap(std::move(first), 0.0, "KARTA.TXT", "DRUHA.TXT", "TRETI.TXT", second);
+    }
+    if (verbose) std::cout << "card swap after 2 s: " << (why.empty() ? "ok" : why) << "; at once: "
+                           << (fast_why.empty() ? "ok" : fast_why) << "\n";
+    if (!why.empty() || !fast_why.empty()) {
+      std::cout << "FAIL boot: swapping SRAM cards, " << (why.empty() ? "at once: " + fast_why : "after 2 s: " + why)
+                << "\n";
+      return 1;
+    }
   }
 
   // The battery keeps the RAM disk D: through power-off (HANDOFF 6.9), and
@@ -693,6 +751,7 @@ int wmain(int argc, wchar_t** argv) {
   }
   std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, speech and harp from the DSP,"
                " space + dot 4 answered, D: formatted on y, C:\\KARTA.TXT written and read on an SRAM card,"
+               " cards swapped after 2 s and at once without mixing,"
                " konec says vypnuto and switches off, D: kept through"
                " a memory snapshot without a new question, F1 starts the word processor)\n";
   return 0;

@@ -70,6 +70,28 @@ void AriaMachine::PowerOn() {
   cpu_.Reset();
   bios_->PowerOn(kernel_);
   UpdateHostLines();
+  // The drivers start afresh and look at the slot themselves.
+  if (pending_card_) {
+    card_ = std::move(pending_card_);
+    pending_card_.reset();
+  }
+}
+
+void AriaMachine::InsertCard(PcCard card) {
+  if (empty_slot_ticks_ >= kCardSwapTicks) {
+    card_ = std::move(card);
+  } else {
+    pending_card_ = std::move(card);
+  }
+}
+
+std::optional<PcCard> AriaMachine::EjectCard() {
+  const bool was_in = card_.has_value();
+  std::optional<PcCard> out = was_in ? std::move(card_) : std::move(pending_card_);
+  if (was_in) empty_slot_ticks_ = 0;
+  card_.reset();
+  pending_card_.reset();
+  return out;
 }
 
 void AriaMachine::Run(int cycles) {
@@ -87,6 +109,11 @@ void AriaMachine::Run(int cycles) {
     if (tick_debt_ >= static_cast<int64_t>(kCpuHz) * kTickDenominator) {
       tick_debt_ -= static_cast<int64_t>(kCpuHz) * kTickDenominator;
       cpu_.SetInterruptPin(2, true);
+      if (!card_ && empty_slot_ticks_ < kCardSwapTicks) ++empty_slot_ticks_;
+      if (pending_card_ && empty_slot_ticks_ >= kCardSwapTicks) {
+        card_ = std::move(pending_card_);
+        pending_card_.reset();
+      }
     }
     dsp_debt_ += static_cast<int64_t>(used) * kDspHz;
     const int dsp_cycles = static_cast<int>(dsp_debt_ / kCpuHz);
