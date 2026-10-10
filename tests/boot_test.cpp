@@ -18,6 +18,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -149,7 +150,7 @@ class SpeechLog {
 // free DOS block), and puts every register back afterwards. `io` gets the
 // registers after the call.
 bool DosCall(AriaMachine& m, SpeechLog& speech, const std::vector<Mcb>& waiting, uint16_t scratch_top,
-             Cpu80188::Registers& io) {
+             Cpu80188::Registers& io, const std::function<void()>& stalled = {}) {
   if (!speech.hooked()) return false;
   for (int i = 0;; ++i) {
     const auto r = m.cpu().GetRegisters();
@@ -178,6 +179,8 @@ bool DosCall(AriaMachine& m, SpeechLog& speech, const std::vector<Mcb>& waiting,
   for (long long t = 0; t < AriaMachine::kCpuHz * 20LL && !back; t += 10'000) {
     m.Run(10'000);
     back = speech.TakeReturn();
+    // Still in DOS after 3 s: a prompt waits for the user (INT 24h).
+    if (!back && stalled && t == AriaMachine::kCpuHz * 3LL) stalled();
   }
   io = m.cpu().GetRegisters();
   m.cpu().SetRegisters(saved);
@@ -651,6 +654,63 @@ int wmain(int argc, wchar_t** argv) {
                 << "\n";
       return 1;
     }
+
+    // The write-protect switch, 0480h bit 5 (FORMAT.EXE+06BAh): creating a
+    // file on a protected card fails and leaves the card as it was.
+    machine.EjectCard();
+    Fat12Format protected_format = card_format;
+    protected_format.label = "CHRANENA";
+    PcCard locked = PcCard::Sram(kCardSize, FormatFat12(protected_format));
+    locked.write_protected = true;
+    const std::vector<uint8_t> locked_before = locked.Contents();
+    machine.InsertCard(std::move(locked));
+    for (int i = 0; i < 100 && machine.CardWaiting(); ++i) machine.Run(kSlice);
+    const std::size_t said_before = speech.text().size();
+    Cpu80188::Registers w{};
+    w.ax = 0x3C00;
+    w.ds = w.es = data;
+    // AAPI's critical-error handler says "c chráněn proti zápisu" and waits
+    // for r (retry), f (fail) or i (ignore) (MESSAGES.DAT); the test
+    // answers f, dots 1, 2, 4 = 0581h bits 2, 1, 3.
+    bool prompted = false;
+    const bool returned = DosCall(machine, speech, waiting, top, w, [&] {
+      prompted = speech.text().find("proti z", said_before) != std::string::npos;
+      press(machine, 0, 0x0E, 1);
+    });
+    const bool created = returned && !(w.flags & 0x0001);
+    if (verbose) std::cout << "create on a write-protected card: " << (returned ? "" : "no return, ")
+                           << (created ? "succeeded" : "failed") << ", AX " << std::hex << w.ax << std::dec
+                           << ", said: " << Printable(speech.text().substr(said_before)) << "\n";
+    if (!returned || !prompted || created || !machine.card() || machine.card()->Contents() != locked_before) {
+      std::cout << "FAIL boot: a write-protected SRAM card: "
+                << (!prompted ? "no write-protect prompt" : !returned ? "f did not end the call"
+                    : created ? "took a new file" : "changed") << "\n";
+      return 1;
+    }
+
+    // The card battery, 0480h bits 2-3 (BKB.COM+1622h): the battery report
+    // (space + dots 1 2, 0581h bits 7, 2, 1 = 86h, K_BATTERY) ends with
+    // IDS_KBD_PCCARD_LOW ", p c karta částečně vybitá" or _FLAT ", p c
+    // karta zcela vybitá" (MESSAGES.DAT).
+    auto report = [&](PcCard::Battery battery) {
+      machine.card()->battery = battery;
+      const std::size_t from = speech.text().size();
+      press(machine, 0, 0x86, 3);
+      return speech.text().substr(from);
+    };
+    const std::string good = report(PcCard::Battery::kGood);
+    const std::string low = report(PcCard::Battery::kLow);
+    const std::string flat = report(PcCard::Battery::kFlat);
+    if (verbose) std::cout << "battery report, card good: " << Printable(good) << "; low: " << Printable(low)
+                           << "; flat: " << Printable(flat) << "\n";
+    auto warns = [](const std::string& said) { return said.find("p c karta") != std::string::npos; };
+    auto flat_word = [](const std::string& said) { return said.find("zcela") != std::string::npos; };
+    if (good.empty() || warns(good) || !warns(low) || flat_word(low) || !warns(flat) || !flat_word(flat)) {
+      std::cout << "FAIL boot: card battery in the battery report (good: " << Printable(good) << "; low: "
+                << Printable(low) << "; flat: " << Printable(flat) << ")\n";
+      return 1;
+    }
+    machine.EjectCard();
   }
 
   // The battery keeps the RAM disk D: through power-off (HANDOFF 6.9), and
@@ -751,7 +811,8 @@ int wmain(int argc, wchar_t** argv) {
   }
   std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, speech and harp from the DSP,"
                " space + dot 4 answered, D: formatted on y, C:\\KARTA.TXT written and read on an SRAM card,"
-               " cards swapped after 2 s and at once without mixing,"
+               " cards swapped after 2 s and at once without mixing, write protection prompted and kept,"
+               " card battery in the battery report,"
                " konec says vypnuto and switches off, D: kept through"
                " a memory snapshot without a new question, F1 starts the word processor)\n";
   return 0;

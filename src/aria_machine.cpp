@@ -48,6 +48,7 @@ bool AriaMachine::LoadState(const std::vector<uint8_t>& in) {
 
 void AriaMachine::PowerOn() {
   latch_580_ = latch_480_ = 0;
+  slot_power_ = 0;  // DLFFSA powers a card it finds (CardPowered).
   powered_off_ = false;
   ucs_start_ = 0xFFC00;
   // ROM contents are the BIOS's to set up; the kernel copies itself in anew
@@ -214,8 +215,8 @@ uint32_t AriaMachine::CardAddress(uint32_t address) const {
 uint8_t AriaMachine::ReadWindow(uint32_t address) const {
   if ((latch_580_ & 0x03) == 3) {
     // 0480h bit 7 is REG#: 0 selects attribute memory (FORMAT.EXE+1DA9h).
-    // An empty slot reads as a floating bus.
-    return card_ ? card_->Read(CardAddress(address), !(latch_480_ & 0x80)) : 0xFF;
+    // An empty or unpowered slot reads as a floating bus.
+    return CardPowered() ? card_->Read(CardAddress(address), !(latch_480_ & 0x80)) : 0xFF;
   }
   // Flash page = 0580h bits 7-2; flash address = offset in the B: image.
   const uint32_t page = latch_580_ >> 2;
@@ -239,7 +240,7 @@ void AriaMachine::WriteMemory(uint32_t address, uint8_t value) {
   if (WindowMapped(address)) {
     // Card memory takes writes; the internal flash's programming is not
     // emulated (HANDOFF 6.11).
-    if ((latch_580_ & 0x03) == 3 && card_) card_->Write(CardAddress(address), !(latch_480_ & 0x80), value);
+    if ((latch_580_ & 0x03) == 3 && CardPowered()) card_->Write(CardAddress(address), !(latch_480_ & 0x80), value);
     return;
   }
   if (address >= ucs_start_) {
@@ -267,9 +268,9 @@ uint8_t AriaMachine::ReadIo(uint16_t port) {
       // Card slot status (HANDOFF 6.8): bits 0-1 card detect, active low,
       // both 0 = card in (FORMAT.EXE+1E00h); bits 2-3 BVD1/BVD2, both 1 =
       // battery good (BKB.COM+1622h); bit 5 write protect (FORMAT.EXE+06BAh).
-      // A weak battery as BVD1 alone, a flat one as neither: BKB picks one
-      // of its two warnings by bit 2, and that is the PCMCIA convention
-      // (assumption, HANDOFF 6.8).
+      // A weak battery as BVD1 alone, a flat one as neither (PCMCIA): BKB's
+      // battery report then says "částečně vybitá" and "zcela vybitá"
+      // (boot_test, HANDOFF 6.8).
       if (!card_) return 0x0F;
       uint8_t status = card_->write_protected ? 0x20 : 0x00;
       if (card_->battery == PcCard::Battery::kGood) status |= 0x0C;

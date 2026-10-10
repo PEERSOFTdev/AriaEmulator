@@ -181,6 +181,10 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   bool WindowMapped(uint32_t address) const;
   uint8_t ReadWindow(uint32_t address) const;
   uint32_t CardAddress(uint32_t address) const;
+  // 0702h bit 1 is the card's VCC: DLFFSA's INT 1Ch writes 6 when it sees
+  // a card come and 4 when it sees one go (DLFFSA.EXE+0DD9h-+0DEDh), and
+  // 7, bit 0 = Vpp, only around flash programming (+0D58h, +0D84h).
+  bool CardPowered() const { return card_ && (slot_power_ & 0x02); }
   BiosDisk MakeRomDisk() const;
   BiosDisk MakeFlashDisk(const FlashImage& flash) const;
 

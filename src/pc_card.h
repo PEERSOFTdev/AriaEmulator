@@ -35,7 +35,8 @@ class PcCard {
   // The card's write-protect switch, 0480h bit 5 (FORMAT.EXE+06BAh).
   bool write_protected = false;
   // The card battery as BVD1/BVD2 report it, 0480h bits 2-3 (HANDOFF 6.8);
-  // BKB warns about a weak and a flat one (IDS_KBD_PCCARD_LOW/FLAT, 6.4).
+  // BKB's battery report warns about a weak and a flat one
+  // (IDS_KBD_PCCARD_LOW/FLAT, 6.4).
   enum class Battery { kGood, kLow, kFlat };
   Battery battery = Battery::kGood;
 

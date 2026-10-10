@@ -1140,7 +1140,7 @@ Baterie karty: `BKB.COM+1622h` při zasunuté kartě a bitech 2–3 ≠ 11b
 vybere hlášku podle bitu 2 (`[2BFh]` při bitu 2, jinak `[2C1h]`).
 Emulátor dává slabé baterii jen bit 2 (BVD1) a vybité žádný, podle
 zvyklosti PCMCIA **[předpoklad]**; která hláška je LOW a která FLAT,
-neověřeno.
+neověřeno. **Ověřeno týž den** (krok 3 níže): mapování sedí.
 
 **Kapacity karet, 10. 10. 2026.**
 
@@ -1148,6 +1148,11 @@ neověřeno.
   nepoužíval. E: je písmeno `TRICKSS2` (výše), takže karta byla ve
   **starém formátu** (Datalight FlashDisk 1.0, Flash-FAT) se zapnutou
   starou podporou v MODE.
+  **Neplatí (oprava týž den):** uživatel našel zálohu své složky
+  „Ariacard“ z doby používání; soubory INI v ní ukazují na **C:**
+  a starou podporu karet **vypnutou**. Hlavní karta byla tedy flash
+  v **novém formátu FTL** (DLFFSA), data držela trvale bez baterie;
+  karty SRAM jen zkoušel. Vzpomínka na E: byla mylná.
 - **Hardware:** okno adresuje 26 bitů (6 bitů `0480h` + 4 bity `0580h`
   + 16 bitů offsetu), tedy **64 MB**; stejnou mez má zkouška velikosti
   SRAM ve `FORMAT.EXE+25D0h` (nejvýš 400h kroků po 64 KB).
@@ -1196,6 +1201,27 @@ Zbývá: vysunutí uprostřed zápisu emulátor nehlídá (karta se vytáhne
 mezi dvěma úseky běhu, jako by ji vytáhla ruka); uživatelská vrstva
 (`ar-aj1`) může vysunutí odložit, dokud okno není v režimu 3 **[návrh]**.
 Dál napájení `0702h`, ochrana proti zápisu a baterie.
+
+**Napájení, ochrana proti zápisu a baterie karty, 10. 10. 2026
+(`ar-3ap`, krok 3).**
+
+- **`0702h` bit 1 = VCC karty** (`DLFFSA.EXE+0DD9h`–`+0DEDh`: obsluha
+  `INT 1Ch` při změně detekce zapíše 6 pro kartu, 4 bez ní; 7, tedy bit 0
+  = Vpp, jen kolem programování flash, `+0D58h`/`+0D84h`). Emulátor
+  kartu bez bitu 1 nevidí (čte `FFh`, zápisy zahodí) a při zapnutí
+  latch nuluje; start 7.05 i 6.87 se všemi zkouškami karty projde, takže
+  ovladače kartu napájejí samy. Bit 2 (vždy 1) zůstává nevyložený.
+- **Ochrana proti zápisu** (`boot_test`): vytvoření souboru na chráněné
+  kartě — AAPI ohlásí „c chráněn proti zápisu“ a čeká na r / f / i
+  (zkusit znovu, zrušit, ignorovat; MESSAGES.DAT). Test stiskne f (body
+  1, 2, 4 = `0581h` `0Eh`), DOS vrátí chybu 5 a bajty karty se nezmění.
+- **Baterie karty** (`boot_test`, hlášení baterie mezera + body 12 =
+  `0581h` `86h`, `K_BATTERY`): dobrá → jen „plně nabitá“ (baterie
+  Arie); bit 2 sám → „…, p c karta částečně vybitá“; ani jeden →
+  „…, p c karta zcela vybitá“. Mapování PCMCIA tím je doložené.
+
+`ar-3ap` je tím hotový. Vysunutí uprostřed zápisu zůstává jako návrh pro
+`ar-aj1` (výše).
 
 ### 6.9 Napájení
 
