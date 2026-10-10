@@ -1557,6 +1557,26 @@ Naformátovaný fleš obraz emulátor nedělá: FTL zakládá DLFFSA.
 Zbývá ověřit u uživatele: formát ze správce souborů, karta ve slotu už
 při zapnutí, starý formát přes TRICKSS2 (E:).
 
+**Zkouška uživatele, 11. 10. 2026:** nová fleš karta, formát ze správce
+souborů, kopírování souborů — vše funguje, se zvuky, které uživatel znal
+ze skutečné Arie (formát i kopírování trvají dlouho; to dělá Aria, ne
+karta). E: (stará podpora zapnutá) hlásí „celkové selhání“: karta byla
+naformátovaná na C:, tedy FTL, a TRICKSS2 čte jen starý Flash-FAT —
+**očekávané**, ne chyba.
+
+- **Jak vznikne starý formát** (`FORMAT.EXE`, rozbalený): FORMAT se ptá
+  na písmeno jednotky a každou popíše podle tabulky `[0F3Ah]`
+  (`+0BE3h`); jednotka TRICKSS2 se ohlásí zprávou D96h „p c karta, starý
+  formát fleš karty“ (`+0C2Ah`). Starý formát je tedy formát jednotky
+  **E:**, nový jednotky C:.
+- **Typy karty** (`+2954h`, skok `+0655h`): 0 SRAM (zkušební zápis drží,
+  zpráva 668h „esram“), 1 chráněná/ROM (666h/66Bh), 2 flash podle ID
+  bez CIS (`+274Ch`, 669h „fleš 1“), 4 karta s CIS (66Ah „fleš 2“; naše
+  fleš karta, velikost z CISTPL_DEVICE). Pro typ 2 a 4 nad 4 MB řekne
+  D98h „nemůže formátovat více než čtyři megabajty se starým formátem“
+  a nabídne D99h „použít jenom čtyři megabajty“ (`+0600h`–`+0638h`).
+- Starý formát v emulátoru zatím neověřen (čeká na zkoušku: formát E:).
+
 ### 6.9 Napájení
 
 `TURNOFF.COM` (16 B): `cli; mov dx,0701h; mov al,0; out dx,al; jmp $` —
