@@ -251,6 +251,10 @@ int main() {
     saved.RememberCard((root / L"Jiná").wstring(), 512 * 1024, false);
     saved.SetLastCard(folder);
     saved.SetImageFolder((root / L"Obrazy karet").wstring());
+    saved.SetSlot(1, folder);
+    saved.SetSlot(9, (root / L"Obrazy karet" / L"Karta.img").wstring());
+    saved.SetCardLocked((root / L"Jen zamčená").wstring(), true);
+    saved.SetCardLocked(folder, true);
     std::wstring error;
     Check(saved.Save(error), "the settings save");
     Settings loaded(file);
@@ -259,6 +263,11 @@ int main() {
     Check(card && card->size == 2 * 1024 * 1024 && card->locked, "a card's size and lock come back");
     Check(loaded.last_card() == folder, "the last card comes back");
     Check(loaded.image_folder() == (root / L"Obrazy karet").wstring(), "the image folder comes back");
+    Check(loaded.slot(1) == folder && loaded.slot(9) == (root / L"Obrazy karet" / L"Karta.img").wstring() &&
+              loaded.slot(2).empty(),
+          "the slots come back");
+    const Settings::Card* lockedOnly = loaded.FindCard((root / L"Jen zamčená").wstring());
+    Check(lockedOnly && lockedOnly->size == 0 && lockedOnly->locked, "a lock without a size comes back");
     const Settings::Card* other = loaded.FindCard((root / L"JINÁ").wstring());
     Check(other && other->size == 512 * 1024 && !other->locked, "folders compare without case");
     Check(!loaded.FindCard((root / L"Nikdy").wstring()), "an unknown folder is no card");

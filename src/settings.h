@@ -16,6 +16,7 @@
 // of the two a card is, the file does not say: a path that is a folder is a
 // folder card, any other an image (whose size is then the file's own).
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -50,8 +51,19 @@ class Settings {
     bool locked = false;
   };
   // The card made from `path` before, or null. Paths compare by SamePath.
+  // A size of 0 is a card whose lock is known but whose size is not yet: a
+  // folder put in a slot and locked there before it was ever in the slot
+  // of the machine.
   const Card* FindCard(const std::wstring& path) const;
   void RememberCard(const std::wstring& path, uint32_t size, bool locked);
+  // The lock alone, the size kept (0 for a card not yet known).
+  void SetCardLocked(const std::wstring& path, bool locked);
+
+  // The nine slots of Ctrl+1 to Ctrl+9, after the Eureka emulator's: each a
+  // folder or an image path, empty for none. Numbered 1..kSlots.
+  static constexpr int kSlots = 9;
+  const std::wstring& slot(int number) const { return slots_[static_cast<std::size_t>(number - 1)]; }
+  void SetSlot(int number, std::wstring path) { slots_[static_cast<std::size_t>(number - 1)] = std::move(path); }
 
   // Case-insensitive, separators and a trailing one folded, so the same
   // folder typed two ways is one card.
@@ -61,6 +73,7 @@ class Settings {
   std::filesystem::path file_;
   std::wstring lastCard_;
   std::wstring imageFolder_;
+  std::array<std::wstring, kSlots> slots_;
   // In the order they were first used, so the file stays readable.
   std::vector<Card> cards_;
 };

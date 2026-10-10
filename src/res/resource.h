@@ -35,6 +35,12 @@
 #define ID_CARD_PROTECT      40062
 #define ID_CARD_INSERT_IMAGE 40063
 #define ID_CARD_NEW          40064
+// The nine slots, Ctrl+1 to Ctrl+9, and the dialog that fills them.
+#define ID_CARD_SLOTS        40065
+#define ID_CARD_SLOT1        40071
+#define ID_CARD_SLOT9        40079
+#define ID_CARD_SLOT_FIRST   ID_CARD_SLOT1
+#define ID_CARD_SLOT_LAST    ID_CARD_SLOT9
 
 // Dialogs. IDC_STATIC as winres.h has it, which aria.rc does not include.
 #ifndef IDC_STATIC
@@ -48,5 +54,12 @@
 #define IDC_CARD_NEW_IMAGE   212
 #define IDC_CARD_NEW_BLANK   213
 #define IDC_CARD_NEW_SIZES   214
+#define IDD_CARD_SLOTS       220
+#define IDC_SLOT_LIST        221
+#define IDC_SLOT_FOLDER      222
+#define IDC_SLOT_IMAGE       223
+#define IDC_SLOT_CURRENT     224
+#define IDC_SLOT_CLEAR       225
+#define IDC_SLOT_LOCK        226
 
 #endif

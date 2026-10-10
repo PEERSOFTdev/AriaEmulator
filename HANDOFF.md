@@ -1407,6 +1407,26 @@ soubor s běžnou pamětí karty bajt po bajtu (`src/card_image.*`).
   (např. paměť, kterou emulátor nuluje a skutečná RAM ne), není
   rozhodnuto.
 
+**Sloty, 10. 10. 2026 (`ar-aj1`, krok 5).** Devět slotů `Ctrl+1` až
+`Ctrl+9` a dialog „Sloty s kartami“ (Karta → Spravovat sloty) podle
+Eureky, zjednodušené: každá karta tu má složku nebo soubor, takže
+neuložená karta „*pamat“ z Eureky nemá protějšek.
+
+- `nastaveni.txt`: `slotN=cesta`. Zámek patří kartě (řádek `kartaN`),
+  ne slotu; zámek nastavený v dialogu u složky, která kartou ještě nebyla,
+  se zapíše s velikostí 0 = neznámá, a taková složka se při vložení ze
+  slotu zeptá na velikost.
+- Slot se složkou známé velikosti nebo s obrazem vloží kartu hned; prázdný
+  slot a zmizelá cesta se ohlásí se jménem slotu.
+- Položky slotů na konci nabídky Karta nesou jméno karty (přepisuje je
+  `RefreshSlotItems` při otevření nabídky) a mají předponu „F11, “ jako
+  ostatní zkratky.
+- Změna zámku v dialogu u karty, která je ve stroji, se na ni přenese
+  s tónem (`ToggleCardLock`).
+- Volba slotu v dialogu Nová karta (Eureka ji má) zatím chybí.
+- `card_selftest`: sloty a zámek bez velikosti tam a zpět. Dialog a
+  vkládání ze slotu ověří uživatel.
+
 ### 6.9 Napájení
 
 `TURNOFF.COM` (16 B): `cli; mov dx,0701h; mov al,0; out dx,al; jmp $` —

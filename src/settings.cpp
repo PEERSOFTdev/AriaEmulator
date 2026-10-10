@@ -16,6 +16,8 @@ namespace {
 // Keys are ASCII, so a key retyped without diacritics still matches.
 constexpr char kLastCardKey[] = "posledni-karta";
 constexpr char kImageFolderKey[] = "slozka-obrazu";
+// "slot3=D:\Karty\Dopisy": a slot and its folder or image.
+constexpr char kSlotPrefix[] = "slot";
 // One card per line, numbered because the parser keeps the last value of a
 // repeated key: "karta1=1048576;0;C:\Dopisy" -- size in bytes, 1 when
 // locked, then the folder or image file, last, because a path may hold a
@@ -88,6 +90,11 @@ void Settings::RememberCard(const std::wstring& path, uint32_t size, bool locked
   cards_.push_back({path, size, locked});
 }
 
+void Settings::SetCardLocked(const std::wstring& path, bool locked) {
+  const Card* known = FindCard(path);
+  RememberCard(path, known ? known->size : 0, locked);
+}
+
 void Settings::Load() {
   std::ifstream input(file_, std::ios::binary);
   if (!input) return;
@@ -108,6 +115,11 @@ void Settings::Load() {
     }
     if (key == kImageFolderKey) {
       imageFolder_ = FromUtf8(value);
+      continue;
+    }
+    if (key.size() == std::size(kSlotPrefix) && key.starts_with(kSlotPrefix) && key.back() >= '1' &&
+        key.back() <= '0' + kSlots) {
+      SetSlot(key.back() - '0', FromUtf8(value));
       continue;
     }
     if (key.starts_with(kCardPrefix)) {
@@ -138,6 +150,9 @@ bool Settings::Save(std::wstring& error) const {
       L"\r\n";
   if (!lastCard_.empty()) text += L"posledni-karta=" + lastCard_ + L"\r\n";
   if (!imageFolder_.empty()) text += L"slozka-obrazu=" + imageFolder_ + L"\r\n";
+  for (int number = 1; number <= kSlots; ++number) {
+    if (!slot(number).empty()) text += L"slot" + std::to_wstring(number) + L"=" + slot(number) + L"\r\n";
+  }
   for (std::size_t i = 0; i < cards_.size(); ++i) {
     text += L"karta" + std::to_wstring(i + 1) + L"=" + std::to_wstring(cards_[i].size) + L";" +
             (cards_[i].locked ? L"1" : L"0") + L";" + cards_[i].path + L"\r\n";

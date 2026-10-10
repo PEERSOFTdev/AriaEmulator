@@ -222,7 +222,24 @@ Co se zapisuje do složky:
 Změny ve složce, které uděláte ve Windows, dokud je karta ve slotu, Aria
 neuvidí — karta je kopie z chvíle vložení; uvidí je až po novém vložení.
 Soubor, který mezitím změníte vy i Aria, dostane při zápisu verzi
-z Arie. Sloty `Ctrl+1` až `Ctrl+9` přijdou.
+z Arie.
+
+### Sloty
+
+Devět slotů vkládá karty jedním stiskem, jako sloty s disketami
+v emulátoru Eureky: **`F11`, `Ctrl+1` až `Ctrl+9`**. Každý slot nese
+složku nebo obraz karty. Karta, která už někdy ve slotu Arie byla, se
+vloží hned se svou velikostí a zámkem; složka, která kartou ještě nebyla,
+se nejdřív zeptá na velikost. Prázdný slot, nebo slot, jehož složka či
+obraz zmizel, to řekne.
+
+Sloty se plní v nabídce **Karta → Spravovat sloty…**. V seznamu je každý
+slot s číslem (to je jeho zkratka) a se zámkem; tlačítka **Přiřadit
+složku**, **Přiřadit obraz**, **Sem vloženou kartu** (karta, která je
+právě ve slotu Arie) a **Vyprázdnit slot**. Zaškrtávátko **Zamknout tuto
+kartu proti zápisu** patří kartě, ne slotu: dva sloty s touž kartou mají
+jeden zámek a zámek platí i pro `Ctrl+I`. Na konci nabídky Karta je devět
+položek pojmenovaných podle karet ve slotech.
 
 ## Zvuk
 

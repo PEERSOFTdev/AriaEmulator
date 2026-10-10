@@ -141,7 +141,10 @@ const wchar_t kShortcutHelp[] =
     L"\r\n"
     L"F11, Ctrl+O vloží kartu z obrazu, souboru s obsahem karty bajt po\r\n"
     L"bajtu. F11, Ctrl+M založí novou kartu: prázdnou složku, nebo obraz\r\n"
-    L"naformátovaný či nenaformátovaný, který naformátuje až Aria.";
+    L"naformátovaný či nenaformátovaný, který naformátuje až Aria.\r\n"
+    L"\r\n"
+    L"F11, Ctrl+1 až Ctrl+9 vloží kartu ze slotu. Sloty naplníte v nabídce\r\n"
+    L"Karta, Spravovat sloty.";
 
 }  // namespace
 
@@ -196,6 +199,9 @@ void MainWindow::RegisterCommands() {
   OnCommand(ID_CARD_NEW, [this] { InsertNewCard(); });
   OnCommand(ID_CARD_EJECT, [this] { EjectCard(/*quiet=*/false); });
   OnCommand(ID_CARD_PROTECT, [this] { ToggleCardLock(); });
+  OnCommand(ID_CARD_SLOTS, [this] { ManageSlots(); });
+  for (int number = 1; number <= Settings::kSlots; ++number)
+    OnCommand(ID_CARD_SLOT_FIRST + number - 1, [this, number] { InsertSlot(number); });
   OnCommand(ID_ACTIVATE_MENU, [this] {
     // What Alt and F10 would do, on a key the Aria has no use for.  Posted
     // rather than sent, so the menu loop does not start inside the
@@ -213,6 +219,10 @@ void MainWindow::RegisterCommands() {
 void MainWindow::InsertCardFromFolder() {
   const std::wstring folder = win::PickFolder(hwnd_, L"Vyberte složku, ze které bude karta");
   if (folder.empty()) return;
+  InsertFolderAskingSize(folder);
+}
+
+void MainWindow::InsertFolderAskingSize(const std::wstring& folder) {
   std::vector<uint32_t> sizes;
   uint64_t bytes = 0;
   std::wstring error;
@@ -245,6 +255,103 @@ void MainWindow::InsertCardFromImage() {
   if (!MountImageCard(file, known && known->locked)) return;
   ToneInserted();
   if (cardLocked_) ToneLocked();
+}
+
+void MainWindow::InsertSlot(int number) {
+  const std::wstring path = settings_.slot(number);
+  // An empty slot answers rather than doing nothing: Ctrl+digit fires from
+  // the accelerator table whatever the menu says, and silence is what a
+  // hang sounds like (the Eureka's InsertSlot).
+  if (path.empty()) {
+    MessageBoxW(hwnd_,
+                (L"Slot " + std::to_wstring(number) +
+                 L" je prázdný.\r\n\r\nPřiřadit mu kartu můžete v nabídce Karta → Spravovat sloty.")
+                    .c_str(),
+                L"Sloty s kartami", MB_OK | MB_ICONINFORMATION);
+    return;
+  }
+  std::error_code ec;
+  const Settings::Card* known = settings_.FindCard(path);
+  const bool locked = known && known->locked;
+  if (std::filesystem::is_directory(path, ec)) {
+    // A folder that was a card goes in at its size, at once; one that never
+    // was, or was only locked in the slots dialog, is asked for one.
+    if (!known || known->size == 0) {
+      InsertFolderAskingSize(path);
+      return;
+    }
+    if (!MountFolderCard(path, known->size, locked)) return;
+  } else if (std::filesystem::is_regular_file(path, ec)) {
+    if (!MountImageCard(path, locked)) return;
+  } else {
+    // Named, so the user knows which of the nine has gone stale.
+    MessageBoxW(hwnd_,
+                (L"Karta ze slotu " + std::to_wstring(number) + L" se nedá najít:\r\n\r\n" + path +
+                 L"\r\n\r\nJe-li to odpojený disk, připojte ho. Jinak slotu přiřaďte jinou kartu v nabídce "
+                 L"Karta → Spravovat sloty.")
+                    .c_str(),
+                L"Sloty s kartami", MB_OK | MB_ICONWARNING);
+    return;
+  }
+  ToneInserted();
+  if (cardLocked_) ToneLocked();
+}
+
+void MainWindow::ManageSlots() {
+  SlotsDialog::Slots before;
+  SlotsDialog::Locks locks{};
+  for (int number = 1; number <= Settings::kSlots; ++number) {
+    const auto index = static_cast<std::size_t>(number - 1);
+    before[index] = settings_.slot(number);
+    // The card in the machine has the lock the machine says; Ctrl+Z
+    // changes both, but this way it cannot drift.
+    if (!before[index].empty() && !cardHome_.empty() && Settings::SamePath(before[index], cardHome_.wstring())) {
+      locks[index] = cardLocked_;
+    } else if (const Settings::Card* known = settings_.FindCard(before[index]); known && !before[index].empty()) {
+      locks[index] = known->locked;
+    }
+  }
+  SlotsDialog dialog(before, locks, cardHome_.wstring(), cardLocked_, settings_,
+                     CardDialogFolder(/*image=*/true));
+  if (dialog.ShowModal(hwnd_, IDD_CARD_SLOTS) != IDOK) return;
+  // The lock belongs to the card, so it goes where Ctrl+Z writes it.
+  bool inMachineLocked = cardLocked_;
+  for (int number = 1; number <= Settings::kSlots; ++number) {
+    const auto index = static_cast<std::size_t>(number - 1);
+    const std::wstring& path = dialog.slots()[index];
+    settings_.SetSlot(number, path);
+    if (path.empty()) continue;
+    settings_.SetCardLocked(path, dialog.locks()[index]);
+    if (!cardHome_.empty() && Settings::SamePath(path, cardHome_.wstring())) inMachineLocked = dialog.locks()[index];
+  }
+  // The card in the machine follows a lock changed here, with its tone.
+  // ToggleCardLock saves the settings too.
+  if (!cardHome_.empty() && inMachineLocked != cardLocked_) {
+    ToggleCardLock();
+    return;
+  }
+  std::wstring error;
+  if (!settings_.Save(error)) MessageBoxW(hwnd_, error.c_str(), L"Sloty s kartami", MB_OK | MB_ICONWARNING);
+}
+
+void MainWindow::RefreshSlotItems(HMENU menu) const {
+  for (int number = 1; number <= Settings::kSlots; ++number) {
+    const UINT id = static_cast<UINT>(ID_CARD_SLOT_FIRST + number - 1);
+    wchar_t existing[512];
+    if (!GetMenuStringW(menu, id, existing, static_cast<int>(std::size(existing)), MF_BYCOMMAND)) continue;
+    const std::wstring current(existing);
+    const std::size_t tab = current.find(L'\t');
+    if (tab == std::wstring::npos) continue;
+    // The number is the mnemonic as well as the shortcut.
+    std::wstring wanted =
+        L"&" + std::to_wstring(number) + L" " + SlotDisplayName(settings_.slot(number)) + current.substr(tab);
+    if (wanted == current) continue;
+    MENUITEMINFOW info{};
+    info.cbSize = sizeof(info);
+    info.fMask = MIIM_STRING;
+    info.dwTypeData = wanted.data();
+    SetMenuItemInfoW(menu, id, FALSE, &info);
+  }
 }
 
 void MainWindow::InsertNewCard() {
@@ -584,6 +691,7 @@ void MainWindow::RefreshMenu() const {
   // Meaningless while the keyboard is released: every key already goes to
   // Windows.  Greyed says so where a screen reader reads it.
   EnableMenuItem(menu, ID_KEYBOARD_PASSONCE, MF_BYCOMMAND | (released_ ? MF_GRAYED : MF_ENABLED));
+  RefreshSlotItems(menu);
   RefreshShortcutText(menu);
 }
 
@@ -594,9 +702,13 @@ void MainWindow::RefreshMenu() const {
 // the only place that names them.
 void MainWindow::RefreshShortcutText(HMENU menu) const {
   static constexpr wchar_t kPrefix[] = L"F11, ";
-  for (UINT id : {ID_FILE_EXIT, ID_MACHINE_RESET, ID_MACHINE_POWERON, ID_MACHINE_POWEROFF, ID_CARD_INSERT,
-                  ID_CARD_INSERT_IMAGE, ID_CARD_NEW, ID_CARD_EJECT, ID_CARD_PROTECT, ID_HELP_KEYS}) {
-    wchar_t text[128];
+  std::vector<UINT> ids = {ID_FILE_EXIT,   ID_MACHINE_RESET, ID_MACHINE_POWERON, ID_MACHINE_POWEROFF,
+                           ID_CARD_INSERT, ID_CARD_INSERT_IMAGE, ID_CARD_NEW, ID_CARD_EJECT,
+                           ID_CARD_PROTECT, ID_HELP_KEYS};
+  for (UINT id = ID_CARD_SLOT_FIRST; id <= ID_CARD_SLOT_LAST; ++id) ids.push_back(id);
+  for (UINT id : ids) {
+    // Long enough for a slot named after a long folder.
+    wchar_t text[512];
     // MF_BYCOMMAND searches the submenus too, so the ids are enough.
     if (!GetMenuStringW(menu, id, text, static_cast<int>(std::size(text)), MF_BYCOMMAND)) continue;
     std::wstring item(text);

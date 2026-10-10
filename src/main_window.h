@@ -79,7 +79,15 @@ class MainWindow : public win::Window {
 
   // The card slot (HANDOFF 6.8, ar-aj1).
   void InsertCardFromFolder();
+  // Asks for the card's size, among those `folder` fits on, and puts it in.
+  void InsertFolderAskingSize(const std::wstring& folder);
   void InsertCardFromImage();
+  // Ctrl+1 to Ctrl+9: the card a slot names, at its remembered size and
+  // lock. An empty or stale slot is told, never silent.
+  void InsertSlot(int number);
+  void ManageSlots();
+  // The slot items take the names of their cards.
+  void RefreshSlotItems(HMENU menu) const;
   // Karta -> Vložit novou kartu: an empty folder, or an image formatted or
   // not, made and put in.
   void InsertNewCard();

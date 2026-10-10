@@ -1,10 +1,12 @@
 #ifndef ARIA_CARD_DIALOGS_H
 #define ARIA_CARD_DIALOGS_H
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
 
+#include "settings.h"
 #include "win/dialog.h"
 
 // "512 KB", "1 MB": a card size as the user hears it.
@@ -34,6 +36,54 @@ class CardSizeDialog : public win::Dialog {
   std::vector<uint32_t> sizes_;
   uint32_t preferred_;
   uint32_t chosen_ = 0;
+};
+
+// What a slot is called in the menu and the slots dialog: the name of its
+// folder or image, or "(prázdný)".
+std::wstring SlotDisplayName(const std::wstring& slot);
+
+// The nine slots (HANDOFF 6.8, ar-aj1), after the Eureka emulator's
+// SlotsDialog: works on copies and hands them back on OK. The lock belongs
+// to the card, not to the slot, so two slots with one card share it, and a
+// slot pointed at a card already locked arrives ticked.
+class SlotsDialog : public win::Dialog {
+ public:
+  using Slots = std::array<std::wstring, Settings::kSlots>;
+  using Locks = std::array<bool, Settings::kSlots>;
+
+  // currentCard is the home of the card in the machine's slot (empty for
+  // none) and currentLocked its switch, so "Sem vloženou kartu" brings the
+  // truth rather than what the settings last wrote down.
+  SlotsDialog(Slots slots, Locks locks, std::wstring currentCard, bool currentLocked, const Settings& settings,
+              std::wstring imageFolder)
+      : slots_(std::move(slots)),
+        locks_(locks),
+        currentCard_(std::move(currentCard)),
+        currentLocked_(currentLocked),
+        settings_(settings),
+        imageFolder_(std::move(imageFolder)) {}
+
+  const Slots& slots() const { return slots_; }
+  const Locks& locks() const { return locks_; }
+
+ protected:
+  bool OnInit() override;
+  bool OnCommand(int id, int notification) override;
+
+ private:
+  // Rebuilds the list with the selection kept, so a screen reader stays on
+  // the line the user was working on.
+  void FillList(int select);
+  int Selected() const;
+  void SetSlot(int index, std::wstring path, bool locked);
+  void RefreshLock(int index);
+
+  Slots slots_;
+  Locks locks_{};
+  std::wstring currentCard_;
+  bool currentLocked_ = false;
+  const Settings& settings_;
+  std::wstring imageFolder_;
 };
 
 // A new card (HANDOFF 6.8, ar-aj1), after the Eureka emulator's Nová

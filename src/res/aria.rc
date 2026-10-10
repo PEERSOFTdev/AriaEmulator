@@ -69,6 +69,22 @@ BEGIN
         MENUITEM "Vložit &novou kartu…\tF11, Ctrl+M",           ID_CARD_NEW
         MENUITEM "V&ysunout kartu\tF11, Ctrl+0",                ID_CARD_EJECT
         MENUITEM "&Zamknout proti zápisu\tF11, Ctrl+Z",         ID_CARD_PROTECT
+        MENUITEM SEPARATOR
+        /* As in the Eureka's Disketa: no shortcut for an act done now and
+           then, and the nine slots last, so they are not walked past on the
+           way to everything else. Their text is rewritten from the settings
+           whenever the menu opens (RefreshSlotItems); what stands here is
+           what an empty slot says. */
+        MENUITEM "&Spravovat sloty…",                           ID_CARD_SLOTS
+        MENUITEM "&1 (prázdný)\tF11, Ctrl+1",                   40071
+        MENUITEM "&2 (prázdný)\tF11, Ctrl+2",                   40072
+        MENUITEM "&3 (prázdný)\tF11, Ctrl+3",                   40073
+        MENUITEM "&4 (prázdný)\tF11, Ctrl+4",                   40074
+        MENUITEM "&5 (prázdný)\tF11, Ctrl+5",                   40075
+        MENUITEM "&6 (prázdný)\tF11, Ctrl+6",                   40076
+        MENUITEM "&7 (prázdný)\tF11, Ctrl+7",                   40077
+        MENUITEM "&8 (prázdný)\tF11, Ctrl+8",                   40078
+        MENUITEM "&9 (prázdný)\tF11, Ctrl+9",                   40079
     END
     POPUP "S&troj"
     BEGIN
@@ -128,6 +144,15 @@ BEGIN
     "I",        ID_CARD_INSERT,      VIRTKEY, CONTROL
     "O",        ID_CARD_INSERT_IMAGE, VIRTKEY, CONTROL
     "M",        ID_CARD_NEW,         VIRTKEY, CONTROL
+    "1",        40071,               VIRTKEY, CONTROL
+    "2",        40072,               VIRTKEY, CONTROL
+    "3",        40073,               VIRTKEY, CONTROL
+    "4",        40074,               VIRTKEY, CONTROL
+    "5",        40075,               VIRTKEY, CONTROL
+    "6",        40076,               VIRTKEY, CONTROL
+    "7",        40077,               VIRTKEY, CONTROL
+    "8",        40078,               VIRTKEY, CONTROL
+    "9",        40079,               VIRTKEY, CONTROL
     "0",        ID_CARD_EJECT,       VIRTKEY, CONTROL
     "Z",        ID_CARD_PROTECT,     VIRTKEY, CONTROL
 END
@@ -168,4 +193,27 @@ BEGIN
     LISTBOX         IDC_CARD_NEW_SIZES, 7, 74, 246, 66, LBS_NOTIFY | WS_VSCROLL | WS_GROUP | WS_TABSTOP
     DEFPUSHBUTTON   "OK", IDOK, 149, 143, 50, 14, WS_GROUP
     PUSHBUTTON      "Storno", IDCANCEL, 203, 143, 50, 14
+END
+
+/* The slots, after the Eureka emulator's "Sloty s disketami": a list that
+   carries the slot number (the shortcut) and the lock in every line, the
+   buttons that point a slot somewhere, and the lock of the selected slot's
+   card. WS_GROUP on the first button and on the box, so the arrows walk the
+   buttons among themselves and never into the list. No button for an
+   unsaved card: every card here has a folder or a file. */
+IDD_CARD_SLOTS DIALOGEX 0, 0, 300, 190
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Sloty s kartami"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "&Sloty:", IDC_STATIC, 7, 7, 286, 9
+    LISTBOX         IDC_SLOT_LIST, 7, 19, 286, 90, LBS_NOTIFY | WS_VSCROLL | WS_GROUP | WS_TABSTOP
+    PUSHBUTTON      "&Přiřadit složku…", IDC_SLOT_FOLDER, 7, 115, 138, 14, WS_GROUP
+    PUSHBUTTON      "Přiřadit &obraz…", IDC_SLOT_IMAGE, 155, 115, 138, 14
+    PUSHBUTTON      "Sem &vloženou kartu", IDC_SLOT_CURRENT, 7, 133, 138, 14
+    PUSHBUTTON      "Vyprázdnit s&lot", IDC_SLOT_CLEAR, 155, 133, 138, 14
+    AUTOCHECKBOX    "&Zamknout tuto kartu proti zápisu", IDC_SLOT_LOCK, 7, 155, 286, 10,
+                    BS_AUTOCHECKBOX | WS_GROUP | WS_TABSTOP
+    DEFPUSHBUTTON   "OK", IDOK, 186, 169, 50, 14, WS_GROUP
+    PUSHBUTTON      "Storno", IDCANCEL, 243, 169, 50, 14
 END
