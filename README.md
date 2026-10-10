@@ -164,8 +164,12 @@ z PC se tak dostanou do Arie a zpět. Nabídka **Karta** (`F12`, `A`):
   dvou od 64 KB do 64 MB) se odmítne. Obraz se zapisuje stejně jako
   složka, celý. **Obraz s příponou `.flash` je fleš karta** (násobek
   2 MB, nejvýš 64 MB); ostatní jsou karty SRAM. Fleš karta drží data bez
-  baterie, hlášení baterie na ni tedy nikdy neupozorní, a ze složky být
-  nemůže: její
+  baterie, hlášení baterie na ni tedy nikdy neupozorní. Nový formát
+  vznikne formátováním jednotky `C:`; se zapnutou podporou staré fleš
+  karty (MODE) je tatáž karta i jednotkou `E:`, a formátováním `E:`
+  vznikne starý formát (nejvýš 4 MB). Karta pak funguje jen na té
+  jednotce, na které byla naformátovaná; druhá hlásí „celkové
+  selhání“. Ze složky být fleš karta nemůže: její
   formát (FTL) si zakládá ovladač Arie.
 - **`F11`, `Ctrl+M`** (Vložit novou kartu) založí novou kartu. V dialogu
   zvolíte druh a velikost (u SRAM předvybraný 1 MB) a pak, kam ji uložit:

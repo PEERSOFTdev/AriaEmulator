@@ -1576,6 +1576,8 @@ naformátovaná na C:, tedy FTL, a TRICKSS2 čte jen starý Flash-FAT —
   D98h „nemůže formátovat více než čtyři megabajty se starým formátem“
   a nabídne D99h „použít jenom čtyři megabajty“ (`+0600h`–`+0638h`).
 - Starý formát v emulátoru zatím neověřen (čeká na zkoušku: formát E:).
+  **Ověřeno uživatelem týž den:** formát jednotky E: a práce s ní fungují
+  (TRICKSS2, Flash-FAT, příkazy 28F008SA z jeho vlastní tabulky).
 
 ### 6.9 Napájení
 
