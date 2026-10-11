@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "fdc82077.h"
 #include "parallel_port.h"
 
 // A Micro Solutions Backpack floppy drive on the Aria's printer port
@@ -29,7 +30,14 @@
 // behind the chip; the rest are the chip's own: 28h and 2Ch the 3-byte
 // out and in pointers of its buffer RAM, 30h a 3-byte count, 80h the
 // buffer's data port (+16C0h-+17B6h).
-class BackpackFloppy : public ParallelPort::Device {
+//
+// The buffer stands in for DMA (+29CCh): the driver zeroes both pointers,
+// sets register 4 (bit 0 direction, 1 = from the disk; bit 1 enable) and
+// writes the byte count - 1 to 30h; a disk write first fills the buffer
+// through 80h, a disk read empties it through 80h as far as the pointers
+// differ (+16C0h, +1771h). Register 0Bh bit 7 is the controller's
+// interrupt, polled for every command's end (+170Dh, +2761h, +27B3h).
+class BackpackFloppy : public ParallelPort::Device, private Fdc82077::Dma {
  public:
   // `unit` is the number the driver probes, 0-99 (+3349h): the last two
   // digits of the serial number, by which README.DOC orders the letters.
@@ -39,10 +47,16 @@ class BackpackFloppy : public ParallelPort::Device {
   void Control(uint8_t pc_control) override;
   uint8_t Status() override;
 
+  // The drive's disk goes in and out here.
+  Fdc82077& fdc() { return fdc_; }
+
   // Every register access, for working the chip out (boot_test -v).
   std::function<void(const std::string&)> log;
 
  private:
+  size_t Transfer(uint8_t* data, size_t size, bool to_host) override;
+  bool TerminalCount() const override { return dma_done_ > count_; }
+
   enum class State { kIdle, kProbe, kConnected };
 
   uint8_t ReadRegister();
@@ -67,8 +81,10 @@ class BackpackFloppy : public ParallelPort::Device {
 
   std::array<uint8_t, 0x40> chip_{};  // The chip's own one-byte registers.
   uint32_t out_ = 0, in_ = 0, count_ = 0;
+  uint32_t dma_done_ = 0;  // Bytes moved since the count was written.
   std::vector<uint8_t> buffer_ = std::vector<uint8_t>(0x20000);
-  std::array<uint8_t, 8> fdc_{};  // Stub until the controller is emulated.
+  // The drive is at position 1 of the EEPROM, drive 1 of the controller.
+  Fdc82077 fdc_{1, *this};
 
   std::array<uint16_t, 64> eeprom_{};
   uint8_t eeprom_pins_ = 0;

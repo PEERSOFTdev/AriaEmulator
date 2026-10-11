@@ -141,6 +141,43 @@ class SpeechLog {
   std::string text_;
 };
 
+// A 1.44 MB diskette as DOS FORMAT lays it out (BPB of 2880 sectors, two
+// FATs of 9 sectors, 224 root entries, data from sector 33) with one file
+// in the root, cluster 2 onwards.
+std::vector<uint8_t> FloppyImage(const char* name83, const std::string& text) {
+  std::vector<uint8_t> image(1474560);
+  const uint8_t boot[] = {0xEB, 0x3C, 0x90, 'A', 'R', 'I', 'A', 'T', 'E', 'S', 'T',
+                          0x00, 0x02, 1, 1, 0, 2, 224, 0, 0x40, 0x0B, 0xF0, 9, 0, 18, 0, 2, 0};
+  std::memcpy(image.data(), boot, sizeof boot);
+  image[510] = 0x55;
+  image[511] = 0xAA;
+  const uint32_t clusters = static_cast<uint32_t>((text.size() + 511) / 512);
+  for (int fat = 0; fat < 2; ++fat) {
+    uint8_t* f = &image[(1 + 9 * fat) * 512];
+    f[0] = 0xF0;
+    f[1] = f[2] = 0xFF;
+    for (uint32_t c = 2; c < 2 + clusters; ++c) {
+      const uint16_t next = c + 1 < 2 + clusters ? static_cast<uint16_t>(c + 1) : 0xFFF;
+      uint8_t* at = f + c * 3 / 2;
+      if (c & 1) {
+        at[0] = static_cast<uint8_t>((at[0] & 0x0F) | (next << 4));
+        at[1] = static_cast<uint8_t>(next >> 4);
+      } else {
+        at[0] = static_cast<uint8_t>(next);
+        at[1] = static_cast<uint8_t>((at[1] & 0xF0) | (next >> 8));
+      }
+    }
+  }
+  uint8_t* entry = &image[19 * 512];
+  std::memcpy(entry, name83, 11);
+  entry[11] = 0x20;
+  entry[26] = 2;
+  const uint32_t size = static_cast<uint32_t>(text.size());
+  for (int i = 0; i < 4; ++i) entry[28 + i] = static_cast<uint8_t>(size >> (8 * i));
+  std::memcpy(&image[33 * 512], text.data(), text.size());
+  return image;
+}
+
 // INT 21h inside the running machine, as a program on the Aria would call
 // it, to see drive C: the way DOS shows it. It waits until the CPU runs in
 // one of the `waiting` blocks with interrupts enabled and no hardware
@@ -966,6 +1003,12 @@ int wmain(int argc, wchar_t** argv) {
   // it as drive E:. On this second machine and not the first: attached
   // there, 6.87 missed the later swap to a blank card (ar-z2e).
   BackpackFloppy backpack(65);
+  if (verbose) backpack.log = [](const std::string& line) {
+    if (line.rfind("FDC", 0) == 0) std::cout << "backpack: " << line << "\n";
+  };
+  std::string floppy_text;
+  for (int i = 0; floppy_text.size() < 1200; ++i) floppy_text += "Disketa v Backpacku, radek " + std::to_string(i) + "\r\n";
+  backpack.fdc().Insert(*Fdc82077::Disk::FromImage(FloppyImage("DISKETA TXT", floppy_text), false));
   second.parallel().Attach(&backpack);
   second.PowerOn();
   SpeechLog second_speech;
@@ -998,6 +1041,70 @@ int wmain(int argc, wchar_t** argv) {
     std::cout << "FAIL boot: MAINMENU asks to format drive D: again after a power-on with the memory kept\n";
     return 1;
   }
+  // The diskette through BACKPACK.SYS and the 82077 (HANDOFF 6.7, ar-l5v):
+  // DOS reads E:\DISKETA.TXT, three sectors, then writes E:\ZAPIS.TXT of
+  // 3000 bytes, which must then be in the image as a host would read it.
+  {
+    std::vector<Mcb> waiting;
+    const Mcb* free_block = nullptr;
+    const std::vector<Mcb> blocks = McbChain(second);
+    for (const Mcb& block : blocks) {
+      if (block.name == "MAINMENU" || block.name == "AAPI") waiting.push_back(block);
+      if (block.owner == 0 && (!free_block || block.paragraphs > free_block->paragraphs)) free_block = &block;
+    }
+    if (waiting.size() != 2 || !free_block || free_block->paragraphs < 0x400) {
+      std::cout << "FAIL boot: diskette: no MAINMENU and AAPI blocks or no free DOS memory\n";
+      return 1;
+    }
+    const uint16_t data = static_cast<uint16_t>(free_block->segment + 1);
+    const uint16_t top = static_cast<uint16_t>(data + std::min<uint32_t>(free_block->paragraphs, 0x1000));
+    const uint32_t base = static_cast<uint32_t>(data) << 4;
+    auto dos = [&](uint16_t ax, uint16_t bx, uint16_t cx, uint16_t dx, Cpu80188::Registers& out) {
+      out = {};
+      out.ax = ax;
+      out.bx = bx;
+      out.cx = cx;
+      out.dx = dx;
+      out.ds = out.es = data;
+      return DosCall(second, second_speech, waiting, top, out) && !(out.flags & 0x0001);
+    };
+    auto put = [&](uint32_t at, const char* text) {
+      for (std::size_t i = 0; i <= std::strlen(text); ++i) second.Poke(base + at + i, static_cast<uint8_t>(text[i]));
+    };
+    put(0x00, "E:\\DISKETA.TXT");
+    put(0x20, "E:\\ZAPIS.TXT");
+    const uint16_t length = static_cast<uint16_t>(floppy_text.size());
+    Cpu80188::Registers r;
+    std::string step;
+    if (!dos(0x3D00, 0, 0, 0x00, r)) step = "open of E:\\DISKETA.TXT";
+    uint16_t handle = r.ax;
+    if (step.empty() && (!dos(0x3F00, handle, 0x1000, 0x100, r) || r.ax != length)) step = "read of E:\\DISKETA.TXT";
+    if (step.empty() && !dos(0x3E00, handle, 0, 0, r)) step = "close of E:\\DISKETA.TXT";
+    for (uint16_t i = 0; step.empty() && i < length; ++i)
+      if (second.Peek(base + 0x100 + i) != static_cast<uint8_t>(floppy_text[i])) step = "compare of E:\\DISKETA.TXT";
+    constexpr uint16_t kWritten = 3000;
+    for (uint16_t i = 0; i < kWritten; ++i) second.Poke(base + 0x2000 + i, static_cast<uint8_t>(i * 13 + 5));
+    if (step.empty() && !dos(0x3C00, 0, 0, 0x20, r)) step = "create of E:\\ZAPIS.TXT";
+    handle = r.ax;
+    if (step.empty() && (!dos(0x4000, handle, kWritten, 0x2000, r) || r.ax != kWritten)) step = "write of E:\\ZAPIS.TXT";
+    if (step.empty() && !dos(0x3E00, handle, 0, 0, r)) step = "close of E:\\ZAPIS.TXT";
+    if (step.empty()) {
+      // DOS has closed the file, so FAT and directory are on the disk.
+      Fat12Volume volume;
+      std::wstring ignored;
+      std::vector<uint8_t> bytes;
+      if (!volume.Open(backpack.fdc().disk()->bytes, ignored) || !volume.ReadFile("ZAPIS.TXT", bytes) ||
+          bytes.size() != kWritten) {
+        step = "ZAPIS.TXT in the image";
+      }
+      for (uint16_t i = 0; step.empty() && i < kWritten; ++i)
+        if (bytes[i] != static_cast<uint8_t>(i * 13 + 5)) step = "contents of ZAPIS.TXT in the image";
+    }
+    if (!step.empty()) {
+      std::cout << "FAIL boot: diskette: " << step << " (AX " << std::hex << r.ax << std::dec << ")\n";
+      return 1;
+    }
+  }
   // F1 starts the word processor; without the memory ROM-DOS left free,
   // MAINMENU said "plná paměť" and "please disable old flash card support
   // in mode" instead (MAINMENU.EXE+0351h-+0372h, HANDOFF 6.2).
@@ -1018,7 +1125,7 @@ int wmain(int argc, wchar_t** argv) {
                " cards swapped after 2 s and at once without mixing, write protection prompted and kept,"
                " card battery in the battery report, a blank card refused without a prompt,"
                " a 4 MB flash card formatted by DLFMT and a file kept through eject and reinsert,"
-               " a Backpack floppy announced as drive E:,"
+               " a Backpack floppy announced as drive E:, a file read from its 1.44 MB diskette and one written there,"
                " konec says vypnuto and switches off, D: kept through"
                " a memory snapshot without a new question, F1 starts the word processor)\n";
   return 0;

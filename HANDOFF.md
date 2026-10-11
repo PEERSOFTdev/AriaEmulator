@@ -1115,6 +1115,56 @@ a kód se v souboru střídají).
   druh křehkosti 6.87 jako `ar-z2e`, zapsáno tam.
 - Další krok: řadič 82077 s obrazem diskety a přenos přes buffer čipu.
 
+**Řadič 82077 a disketa, 11. 10. 2026 (`ar-l5v`, krok 4).**
+`src/fdc82077.*` za čipem (`BackpackFloppy::fdc()`), obraz diskety
+720 KB (250 kb/s, CCR 2) nebo 1,44 MB (500 kb/s, CCR 0) v paměti.
+
+- **Přenos:** fáze provedení je okamžitá, poslední bajt příkazu přesune
+  sektory a vyvolá přerušení. Čip je „DMA“: registr 4 bit 1 povolení,
+  bit 0 směr (1 = z disku; `+29DFh`), z disku do bufferu na ukazatel 2Ch,
+  na disk z bufferu od ukazatele 28h, nejvýš počet + 1 bajtů (30h, zápis
+  počtu nuluje přenesené). Registr 0Bh bit 7 = přerušení řadiče (čeká
+  na něj i SEEK a RECALIBRATE, `+272Fh`), registr 0 bit 2 = 0 (ovladač
+  smí vybírat buffer už během čtení, `+27F0h`).
+- **Co ovladač posílá** (stopa `boot_test -v`): po resetu DOR 4× SENSE
+  INTERRUPT (výsledky C0h–C3h), PERPENDICULAR MODE 12h 00h (protože
+  `[8Eh]` = 05h z tabulky `+365Fh`), zápis 80h do DSR, SPECIFY s ND = 0
+  (DMA), RECALIBRATE + SENSE DRIVE STATUS (stopa 0 = ST3 bit 4), READ ID,
+  READ 46h / WRITE 45h po jednom až několika sektorech, SEEK. **Na
+  začátku každé operace** (`+21C4h`) ovladač vybere frontu: SENSE
+  INTERRUPT tak dlouho, dokud nepřijde 80h (`+221Ah`–`+2227h`). Odpověď
+  80h na prázdnou frontu je proto nutná, jiná by tu smyčku nikdy
+  neukončila.
+- **DSR 80h se jako softwarový reset 82077 nebere:** reset by nechal čtyři
+  stavy C0h–C3h a smyčka po SEEK (`+272Fh`, čeká ST0 s číslem mechaniky)
+  by vzala C1h, tedy chybu. Rychlost jen z CCR (registr 7).
+- **Hlava v ID sektoru se kontroluje.** Ovladač začíná pro hlavu 1 s ID
+  hlavy 0 (`[0B6h + hlava]`); na „no data“ (ST1 04h) zavolá READ ID,
+  zapamatuje si H z výsledku a čtení zopakuje (`+203Ah`–`+2055h`). Bez
+  kontroly by emulátor četl s chybným ID, které skutečná disketa odmítne.
+  Totéž C (ST2 10h), N ≠ 2 a sektor mimo stopu (ST1 04h); jiná rychlost
+  než disketa nebo prázdná mechanika = ST1 01h (chybí adresová značka),
+  aby ovladač podle své tabulky rychlostí našel i 720 KB — **to je zatím
+  jen z disasembleru, stopou neověřeno.** Bit MFM (40h) se zatím
+  nekontroluje; pro 720 KB bude třeba: index 0 tabulky rychlostí posílá
+  příkazy bez MFM (`+238Bh`) při 250 kb/s a bez kontroly by ovladač
+  disketu 720 KB vzal jako FM (a tak by ji i formátoval, `+23EBh`).
+- Linka výměny diskety (DIR bit 7, neinvertovaná): po vložení i bez
+  diskety 1, SEEK nebo RECALIBRATE s disketou ji shodí. Ovladač podle ní
+  po kroku hlavy má hlásit prázdnou mechaniku hned (80h,
+  `+231Eh`–`+235Ah`), ne po vypršení čekání — **z disasembleru,
+  neověřeno stopou.**
+- Ověřeno je jen **1,44 MB** (čtení a zápis), 720 KB ne.
+- `boot_test`: obraz 1,44 MB sestavený v testu (FAT12 jako po FORMAT)
+  se souborem přes tři sektory; DOS ho přečte jako `E:\DISKETA.TXT`,
+  zapíše `E:\ZAPIS.TXT` (3000 B) a ten se pak najde v bajtech obrazu
+  (`Fat12Volume`). 7.05 i 6.87.
+- **Zbývá:** kontrola bitu MFM a záznam zápisů CCR do stopy, FORMAT
+  TRACK (příkaz 0Dh, ID sektorů z bufferu po 4 B, `+23D2h`), ověřit
+  720 KB, prázdnou mechaniku a ochranu proti zápisu stopou; pak nabídka
+  Disketa. Obrazy 360 KB a 1,2 MB by potřebovaly typ
+  mechaniky 5,25" ve slově 4 EEPROM (jména `+0AABh`).
+
 ### 6.8 PCMCIA
 
 `CARDMAN.EXE` (PKLITE); `TRICKSS2.EXE` čte `057Fh`, `ATKBD.COM` `057Eh`.

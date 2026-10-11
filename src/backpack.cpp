@@ -26,6 +26,9 @@ uint32_t* Wide(uint8_t reg, uint32_t& out, uint32_t& in, uint32_t& count) {
 }  // namespace
 
 BackpackFloppy::BackpackFloppy(uint8_t unit) : unit_(unit) {
+  fdc_.log = [this](const std::string& line) {
+    if (log) log(line);
+  };
   eeprom_.fill(0xFFFF);
   // What BACKPACK.SYS reads (+318Ch-+3233h): word 0 low byte = NOT high
   // byte, or the drive is refused; word 1 high byte goes to chip register
@@ -168,10 +171,13 @@ uint8_t BackpackFloppy::ReadRegister() {
   } else if (reg == 0x80) {
     value = buffer_[out_++ & kBufferMask];
   } else if (reg >= 0x40 && reg < 0x48) {
-    // Floppy controller stub: MSR ready for a command byte.
-    value = reg == 0x44 ? 0x80 : fdc_[reg - 0x40];
+    value = fdc_.Read(reg - 0x40);
   } else if (reg == 0x00) {
-    value = static_cast<uint8_t>((chip_[0] & 0x7F) | (eeprom_do_ ? 0x80 : 0));
+    // Bit 2 low lets the driver empty the buffer while a read runs
+    // (+1764h, +27F0h); bit 7 is the EEPROM's DO.
+    value = static_cast<uint8_t>((chip_[0] & 0x7B) | (eeprom_do_ ? 0x80 : 0));
+  } else if (reg == 0x0B) {
+    value = static_cast<uint8_t>((chip_[0x0B] & 0x7F) | (fdc_.Interrupt() ? 0x80 : 0));
   } else {
     value = chip_[reg & 0x3F];
   }
@@ -185,12 +191,30 @@ void BackpackFloppy::WriteRegister(uint8_t value) {
   if (uint32_t* wide = Wide(reg, out_, in_, count_)) {
     const int shift = 8 * byte_index_++;
     *wide = (*wide & ~(0xFFu << shift)) | static_cast<uint32_t>(value) << shift;
+    if (reg == 0x30) dma_done_ = 0;
   } else if (reg == 0x80) {
     buffer_[in_++ & kBufferMask] = value;
   } else if (reg >= 0x40 && reg < 0x48) {
-    fdc_[reg - 0x40] = value;
+    fdc_.Write(reg - 0x40, value);
   } else {
     chip_[reg & 0x3F] = value;
     if (reg == 0x06) EepromControl(value);
   }
+}
+
+// The controller's DMA, served from the buffer: from the disk at the in
+// pointer, to the disk from the out pointer, as the host's own 80h
+// accesses use them, until count + 1 bytes have gone.
+size_t BackpackFloppy::Transfer(uint8_t* data, size_t size, bool to_host) {
+  const uint8_t mode = chip_[4];
+  if (!(mode & 2) || static_cast<bool>(mode & 1) != to_host) return 0;
+  size_t moved = 0;
+  for (; moved < size && !TerminalCount(); ++moved, ++dma_done_) {
+    if (to_host) {
+      buffer_[in_++ & kBufferMask] = data[moved];
+    } else {
+      data[moved] = buffer_[out_++ & kBufferMask];
+    }
+  }
+  return moved;
 }
