@@ -161,7 +161,7 @@ $(BIN)/dsp_disasm.exe: $(BUILD)/test_dsp_disasm.o $(BUILD)/adsp_2100dasm.o | $(B
 # Karta ze slozky bez firmwaru (HANDOFF 6.8, ar-aj1).
 $(BIN)/card_selftest.exe: $(BUILD)/test_card_selftest.o $(BUILD)/card_folder.o $(BUILD)/fat12.o $(BUILD)/text_codec.o \
                           $(BUILD)/card_image.o $(BUILD)/settings.o $(BUILD)/snapshot.o $(BUILD)/zip_reader.o \
-                          $(BUILD)/pc_card.o | $(BIN)
+                          $(BUILD)/pc_card.o $(BUILD)/fdc82077.o | $(BIN)
 	$(CXX) $(STATIC) -o $@ $^ -lshell32 -lole32 -luuid
 
 # Jadro CPU bez dat testu: kratke programy (PCB, preruseni, past ESC).

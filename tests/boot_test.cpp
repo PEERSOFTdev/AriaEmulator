@@ -141,20 +141,27 @@ class SpeechLog {
   std::string text_;
 };
 
-// A 1.44 MB diskette as DOS FORMAT lays it out (BPB of 2880 sectors, two
-// FATs of 9 sectors, 224 root entries, data from sector 33) with one file
-// in the root, cluster 2 onwards.
-std::vector<uint8_t> FloppyImage(const char* name83, const std::string& text) {
-  std::vector<uint8_t> image(1474560);
-  const uint8_t boot[] = {0xEB, 0x3C, 0x90, 'A', 'R', 'I', 'A', 'T', 'E', 'S', 'T',
-                          0x00, 0x02, 1, 1, 0, 2, 224, 0, 0x40, 0x0B, 0xF0, 9, 0, 18, 0, 2, 0};
+// A diskette as DOS FORMAT lays it out, with one file in the root, cluster
+// 2 onwards. 1.44 MB: 2880 sectors, cluster of 1 sector, two FATs of 9
+// sectors, 224 root entries, data from sector 33. 720 KB: 1440 sectors,
+// cluster of 2, FATs of 3, 112 root entries, data from sector 14.
+std::vector<uint8_t> FloppyImage(bool high_density, const char* name83, const std::string& text) {
+  const uint8_t per_cluster = high_density ? 1 : 2, fat_sectors = high_density ? 9 : 3;
+  const uint8_t root_entries = high_density ? 224 : 112;
+  const uint16_t total = high_density ? 2880 : 1440;
+  const uint8_t media = high_density ? 0xF0 : 0xF9;
+  const uint32_t root = 1 + 2u * fat_sectors, data = root + root_entries * 32u / 512;
+  std::vector<uint8_t> image(total * 512u);
+  const uint8_t boot[] = {0xEB, 0x3C, 0x90, 'A', 'R', 'I', 'A', 'T', 'E', 'S', 'T', 0x00, 0x02, per_cluster, 1, 0, 2,
+                          root_entries, 0, static_cast<uint8_t>(total), static_cast<uint8_t>(total >> 8), media,
+                          fat_sectors, 0, static_cast<uint8_t>(high_density ? 18 : 9), 0, 2, 0};
   std::memcpy(image.data(), boot, sizeof boot);
   image[510] = 0x55;
   image[511] = 0xAA;
-  const uint32_t clusters = static_cast<uint32_t>((text.size() + 511) / 512);
+  const uint32_t clusters = static_cast<uint32_t>((text.size() + 512u * per_cluster - 1) / (512u * per_cluster));
   for (int fat = 0; fat < 2; ++fat) {
-    uint8_t* f = &image[(1 + 9 * fat) * 512];
-    f[0] = 0xF0;
+    uint8_t* f = &image[(1 + fat_sectors * fat) * 512];
+    f[0] = media;
     f[1] = f[2] = 0xFF;
     for (uint32_t c = 2; c < 2 + clusters; ++c) {
       const uint16_t next = c + 1 < 2 + clusters ? static_cast<uint16_t>(c + 1) : 0xFFF;
@@ -168,13 +175,13 @@ std::vector<uint8_t> FloppyImage(const char* name83, const std::string& text) {
       }
     }
   }
-  uint8_t* entry = &image[19 * 512];
+  uint8_t* entry = &image[root * 512];
   std::memcpy(entry, name83, 11);
   entry[11] = 0x20;
   entry[26] = 2;
   const uint32_t size = static_cast<uint32_t>(text.size());
   for (int i = 0; i < 4; ++i) entry[28 + i] = static_cast<uint8_t>(size >> (8 * i));
-  std::memcpy(&image[33 * 512], text.data(), text.size());
+  std::memcpy(&image[data * 512], text.data(), text.size());
   return image;
 }
 
@@ -1008,7 +1015,11 @@ int wmain(int argc, wchar_t** argv) {
   };
   std::string floppy_text;
   for (int i = 0; floppy_text.size() < 1200; ++i) floppy_text += "Disketa v Backpacku, radek " + std::to_string(i) + "\r\n";
-  backpack.fdc().Insert(*Fdc82077::Disk::FromImage(FloppyImage("DISKETA TXT", floppy_text), false));
+  // A 720 KB image cut short after the file's last cluster (sector 14 on,
+  // two clusters of two sectors), as archived images often are.
+  std::vector<uint8_t> short_image = FloppyImage(false, "DISKETA TXT", floppy_text);
+  short_image.resize(18 * 512);
+  backpack.fdc().Insert(*Fdc82077::Disk::FromImage(std::move(short_image), false));
   second.parallel().Attach(&backpack);
   second.PowerOn();
   SpeechLog second_speech;
@@ -1042,8 +1053,9 @@ int wmain(int argc, wchar_t** argv) {
     return 1;
   }
   // The diskette through BACKPACK.SYS and the 82077 (HANDOFF 6.7, ar-l5v):
-  // DOS reads E:\DISKETA.TXT, three sectors, then writes E:\ZAPIS.TXT of
-  // 3000 bytes, which must then be in the image as a host would read it.
+  // DOS reads E:\DISKETA.TXT, three sectors, from the short 720 KB image,
+  // then writes E:\ZAPIS.TXT of 3000 bytes, which must then be in the
+  // image as a host would read it.
   {
     std::vector<Mcb> waiting;
     const Mcb* free_block = nullptr;
@@ -1100,8 +1112,78 @@ int wmain(int argc, wchar_t** argv) {
       for (uint16_t i = 0; step.empty() && i < kWritten; ++i)
         if (bytes[i] != static_cast<uint8_t>(i * 13 + 5)) step = "contents of ZAPIS.TXT in the image";
     }
+    if (step.empty() && backpack.fdc().disk()->bytes.size() != 737280) step = "the short image padded to 720 KB";
     if (!step.empty()) {
       std::cout << "FAIL boot: diskette: " << step << " (AX " << std::hex << r.ax << std::dec << ")\n";
+      return 1;
+    }
+    // The drive emptied: opening a file must come back failed after AAPI's
+    // critical-error prompt; the test answers f, as for the write-protected
+    // card. Right after the last access DOS still trusted its buffers and
+    // "opened" the file without asking the drive, so the test waits 3 s,
+    // more than a hand needs to swap a disk.
+    backpack.fdc().Eject();
+    for (long long t = 0; t < AriaMachine::kCpuHz * 3LL; t += kSlice) second.Run(kSlice);
+    std::size_t said = second_speech.text().size();
+    Cpu80188::Registers o{};
+    o.ax = 0x3D00;
+    o.ds = o.es = data;
+    bool empty_prompted = false;
+    const uint16_t empty_from = second.PeekWord(0x46C);  // BIOS ticks, 18.2 a second.
+    // Says "disk e není připraven" within the first 3 s, as the real drive
+    // would after the driver's timeout (measured 11. 10. 2026).
+    const bool empty_returned = DosCall(second, second_speech, waiting, top, o, [&] {
+      empty_prompted = second_speech.text().find("ipraven", said) != std::string::npos;
+      press(second, 0, 0x0E, 1);
+    });
+    if (verbose) std::cout << "diskette: open on an empty drive " << (empty_returned ? "returned" : "did not return")
+                           << (empty_prompted ? " after a prompt" : "") << " in "
+                           << static_cast<uint16_t>(second.PeekWord(0x46C) - empty_from) << " ticks, AX " << std::hex << o.ax << std::dec << ", said: "
+                           << Printable(second_speech.text().substr(said)) << "\n";
+    if (!empty_returned || !empty_prompted || !(o.flags & 0x0001)) {
+      std::cout << "FAIL boot: diskette: an empty drive "
+                << (!empty_prompted ? "was not reported not ready" : empty_returned ? "opened a file"
+                    : "did not come back")
+                << "\n";
+      return 1;
+    }
+    // A write-protected 1.44 MB disk in its place: DOS must see the change
+    // (its other file is found, the 720 KB one's FAT not used), and
+    // creating a file must fail, after the write-protect prompt.
+    const std::string other_text = "Jina disketa, chranena proti zapisu\r\n";
+    backpack.fdc().Insert(*Fdc82077::Disk::FromImage(FloppyImage(true, "JINA    TXT", other_text), true));
+    const std::vector<uint8_t> protected_before = backpack.fdc().disk()->bytes;
+    put(0x40, "E:\\JINA.TXT");
+    put(0x60, "E:\\NOVY.TXT");
+    if (!dos(0x3D00, 0, 0, 0x40, r)) step = "open of E:\\JINA.TXT on the second disk";
+    handle = r.ax;
+    if (step.empty() && (!dos(0x3F00, handle, 0x100, 0x100, r) || r.ax != other_text.size()))
+      step = "read of E:\\JINA.TXT";
+    if (step.empty() && !dos(0x3E00, handle, 0, 0, r)) step = "close of E:\\JINA.TXT";
+    for (std::size_t i = 0; step.empty() && i < other_text.size(); ++i)
+      if (second.Peek(base + 0x100 + i) != static_cast<uint8_t>(other_text[i])) step = "compare of E:\\JINA.TXT";
+    if (!step.empty()) {
+      std::cout << "FAIL boot: diskette: " << step << " (AX " << std::hex << r.ax << std::dec << ")\n";
+      return 1;
+    }
+    said = second_speech.text().size();
+    bool wp_prompted = false;
+    Cpu80188::Registers c{};
+    c.ax = 0x3C00;
+    c.dx = 0x60;
+    c.ds = c.es = data;
+    const bool wp_returned = DosCall(second, second_speech, waiting, top, c, [&] {
+      wp_prompted = second_speech.text().find("proti z", said) != std::string::npos;
+      press(second, 0, 0x0E, 1);
+    });
+    if (verbose) std::cout << "diskette: create on a write-protected disk " << (wp_returned ? "returned" : "did not return")
+                           << ", AX " << std::hex << c.ax << std::dec << ", said: "
+                           << Printable(second_speech.text().substr(said)) << "\n";
+    if (!wp_returned || !wp_prompted || !(c.flags & 0x0001) || backpack.fdc().disk()->bytes != protected_before ||
+        backpack.fdc().disk()->modified) {
+      std::cout << "FAIL boot: diskette: a write-protected disk: "
+                << (!wp_prompted ? "no write-protect prompt" : !wp_returned ? "f did not end the call"
+                    : !(c.flags & 0x0001) ? "took a new file" : "changed") << "\n";
       return 1;
     }
   }
@@ -1125,7 +1207,8 @@ int wmain(int argc, wchar_t** argv) {
                " cards swapped after 2 s and at once without mixing, write protection prompted and kept,"
                " card battery in the battery report, a blank card refused without a prompt,"
                " a 4 MB flash card formatted by DLFMT and a file kept through eject and reinsert,"
-               " a Backpack floppy announced as drive E:, a file read from its 1.44 MB diskette and one written there,"
+               " a Backpack floppy announced as drive E:, a file read from a short 720 KB image and one written there,"
+               " an empty drive not ready, a write-protected 1.44 MB disk read and prompted,"
                " konec says vypnuto and switches off, D: kept through"
                " a memory snapshot without a new question, F1 starts the word processor)\n";
   return 0;

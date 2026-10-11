@@ -17,6 +17,7 @@
 
 #include "card_folder.h"
 #include "card_image.h"
+#include "fdc82077.h"
 #include "pc_card.h"
 #include "fat12.h"
 #include "settings.h"
@@ -338,6 +339,40 @@ int main() {
     Put(root / L"Obrazy" / L"Spatna.flash", std::string(1u << 20, '\xFF'));
     Check(!card_image::Read(root / L"Obrazy" / L"Spatna.flash", back, error) && !error.empty(),
           "a 1 MB flash image is refused");
+  }
+
+  // Diskette images for the Backpack drive (fdc82077.h, HANDOFF 6.7): the
+  // layout from the BPB, else from the size; short images padded with F6h.
+  {
+    auto bpb = [](size_t size, unsigned total, unsigned per_track) {
+      std::vector<uint8_t> image(size);
+      image[0x0B] = 0x00;
+      image[0x0C] = 0x02;
+      image[0x13] = static_cast<uint8_t>(total);
+      image[0x14] = static_cast<uint8_t>(total >> 8);
+      image[0x18] = static_cast<uint8_t>(per_track);
+      image[0x1A] = 2;
+      image[0x10] = 0x5A;  // A marker past the BPB, to see it kept.
+      return image;
+    };
+    auto disk = Fdc82077::Disk::FromImage(bpb(1474560, 2880, 18), false);
+    Check(disk && disk->sectors == 18 && disk->rate == 0 && disk->bytes.size() == 1474560, "a full 1.44 MB image");
+    disk = Fdc82077::Disk::FromImage(bpb(9216, 2880, 18), true);
+    Check(disk && disk->sectors == 18 && disk->bytes.size() == 1474560 && disk->bytes[9215] == 0 &&
+              disk->bytes[9216] == 0xF6 && disk->bytes.back() == 0xF6 && disk->bytes[0x10] == 0x5A &&
+              disk->write_protected,
+          "a short 1.44 MB image by its BPB, padded with F6h");
+    disk = Fdc82077::Disk::FromImage(bpb(9216, 1440, 9), false);
+    Check(disk && disk->sectors == 9 && disk->rate == 2 && disk->bytes.size() == 737280, "a short 720 KB image by its BPB");
+    disk = Fdc82077::Disk::FromImage(std::vector<uint8_t>(800 * 1024), false);
+    Check(disk && disk->sectors == 18, "without a BPB, an image over 720 KB is a 1.44 MB disk");
+    disk = Fdc82077::Disk::FromImage(std::vector<uint8_t>(100), false);
+    Check(disk && disk->sectors == 9 && disk->bytes.size() == 737280, "without a BPB, a tiny image is a 720 KB disk");
+    Check(!Fdc82077::Disk::FromImage(bpb(1474560, 2400, 15), false), "a 1.2 MB image is refused by its BPB");
+    Check(!Fdc82077::Disk::FromImage(bpb(368640, 720, 9), false), "a 360 KB image is refused by its BPB");
+    Check(!Fdc82077::Disk::FromImage(bpb(1474561, 2880, 18), false), "an image longer than its disk is refused");
+    Check(!Fdc82077::Disk::FromImage(std::vector<uint8_t>(1474560 + 512), false), "an image over 1.44 MB is refused");
+    Check(!Fdc82077::Disk::FromImage({}, false), "an empty file is refused");
   }
 
   // A flash card of two 28F008SA pairs (pc_card.h, HANDOFF 6.8): what

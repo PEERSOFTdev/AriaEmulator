@@ -36,18 +36,33 @@ int CommandLength(uint8_t command) {
 }  // namespace
 
 std::optional<Fdc82077::Disk> Fdc82077::Disk::FromImage(std::vector<uint8_t> bytes, bool write_protected) {
-  Disk disk;
-  if (bytes.size() == 80 * 2 * 9 * kSectorSize) {
-    disk.sectors = 9;
-    disk.rate = kRate250;
-  } else if (bytes.size() == 80 * 2 * 18 * kSectorSize) {
-    disk.sectors = 18;
-    disk.rate = kRate500;
-  } else {
-    return std::nullopt;
+  constexpr size_t kDisk720 = 80 * 2 * 9 * kSectorSize, kDisk1440 = 80 * 2 * 18 * kSectorSize;
+  if (bytes.empty()) return std::nullopt;
+  size_t full = bytes.size() <= kDisk720 ? kDisk720 : kDisk1440;
+  if (bytes.size() >= kSectorSize) {
+    auto word = [&](size_t at) { return static_cast<unsigned>(bytes[at] | bytes[at + 1] << 8); };
+    const unsigned sector_size = word(0x0B), total = word(0x13), per_track = word(0x18), heads = word(0x1A);
+    // A BPB at all: DOS 2+ boot sectors have one; without it (DOS 1, other
+    // systems) the size decides.
+    const bool bpb = sector_size == kSectorSize && total != 0 && per_track >= 1 && per_track <= 63 &&
+                     (heads == 1 || heads == 2);
+    if (bpb) {
+      if (heads == 2 && per_track == 9 && total == 80 * 2 * 9) {
+        full = kDisk720;
+      } else if (heads == 2 && per_track == 18 && total == 80 * 2 * 18) {
+        full = kDisk1440;
+      } else {
+        return std::nullopt;
+      }
+    }
   }
+  if (bytes.size() > full) return std::nullopt;
+  bytes.resize(full, 0xF6);
+  Disk disk;
   disk.cylinders = 80;
   disk.heads = 2;
+  disk.sectors = full == kDisk720 ? 9 : 18;
+  disk.rate = full == kDisk720 ? kRate250 : kRate500;
   disk.bytes = std::move(bytes);
   disk.write_protected = write_protected;
   return disk;
@@ -80,7 +95,9 @@ uint8_t Fdc82077::Read(int reg) {
     case 2: return dor_;
     case 4:
       // MSR: RQM always (the execution phase is instant), DIO and busy in
-      // the result phase, busy while taking command bytes.
+      // the result phase, busy while taking command bytes; only busy while
+      // a command waits forever on an empty drive.
+      if (stuck_) return 0x10;
       if (!result_.empty()) return 0xD0;
       return command_.empty() ? 0x80 : 0x90;
     case 5: {
@@ -107,6 +124,7 @@ void Fdc82077::Write(int reg, uint8_t value) {
       const bool released = !(dor_ & 4) && (value & 4);
       dor_ = value;
       if (!(value & 4)) {
+        stuck_ = false;
         interrupt_ = false;
         command_.clear();
         result_.clear();
@@ -127,7 +145,7 @@ void Fdc82077::Write(int reg, uint8_t value) {
       }
       break;
     case 5:
-      if (!result_.empty()) break;
+      if (!result_.empty() || stuck_) break;
       command_.push_back(value);
       if (static_cast<int>(command_.size()) == CommandLength(command_[0])) {
         Execute();
@@ -136,6 +154,11 @@ void Fdc82077::Write(int reg, uint8_t value) {
       break;
     case 7:
       rate_ = value & 3;  // CCR, from the table at +2AE2h (+225Ch).
+      if (log) {
+        char line[24];
+        std::snprintf(line, sizeof line, "FDC CCR %02X", value);
+        log(line);
+      }
       break;
     default:
       break;
@@ -147,7 +170,11 @@ void Fdc82077::Result(std::initializer_list<uint8_t> bytes) {
 }
 
 Fdc82077::Disk* Fdc82077::Readable(int drive) {
-  if (drive != drive_ || !disk_ || disk_->rate != rate_) return nullptr;
+  // Both densities are MFM. The driver's rate search starts with FM at
+  // 250 kbps (+238Bh leaves 40h off for rate index 0); taking that for a
+  // 720 KB disk would have it formatted as FM too (+23EBh).
+  const bool mfm = command_[0] & 0x40;
+  if (drive != drive_ || !disk_ || !mfm || disk_->rate != rate_) return nullptr;
   return &*disk_;
 }
 
@@ -159,7 +186,7 @@ void Fdc82077::Seek(int drive, int head, int cylinder) {
   } else {
     cylinder_[drive] = static_cast<uint8_t>(cylinder);
     // Stepping with a disk in clears the change line (+2331h-+2358h steps
-    // to check it, and with no disk in reports 80h, not ready).
+    // to check it).
     if (disk_) changed_ = false;
     pending_.push_back({static_cast<uint8_t>(kSeekEnd | unit), cylinder_[drive]});
   }
@@ -179,7 +206,16 @@ void Fdc82077::Execute() {
   }
   const int drive = command_.size() > 1 ? command_[1] & 3 : 0;
   const int head = command_.size() > 1 ? (command_[1] >> 2) & 1 : 0;
-  switch (command & 0x1F) {
+  const uint8_t op = command & 0x1F;
+  if ((op == 0x05 || op == 0x06 || op == 0x0A || op == 0x0D) && (drive != drive_ || !disk_)) {
+    // No disk turning, no index pulses: the 82077 waits for an ID field
+    // for ever. The driver's timeout (+2761h, +27B3h) then resets the
+    // controller and reports "not ready", where a quick ST1 01h answer
+    // made DOS say "general failure" (measured 11. 10. 2026).
+    stuck_ = true;
+    return;
+  }
+  switch (op) {
     case 0x03:  // SPECIFY: step and head times, and ND = 0 (DMA mode).
     case 0x12:  // PERPENDICULAR MODE, sent because [8Eh] bit 0 (+2272h).
     case 0x13:  // CONFIGURE

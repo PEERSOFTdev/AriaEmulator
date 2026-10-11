@@ -28,8 +28,13 @@ class Fdc82077 {
     int cylinders = 0, heads = 0, sectors = 0;
     uint8_t rate = 0;  // CCR value the disk is read at.
 
-    // Geometry from the image size: 720 KB (250 kbps) or 1.44 MB
-    // (500 kbps), the two densities of the "3.5 inch 1.4MB" drive.
+    // 720 KB (250 kbps) or 1.44 MB (500 kbps), the two densities of the
+    // "3.5 inch 1.4MB" drive. The layout comes from the BPB in the boot
+    // sector when there is one, else from the size: images cut short
+    // after the last used sector are common, and the rest is padded with
+    // F6h, as FORMAT leaves it, so a save writes the whole disk. An image
+    // whose BPB names another layout (360 KB, 1.2 MB...) or that is
+    // longer than its layout is refused.
     static std::optional<Disk> FromImage(std::vector<uint8_t> bytes, bool write_protected);
   };
 
@@ -74,6 +79,7 @@ class Fdc82077 {
   uint8_t dor_ = 0;
   uint8_t rate_ = 0;
   bool interrupt_ = false;
+  bool stuck_ = false;  // In an execution phase that never ends (no disk).
   std::vector<uint8_t> command_;
   std::deque<uint8_t> result_;
   // SENSE INTERRUPT answers: ST0 and the present cylinder.

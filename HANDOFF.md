@@ -1165,6 +1165,42 @@ a kód se v souboru střídají).
   Disketa. Obrazy 360 KB a 1,2 MB by potřebovaly typ
   mechaniky 5,25" ve slově 4 EEPROM (jména `+0AABh`).
 
+**Obrazy z archivu, 720 KB, prázdná mechanika, ochrana, 11. 10. 2026
+(`ar-l5v`, krok 5).**
+
+- **Cizí obrazy** (surové `.img`) se berou stejně jako vlastní. Rozvržení
+  z BPB v boot sektoru (512 B na sektor, celkem sektorů, sektorů na stopu,
+  hlavy), bez BPB podle velikosti (do 720 KB = 720 KB, jinak 1,44 MB).
+  **Kratší obraz** (uříznutý za posledním použitým sektorem) se v paměti
+  doplní F6h jako po FORMAT a uloží se celý — rozhodnutí uživatele z
+  11. 10. 2026: obrazy v archivu smějí narůst na plnou velikost. BPB
+  jiného rozvržení (360 KB, 1,2 MB…), obraz delší než jeho disk a prázdný
+  soubor se odmítnou. `card_selftest` to zkouší.
+- **MFM se kontroluje** (40h v READ, WRITE, READ ID; jinak ST1 01h), zápis
+  CCR jde do stopy. Na 720 KB ovladač nastaví CCR 02h a čte napoprvé; na
+  1,44 MB zkusí CCR 02h, dostane chybu a vezme 00h (stopa `boot_test -v`).
+- **Prázdná mechanika — oprava kroku 4:** rychlá odpověď ST1 01h dala
+  v DOS „celkové selhání e“, ne „není připraven“. Skutečný 82077 bez
+  diskety (bez indexových pulsů) READ ID nikdy nedokončí; emulátor teď
+  taky ne (MSR jen 10h, dokud ovladač řadič neresetuje přes DOR). Ovladač
+  po vypršení čekání (RECALIBRATE, READ ID při CCR 02h) hlásí chybu a AAPI
+  řekne **„disk e není připraven“** do 3 s. Odstavec kroku 4 o lince
+  výměny (`+231Eh`) tím neplatí jako cesta k hlášení: k prázdné mechanice
+  se ovladač dostal přes vypršení, ne přes DIR.
+- **Výměna diskety:** po vložení jiné diskety ovladač udělá RECALIBRATE,
+  READ ID přes rychlosti a DOS čte novou FAT (soubor druhé diskety se
+  najde). **Ale hned po posledním přístupu** (vysunuto okamžitě po
+  zavření souboru) DOS soubor „otevřel“ bez jediného příkazu řadiči —
+  důvěřoval vyrovnávacím pamětem. Po 3 s už se ptá. Stejné nebezpečí jako
+  u karet (`AriaMachine::kCardSwapTicks`): nabídka Disketa musí při
+  výměně nechat mechaniku chvíli prázdnou; práh zatím neměřen.
+- **Ochrana proti zápisu:** ST1 02h; AAPI řekne „e chráněn proti zápisu“,
+  na f vrátí chybu, obraz se nezmění.
+- `boot_test` (druhé zapnutí): 720 KB uříznutý na 9 KB — čtení, zápis,
+  doplnění na 737 280 B; vysunutí a po 3 s „není připraven“; chráněná
+  1,44 MB s jiným souborem — čtení a výzva při zápisu. 7.05 i 6.87.
+- **Zbývá:** FORMAT TRACK, změřit práh výměny, nabídka Disketa.
+
 ### 6.8 PCMCIA
 
 `CARDMAN.EXE` (PKLITE); `TRICKSS2.EXE` čte `057Fh`, `ATKBD.COM` `057Eh`.
