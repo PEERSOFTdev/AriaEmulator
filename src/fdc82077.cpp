@@ -1,5 +1,6 @@
 #include "fdc82077.h"
 
+#include <algorithm>
 #include <cstdio>
 
 namespace {
@@ -251,6 +252,9 @@ void Fdc82077::Execute() {
     case 0x0A:
       ReadId();
       break;
+    case 0x0D:
+      Format();
+      break;
     case 0x0F:  // SEEK
       Seek(drive, head, command_[2]);
       break;
@@ -274,6 +278,55 @@ void Fdc82077::ReadId() {
   } else {
     Result({st0, 0, 0, c, static_cast<uint8_t>(head), 1, 2});
   }
+  interrupt_ = true;
+}
+
+// FORMAT TRACK, 6 bytes as the driver builds them (+23D2h): command,
+// HD<<2|US, N, SC, GPL, filler; the sector IDs come through the DMA, four
+// bytes (C, H, R, N) a sector, which the driver put in the buffer
+// (+2477h-+2484h). The image keeps only the standard layout, so a sector
+// is filled when its ID fits the track; other IDs are dropped. A disk
+// formatted at the other density becomes that density, as a 1.44 MB disk
+// formatted as 720 KB ("720k, yes", README.DOC) does: the image is laid
+// out anew and its file then saved at the new size.
+void Fdc82077::Format() {
+  const int drive = command_[1] & 3;
+  const int head = (command_[1] >> 2) & 1;
+  const uint8_t n = command_[2], count = command_[3], filler = command_[5];
+  const uint8_t st0 = static_cast<uint8_t>(drive | head << 2);
+  const uint8_t cylinder = cylinder_[drive];
+  const bool mfm = command_[0] & 0x40;
+  // Which layout this rate and sector count make; others the drive cannot.
+  int sectors = 0;
+  if (mfm && n == 2 && rate_ == kRate250 && count == 9) sectors = 9;
+  if (mfm && n == 2 && rate_ == kRate500 && count == 18) sectors = 18;
+  Disk* disk = drive == drive_ && disk_ ? &*disk_ : nullptr;
+  uint8_t st1 = 0;
+  if (!disk || !sectors || cylinder >= 80) {
+    st1 = kMissingAddressMark;
+  } else if (disk->write_protected) {
+    st1 = kNotWritable;
+  }
+  uint8_t id[4] = {cylinder, static_cast<uint8_t>(head), 1, n};
+  if (!st1) {
+    if (sectors != disk->sectors) {
+      disk->sectors = sectors;
+      disk->rate = rate_;
+      disk->bytes.assign(static_cast<size_t>(disk->cylinders) * disk->heads * sectors * kSectorSize, 0xF6);
+    }
+    for (int i = 0; i < count; ++i) {
+      if (dma_.Transfer(id, 4, false) < 4) {
+        st1 = kOverrun;
+        break;
+      }
+      if (id[0] != cylinder || id[1] != head || id[2] < 1 || id[2] > sectors || id[3] != 2) continue;
+      const size_t offset =
+          ((static_cast<size_t>(cylinder) * disk->heads + head) * sectors + (id[2] - 1)) * kSectorSize;
+      std::fill_n(disk->bytes.begin() + static_cast<std::ptrdiff_t>(offset), kSectorSize, filler);
+    }
+    disk->modified = true;
+  }
+  Result({static_cast<uint8_t>((st1 ? kAbnormal : 0) | st0), st1, 0, id[0], id[1], id[2], id[3]});
   interrupt_ = true;
 }
 

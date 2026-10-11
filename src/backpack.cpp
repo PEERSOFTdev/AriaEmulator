@@ -47,7 +47,12 @@ BackpackFloppy::BackpackFloppy(uint8_t unit) : unit_(unit) {
   // the driver's names, "3.5 inch 1.4MB" (+0AABh). With this the driver
   // says "The following BACKPACK drive is available: Drive E: - 3.5 inch
   // 1.4MB", one floppy unit being E: as README.DOC on drive B: has it.
-  eeprom_[4] = 0x0007;
+  // The high byte is the drive's flags, as the driver's own default for
+  // type 7 has them (43h, table +3656h, used for FFh at +31F1h): bit 6 a
+  // disk-change line, so the media check reads DIR (+0676h AH=15h/16h,
+  // +1E29h) instead of guessing "unchanged" for 37 ticks after the last
+  // access (+099Bh); bits 0-4 index the step-rate table (+22AAh, +2A62h).
+  eeprom_[4] = 0x4307;
   char serial[9];
   std::snprintf(serial, sizeof serial, "014187%02u", static_cast<unsigned>(unit % 100));
   for (int i = 0; i < 4; ++i) {

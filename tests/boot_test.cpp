@@ -196,7 +196,8 @@ std::vector<uint8_t> FloppyImage(bool high_density, const char* name83, const st
 // free DOS block), and puts every register back afterwards. `io` gets the
 // registers after the call.
 bool DosCall(AriaMachine& m, SpeechLog& speech, const std::vector<Mcb>& waiting, uint16_t scratch_top,
-             Cpu80188::Registers& io, const std::function<void()>& stalled = {}) {
+             Cpu80188::Registers& io, const std::function<void()>& stalled = {},
+             const std::function<void()>& each_second = {}, long long seconds = 20) {
   if (!speech.hooked()) return false;
   for (int i = 0;; ++i) {
     const auto r = m.cpu().GetRegisters();
@@ -222,11 +223,30 @@ bool DosCall(AriaMachine& m, SpeechLog& speech, const std::vector<Mcb>& waiting,
   m.cpu().SetRegisters(call);
   speech.TakeReturn();
   bool back = false;
-  for (long long t = 0; t < AriaMachine::kCpuHz * 20LL && !back; t += 10'000) {
+  long long next_second = AriaMachine::kCpuHz;
+  for (long long t = 0; t < AriaMachine::kCpuHz * seconds && !back; t += 10'000) {
     m.Run(10'000);
     back = speech.TakeReturn();
     // Still in DOS after 3 s: a prompt waits for the user (INT 24h).
     if (!back && stalled && t == AriaMachine::kCpuHz * 3LL) stalled();
+    // A program that talks to the user (EXEC of FORMAT.EXE) is answered
+    // as it goes.
+    if (!back && each_second && t >= next_second) {
+      each_second();
+      next_second += AriaMachine::kCpuHz;
+    }
+  }
+  // The stub's "jmp $" may have been interrupted: restoring the registers
+  // inside a handler would abandon it with its in-service bit set, and the
+  // machine would wait on that interrupt for ever (ar-fiu: a timer tick,
+  // PCB 2Ch bit 0 or 6, after a run of calls). So the handler is let finish
+  // first, back on the jmp with nothing in service.
+  if (back) {
+    for (int i = 0; i < 2'000'000; ++i) {
+      const auto r = m.cpu().GetRegisters();
+      if (r.cs == 0xFFC0 && r.ip == 0x0264 && m.cpu().InWord(0x2C) == 0) break;
+      m.cpu().Step();
+    }
   }
   io = m.cpu().GetRegisters();
   m.cpu().SetRegisters(saved);
@@ -644,8 +664,9 @@ int wmain(int argc, wchar_t** argv) {
     // The card locked since power-on must be a drive DOS can ask about.
     // Without a CIS the driver took it for an unknown card and every access
     // said "celkové selhání c" (user's report, 10. 10. 2026, HANDOFF 6.8).
-    // Only the free space is asked: opening a file here, on 6.87, left the
-    // battery report silent later on, for reasons not yet known.
+    // Only the free space is asked: opening a file here, on 6.87, once left
+    // the battery report silent later on (ar-z2e; no longer reproducible
+    // on 11. 10. 2026, the likely cause DosCall's, fixed for ar-fiu).
     if (!dos(0x3600, 0, 0, 3, r) || r.ax == 0xFFFF || r.cx != 512 || r.dx == 0)
       step = "36h (free space) on a card locked since power-on";
     else if (machine.card()->Writes() != 0)
@@ -1008,7 +1029,8 @@ int wmain(int argc, wchar_t** argv) {
   // A Backpack floppy drive on the printer port, unit 65 (HANDOFF 6.7):
   // BACKPACK.SYS must find it at 680h-682h, read its EEPROM and announce
   // it as drive E:. On this second machine and not the first: attached
-  // there, 6.87 missed the later swap to a blank card (ar-z2e).
+  // there, 6.87 once missed the later swap to a blank card (ar-z2e; no
+  // longer reproducible on 11. 10. 2026, likely DosCall's fault, ar-fiu).
   BackpackFloppy backpack(65);
   if (verbose) backpack.log = [](const std::string& line) {
     if (line.rfind("FDC", 0) == 0) std::cout << "backpack: " << line << "\n";
@@ -1119,11 +1141,10 @@ int wmain(int argc, wchar_t** argv) {
     }
     // The drive emptied: opening a file must come back failed after AAPI's
     // critical-error prompt; the test answers f, as for the write-protected
-    // card. Right after the last access DOS still trusted its buffers and
-    // "opened" the file without asking the drive, so the test waits 3 s,
-    // more than a hand needs to swap a disk.
+    // card. At once after the last access: the driver reads the drive's
+    // change line (EEPROM flags 43h) rather than trusting the last 37 ticks
+    // (HANDOFF 6.7).
     backpack.fdc().Eject();
-    for (long long t = 0; t < AriaMachine::kCpuHz * 3LL; t += kSlice) second.Run(kSlice);
     std::size_t said = second_speech.text().size();
     Cpu80188::Registers o{};
     o.ax = 0x3D00;
@@ -1186,6 +1207,124 @@ int wmain(int argc, wchar_t** argv) {
                     : !(c.flags & 0x0001) ? "took a new file" : "changed") << "\n";
       return 1;
     }
+    // FORMAT.EXE on a blank 1.44 MB disk, as the file manager starts it
+    // (shifted F7; FILEMGR.EXE spawns "%Fs\format.exe" without a drive,
+    // FILEMGR.EXE+5972h), answered as a user would: e for the drive, then
+    // "sedm set dvacet kilo, ano nebo ne?" (GetYesNoMsg, FORMAT.EXE+18D6h
+    // for device type 7) and "formátování %s. pokračuj, ano nebo ne?"
+    // (GetYesNoMsgInMsg, +1968h). Answered y first, the disk becomes a
+    // 720 KB one; answered n, it stays 1.44 MB. Either way FORMAT says
+    // "formátování skončeno ok" and DOS can then write a file there.
+    Cpu80188::Registers a{};
+    a.ax = 0x4800;
+    a.bx = 0x100;
+    a.ds = a.es = data;
+    if (!DosCall(second, second_speech, waiting, top, a) || (a.flags & 0x0001)) {
+      std::cout << "FAIL boot: diskette: no DOS memory for FORMAT's EXEC\n";
+      return 1;
+    }
+    const uint16_t own = a.ax;
+    auto format = [&](bool as_720) -> std::string {
+      backpack.fdc().Eject();
+      backpack.fdc().Insert(*Fdc82077::Disk::FromImage(std::vector<uint8_t>(1474560, 0xF6), false));
+      for (long long t = 0; t < AriaMachine::kCpuHz * 3LL; t += kSlice) second.Run(kSlice);
+      const uint32_t ob = static_cast<uint32_t>(own) << 4;
+      const char prog[] = "B:\\SYSTEM\\FORMAT.EXE";
+      for (std::size_t i = 0; i < sizeof prog; ++i) second.Poke(ob + i, static_cast<uint8_t>(prog[i]));
+      second.Poke(ob + 0x40, 0);
+      second.Poke(ob + 0x41, 0x0D);
+      second.PokeWord(ob + 0x80, 0);
+      second.PokeWord(ob + 0x82, 0x40);
+      second.PokeWord(ob + 0x84, own);
+      second.PokeWord(ob + 0x86, 0xA0);
+      second.PokeWord(ob + 0x88, own);
+      second.PokeWord(ob + 0x8A, 0xA0);
+      second.PokeWord(ob + 0x8C, own);
+      for (int i = 0; i < 16; ++i) second.Poke(ob + 0xA0 + i, 0);
+      Cpu80188::Registers e{};
+      e.ax = 0x4B00;
+      e.bx = 0x80;
+      e.ds = e.es = own;
+      const std::size_t from = second_speech.text().size();
+      std::size_t heard = from;
+      int seconds = 0;
+      const bool returned = DosCall(second, second_speech, waiting, static_cast<uint16_t>(own + 0x100), e, {}, [&] {
+        ++seconds;
+        const std::string news = second_speech.text().substr(heard);
+        heard = second_speech.text().size();
+        if (verbose && !news.empty()) std::cout << "FORMAT " << seconds << " s: " << Printable(news) << "\n";
+        // The second question names the size too, so it is told apart by
+        // "pokračuj".
+        if (news.find("jednotky") != std::string::npos) {
+          press(second, 0, 0x14, 0);  // e: dots 1, 5.
+        } else if (news.find("pokra") != std::string::npos) {
+          press(second, 0, 0x3D, 0);  // y: dots 1, 3, 4, 5, 6.
+        } else if (news.find("dvacet kilo") != std::string::npos) {
+          press(second, 0, as_720 ? 0x3D : 0x1D, 0);  // y, or n: dots 1, 3, 4, 5.
+        }
+      }, 120);
+      const std::string said = second_speech.text().substr(from);
+      if (verbose) std::cout << "FORMAT " << (as_720 ? "720 KB" : "1.44 MB") << (returned ? " returned" : " did not return")
+                             << " after about " << seconds << " s\n";
+      if (!returned) return "FORMAT did not return";
+      if (said.find("skon") == std::string::npos || said.find("eno ok") == std::string::npos)
+        return "FORMAT did not say formátování skončeno ok";
+      const Fdc82077::Disk* disk = backpack.fdc().disk();
+      if (disk->bytes.size() != (as_720 ? 737280u : 1474560u)) return "the image is not the chosen size";
+      // DOS writes a file on the new disk; it must be on the image.
+      put(0x80, "E:\\NOVA.TXT");
+      const std::string text = "Na nove naformatovane diskete\r\n";
+      for (std::size_t i = 0; i < text.size(); ++i) second.Poke(base + 0x100 + i, static_cast<uint8_t>(text[i]));
+      Cpu80188::Registers w;
+      if (!dos(0x3C00, 0, 0, 0x80, w)) return "create of E:\\NOVA.TXT";
+      const uint16_t h = w.ax;
+      if (!dos(0x4000, h, static_cast<uint16_t>(text.size()), 0x100, w) || w.ax != text.size())
+        return "write of E:\\NOVA.TXT";
+      if (!dos(0x3E00, h, 0, 0, w)) return "close of E:\\NOVA.TXT";
+      Fat12Volume volume;
+      std::wstring ignored;
+      std::vector<uint8_t> bytes;
+      if (!volume.Open(backpack.fdc().disk()->bytes, ignored) || !volume.ReadFile("NOVA.TXT", bytes) ||
+          std::string(bytes.begin(), bytes.end()) != text)
+        return "NOVA.TXT not in the formatted image";
+      return {};
+    };
+    for (bool as_720 : {true, false}) {
+      const std::string failed = format(as_720);
+      if (!failed.empty()) {
+        std::cout << "FAIL boot: diskette: formatting as " << (as_720 ? "720 KB" : "1.44 MB") << ": " << failed << "\n";
+        return 1;
+      }
+    }
+    Cpu80188::Registers freed{};
+    freed.ax = 0x4900;
+    freed.ds = freed.es = own;
+    DosCall(second, second_speech, waiting, top, freed);
+    // Opt-in measurement (ARIA_BP_SWAPS set, with -v): disk A read, out,
+    // the drive empty for a gap, disk B in and read; does DOS see B? With
+    // the change line (EEPROM flags 43h) it does at every gap; without it
+    // only after 37 ticks (HANDOFF 6.7). It also found ar-fiu in DosCall.
+    if (verbose && std::getenv("ARIA_BP_SWAPS")) {
+      put(0xC0, "E:\\DISKA.TXT");
+      put(0xE0, "E:\\DISKB.TXT");
+      std::size_t said_from = second_speech.text().size();
+      for (double gap : {0.0, 0.25, 0.5, 1.0, 1.5, 2.0, 2.5}) {
+        backpack.fdc().Eject();
+        backpack.fdc().Insert(*Fdc82077::Disk::FromImage(FloppyImage(true, "DISKA   TXT", "A\r\n"), false));
+        for (long long t = 0; t < AriaMachine::kCpuHz * 4LL; t += kSlice) second.Run(kSlice);
+        Cpu80188::Registers x;
+        const bool a_read = dos(0x3D00, 0, 0, 0xC0, x) && dos(0x3E00, x.ax, 0, 0, x);
+        backpack.fdc().Eject();
+        for (long long t = 0; t < static_cast<long long>(AriaMachine::kCpuHz * gap); t += kSlice) second.Run(kSlice);
+        backpack.fdc().Insert(*Fdc82077::Disk::FromImage(FloppyImage(true, "DISKB   TXT", "B\r\n"), false));
+        const bool b_seen = dos(0x3D00, 0, 0, 0xE0, x) && dos(0x3E00, x.ax, 0, 0, x);
+        std::cout << "swap after " << gap << " s: A " << (a_read ? "read" : "FAILED") << ", B "
+                  << (b_seen ? "seen" : "NOT seen") << " (AX " << std::hex << x.ax << std::dec << "), timer in service "
+                  << (second.cpu().InWord(0x2C) & 1) << ", said " << Printable(second_speech.text().substr(said_from))
+                  << "\n";
+        said_from = second_speech.text().size();
+      }
+    }
   }
   // F1 starts the word processor; without the memory ROM-DOS left free,
   // MAINMENU said "plná paměť" and "please disable old flash card support
@@ -1209,6 +1348,7 @@ int wmain(int argc, wchar_t** argv) {
                " a 4 MB flash card formatted by DLFMT and a file kept through eject and reinsert,"
                " a Backpack floppy announced as drive E:, a file read from a short 720 KB image and one written there,"
                " an empty drive not ready, a write-protected 1.44 MB disk read and prompted,"
+               " blank disks formatted by FORMAT.EXE as 720 KB and 1.44 MB and written,"
                " konec says vypnuto and switches off, D: kept through"
                " a memory snapshot without a new question, F1 starts the word processor)\n";
   return 0;

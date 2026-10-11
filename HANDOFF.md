@@ -1201,6 +1201,68 @@ a kód se v souboru střídají).
   1,44 MB s jiným souborem — čtení a výzva při zápisu. 7.05 i 6.87.
 - **Zbývá:** FORMAT TRACK, změřit práh výměny, nabídka Disketa.
 
+**Formátování a práh výměny, 11. 10. 2026 (`ar-l5v`, krok 6).**
+
+- **FORMAT TRACK** (`Fdc82077::Format`): 6 bajtů podle `+23D2h`, ID
+  sektorů (C, H, R, N) přes buffer čipu po 4 B; sektor s ID, které sedí
+  na stopu, se vyplní výplňovým bajtem, jiná ID se zahodí (obraz drží jen
+  standardní rozvržení). Vrstvu dá rychlost a počet sektorů: 250 kb/s
+  a 9 = 720 KB, 500 kb/s a 18 = 1,44 MB, jiné ST1 01h. **Disk naformátovaný
+  na druhou hustotu se jí stane** (obraz se přeloží a uloží v nové
+  velikosti), jako fyzická disketa 1,44 MB naformátovaná na 720 KB.
+- **Formátuje to FORMAT.EXE Arie** („ARIA formatter rev 1.5a“). Správce
+  souborů ho spustí na Shift+F7 bez písmene jednotky (`FILEMGR.EXE+5972h`,
+  `spawnl` s `%Fs\format.exe`; 16 B argumentu z `DS:96h` se plní až za
+  běhu, nejspíš jmenovka po Shift+F8 — neověřeno), FORMAT se ptá řečí:
+  „vlož písmeno jednotky formátovaného nosiče“ (e), pak podle typu
+  zařízení z ovladače (`[1093h]`, tabulka `FORMAT.EXE+1CB4h`; typ 7 =
+  1,44 MB → `+18D6h`) `GetYesNoMsg` „sedm set dvacet kilo, ano nebo ne?“
+  (ano = 720 KB, ne = 1,44 MB; README.DOC „720k yes or no“) a
+  `GetYesNoMsgInMsg` „formátování %s. pokračuj, ano nebo ne?“ (`+1968h`,
+  zprávy MESSAGES.DAT D84h–D94h). Pak „formátuje“, „stiskni mezerník pro
+  předčasné ukončení“ a „formátování skončeno ok“. Ovladač formátuje od
+  stopy 79 dolů s ověřovacím čtením každé stopy, pak zapíše boot sektor,
+  FAT a kořen. V emulátoru asi 10 emulovaných sekund.
+- `boot_test`: FORMAT.EXE přes EXEC, odpovědi podle řeči (nový parametr
+  `DosCall` volaný každou sekundu); prázdný obraz 1,44 MB naformátovaný
+  na 720 KB (obraz pak 737 280 B) i na 1,44 MB, v obou DOS zapíše soubor
+  a ten je v obraze. 7.05 i 6.87.
+- **Práh výměny = 37 tiků (asi 2 s), pravidlo BACKPACK.SYS:** kontrola
+  média (`+099Bh`) vezme čas z `INT 1Ah` a je-li od posledního přístupu
+  k jednotce (`+09C7h` ho zapisuje) méně než 25h tiků, hlásí „nezměněno“
+  bez dotazu na mechaniku. Změřeno: výměna po 0–1,75 s DOS nevidí (otevře
+  soubor ze staré FAT), po 2 s a víc vidí. **Nabídka Disketa proto musí
+  při výměně nechat mechaniku prázdnou déle než 37 tiků**, obdoba
+  `kCardSwapTicks`.
+- **Otevřené (`ar-fiu`):** při jednom pořadí pokusů s výměnou (mezery 0
+  až 2,5 s za sebou) stroj po čtení diskety zamrzl s časovačem natrvalo
+  v obsluze (PCB `2Ch` = 1) a vnořeným řetězem `INT 08h` (RUNDOS,
+  ARIALARM, ARIAMODE, SPEAK) na zásobníku; jiné pořadí a kontrola na B:
+  ne. Hák `INT 13h` z BACKPACK.SYS (`+0A0Ah`, jen přemapuje DL 0/1 a
+  volá dál) disk při tiku nečte. Příčina nezjištěna.
+
+**Oprava téhož dne: linka výměny a zamrznutí byla chyba testu.**
+
+- **Práh 37 tiků platí jen pro mechaniku bez linky výměny.** Kontrola
+  média (`+0676h`) se nejdřív zeptá na typ (AH=15h přes `+09EBh`); typ 2
+  (linka výměny, `[si+7]` bit 6, `+1E0Dh`) vede na AH=16h, který čte DIR
+  (`+1E29h`), a pravidlo času (`+099Bh`) se použije jen jinak. Bajt
+  `[si+7]` je horní bajt slova mechaniky v EEPROM (`+320Ch`); pro FFh
+  ho ovladač bere z tabulky `+3656h`, pro typ 7 **43h** (bit 6 linka,
+  bity 0–4 index rychlosti kroku `+22AAh`/`+2A62h`). Emulátor měl ve
+  slově 4 jen 0007h, tedy mechaniku bez linky výměny; teď **4307h** podle
+  vlastního výchozího údaje ovladače **[předpoklad: skutečná EEPROM to
+  má stejně]**. S tím DOS vidí výměnu i bez mezery (měřeno 0–2,5 s,
+  `ARIA_BP_SWAPS`), test prázdné mechaniky už nečeká 3 s, a nabídka
+  Disketa **nemusí** mechaniku nechávat prázdnou.
+- **Zamrznutí (`ar-fiu`) způsoboval `DosCall` v `boot_test`**, ne
+  emulátor: obnovil registry po konci volání, i když CPU zrovna obsluhoval
+  přerušení, které přišlo během `jmp $` za voláním. Obsluha se tím
+  opustila s bitem v registru obsluhy (bit 0 časovač 2, bit 6 INT2 tik)
+  a stroj na to přerušení čekal napořád. Teď `DosCall` nechá obsluhu
+  doběhnout (CPU zpět na `jmp $`, `2Ch` = 0). Možná příčina i křehkosti
+  6.87 v `ar-z2e`.
+
 ### 6.8 PCMCIA
 
 `CARDMAN.EXE` (PKLITE); `TRICKSS2.EXE` čte `057Fh`, `ATKBD.COM` `057Eh`.
@@ -1678,6 +1740,13 @@ HRY (1 MB, zapamatovaná, tedy ve slotu už při zapnutí); správce souborů
   na 6.87 (ne 7.05) zůstalo pozdější hlášení baterie úplně tiché, s CIS
   i bez něj. Příčina neznámá; zda jde o chybu emulátoru, nerozhodnuto
   (`ar-z2e`).
+- **Doplněno 11. 10. 2026:** ani tento projev, ani druhý (Backpack na
+  prvním stroji, 6.7) se už neopakuje — ověřeno dočasnými přepínači
+  v `boot_test` na 6.87, **s opravou `DosCall` i bez ní** (test se od té
+  doby změnil a časování s ním). Prokázat příčinu tedy nejde; nejlépe
+  sedí chyba `DosCall` z `ar-fiu` (6.7): registry obnovené uprostřed
+  obsluhy přerušení, závislé na časování, oba projevy hned po výzvě
+  zodpovězené přes `DosCall`. `ar-z2e` uzavřen jako neopakovatelný.
 
 **Flash karta: čipy a příkazy, 10. 10. 2026 (`ar-ibv`, krok 1, jen
 rozbor).** Rozbalené programy 7.05; tabulky z dat souborů (offsety

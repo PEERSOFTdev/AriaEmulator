@@ -66,6 +66,7 @@ class Fdc82077 {
   void Execute();
   void ReadWrite(bool write);
   void ReadId();
+  void Format();
   void Seek(int drive, int head, int cylinder);
   void Result(std::initializer_list<uint8_t> bytes);
   // The disk in `drive`, readable at the current data rate, or nullptr.
