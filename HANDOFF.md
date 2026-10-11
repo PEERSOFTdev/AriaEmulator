@@ -1032,6 +1032,53 @@ je tedy v souboru +3500h.
   (nejspíš čtení po půlbajtech přes stavové linky) a řadič disket za
   nimi.
 
+**Čip Micro Solutions a řadič disket, 11. 10. 2026 (`ar-l5v`, krok 2,
+jen rozbor).** Offsety v souboru, rozebráno `ndisasm` po kusech (data
+a kód se v souboru střídají).
+
+- **Primitiva.** Ovladač volá 24 operací portu přes rozdělovač (`+0CE0h`:
+  vymění návratovou adresu za položku tabulky za voláním podle `[cs:0E57h]`
+  = (režim + 1) & 6). Vstupy po 9 B od `+0CF5h`, pro Arii vždy třetí
+  sloupec: `+0CF5h` připojit (`+1460h`), `+0D0Ch` odpojit (`+1507h`),
+  `+0D15h` čti registr DL (`+1671h`), `+0D1Eh` zapiš AL do registru DL
+  (`+16A9h`), `+0D27h` čti blok (`+16C0h`), `+0D30h` zapiš blok
+  (`+16E5h`), `+0D39h`/`+0D42h`/`+0D4Bh` zapiš vnitřní registr 4/5/6 ze
+  stínů `[96h]`/`[97h]`/`[98h]`, `+0D54h` vynuluj ukazatele, `+0D5Dh`
+  nastav počet, `+0D8Ah` (`+170Dh`), `+0D93h` (`+1764h`) a další.
+- **Režim půlbajtů jako Linux `bpck` mode 0:** adresa = data a přepnout
+  AUTOFEED (`+1542h`); zápis = data, STROBE nahoru, přepnout INIT,
+  STROBE dolů (`+1560h`); čtení = přepnout INIT, stav → dolní půlbajt,
+  přepnout INIT, stav → horní půlbajt, převod tabulkou `+17C9h`
+  (`+158Bh`); blok čtení/zápisu totéž ve smyčce (`+15D3h`, `+1626h`).
+  Adresa **40h + n** = registr n zařízení za čipem; bez 40h vnitřní
+  registry čipu.
+- **Za čipem je řadič disket PC (rodina 82077), registry 3F0h–3F7h:**
+  2 = DOR (reset `08h`, pak `0Ch`, stín `[0A0h]` s motorem a výběrem
+  mechaniky; `+2561h`), 4 = MSR při čtení (RQM 80h, DIO 40h před každým
+  bajtem; `+26F9h`, `+284Ch`) a DSR při zápisu (`+2299h`), 5 = FIFO
+  (příkazy `+2716h`, výsledky `+2874h`), 7 = DIR při čtení (bit 7 výměna
+  diskety, `+231Eh`) a CCR při zápisu (rychlost z tabulky `+2AE2h`,
+  `+225Ah`). Typy mechanik 360 KB–2,88 MB (`+0AABh`).
+- **Data jdou přes vyrovnávací paměť čipu (náhrada DMA):** vnitřní
+  registry 28h a 2Ch jsou dva tříbajtové ukazatele (nulují se `+1724h`,
+  čtou `+1771h` — rozdíl = bajty k vyzvednutí), 30h tříbajtový počet
+  (`+174Dh`), 80h datový port bloku. Zápis sektoru (`+29CCh`): ukazatele
+  na 0, blok do bufferu, počet − 1 do 30h, `[96h]` |= 2. Čtení: po
+  příkazu čeká na `+0D8Ah` (registr 0Bh bit 7, pak 0Fh) a `+0D93h`
+  (registr 0 bit 2, invertovaný), pak čte tolik bajtů, kolik ukazatele
+  říkají. Při startu ovladač zapíše do bufferu 256 B a přečte je zpět
+  (`+3352h`–`+3375h`): test paměti, který emulovaný čip musí projít.
+- Vnitřní registry dosud neobjasněné: 0 (bit 2), 4 (bity 0–3: směr,
+  povolení přenosu…), 5, 6 (bity 2, 3 přes `+1A19h`… — nejspíš EEPROM se
+  sériovým číslem jako u `bpck`, bitově), 0Bh, 0Fh (čte, zapisuje 18h
+  a 10h).
+- **Plán emulace:** (1) čip: připojení číslem jednotky, registry
+  v půlbajtech, vnitřní registry, buffer, EEPROM se sériovým číslem;
+  ověřit stopou, že ho ovladač při startu najde; (2) řadič 82077
+  s obrazem diskety 720 KB / 1,44 MB (reset, SPECIFY, RECALIBRATE, SEEK,
+  SENSE INTERRUPT, READ ID, READ/WRITE DATA, FORMAT TRACK) a „DMA“ přes
+  buffer; (3) nabídka Disketa podle Eureky (složka i obraz).
+
 ### 6.8 PCMCIA
 
 `CARDMAN.EXE` (PKLITE); `TRICKSS2.EXE` čte `057Fh`, `ATKBD.COM` `057Eh`.
