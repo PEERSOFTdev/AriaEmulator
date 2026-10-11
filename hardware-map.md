@@ -112,7 +112,14 @@ zašuměné daty; za doklad se berou jen porty načtené do `DX`.
   klávesy **[binárka]**, formát podle `KbdGetPowerOnState` **[API]**;
   `0584h` nejspíš kurzorový kříž se Shift uprostřed (maska `0Fh` = šipky,
   vzpomínka uživatele) **[předpoklad]** (HANDOFF 6.4)
-- `0600h`, `0601h`, `0681h` — `FOSSIL.COM`, nejspíš UART **[předpoklad]**
+- `0600h`, `0601h`, `0681h` — `FOSSIL.COM`, nejspíš UART **[předpoklad]**;
+  `0681h` je ale i datový registr tiskárny (níže), vyjasnit
+- `0680h`–`0682h` — **paralelní port (tiskárna, Backpack)**: zápis 681h
+  data, 682h řízení (bit 0 STROBE, 1 SELECT IN, 2 AUTOFEED, 3 INIT); čtení
+  680h i 681h stav (bit 0 PAPER END, 1 BUSY neinvertovaný, 2 ACK,
+  3 SELECT, 4 ERROR). BDA LPT1 = 680h. `AAPI.EXE+B5C8h` (rozbalený,
+  obsluha tiskárny), `BACKPACK.SYS+18DAh`/`+18FCh` a převodní tabulky
+  `+18C9h`/`+19C9h` (offsety v souboru) **[binárka]** (HANDOFF 6.7)
 - `0700h` — **baterie a nabíjení** (čtení): bit 4 = běh z baterie, bity
   0–3 úroveň 100/75/50/25 % (nejnižší nastavený), žádný = vybitá; při
   bitu 4 = 0 bit 5 nabito/udržovací vs. nabíjí se (`BKB.COM+15B5h`, hlášky

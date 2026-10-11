@@ -176,9 +176,12 @@ void HleBios::PowerOn(const std::vector<uint8_t>& kernel) {
   // BIOS data area.
   for (uint32_t a = kBda; a < kBda + 0x100; ++a) machine_.Poke(a, 0);
   // Equipment: 2 floppy-type drives (A: ROM disk, B: flash), 80x25 colour,
-  // one serial port. The parallel port's PC address is unknown (HANDOFF
-  // 6.7), so no LPT in the table yet.
-  machine_.PokeWord(kBda + kEquipment, 0x0261);
+  // one serial port, one printer port. The printer port is LPT1 at 680h:
+  // BACKPACK.SYS takes its port from here (file offset +32FDh) and talks
+  // only to 680h-682h (+18DAh, +18FCh), so the boot ROM had put 680h here
+  // (parallel_port.h, HANDOFF 6.7).
+  machine_.PokeWord(kBda + kEquipment, 0x4261);
+  machine_.PokeWord(kBda + 0x08, ParallelPort::kBase);
   // 704 KB for DOS, up to the RAM disk D: at B0000h (HANDOFF 6.2). Nothing
   // on B: names the size, but the 1 MB RAM divides into exactly this, the
   // 64 KB at A0000h, the RAM disk's 319 KB and the 1 KB of boot ROM; at

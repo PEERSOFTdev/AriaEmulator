@@ -989,6 +989,49 @@ jako obraz s tabulkou oddílů. Podle README.DOC: písmena od E:, nejdřív
 diskety, pak pevné disky, každá skupina podle posledních dvou číslic
 sériového čísla; disk nad 2 GB jako dvě jednotky.
 
+**Paralelní port Arie, 11. 10. 2026 (`ar-l5v`, krok 1).** Offsety
+v `BACKPACK.SYS` jsou **v souboru** (ovladač zařízení, data i kód od 0);
+`tools/dis.py` je ukazuje o 100h výš, jako by šlo o COM — „+3600h“ výše
+je tedy v souboru +3500h.
+
+- **Port je na I/O 680h–682h, ne na 378h.** `BACKPACK.SYS` („BP v2.11.AR“,
+  sestavení pro Arii) mluví s portem jen přes dva pomocníky: zápis
+  (`+18DAh`) jde jen na 680h → data **681h** a 682h → řízení **682h**,
+  čtení (`+18FCh`) jen z **681h** (stav) a 682h (vrátí vlastní kopii
+  řízení); jiná adresa čte 0. Port bere z BDA jako LPT1, `0040:0008h`
+  (`+32FDh`), takže chybějící boot ROM tam dávala **680h**. Nezávisle to
+  dokládá obsluha tiskárny v AAPI (`AAPI.EXE+B5C8h`, rozbalený; AH 0/1/2
+  jako `INT 17h`, končí `IRET`): znak na 681h, strobe `0Bh` a `0Ah` na
+  682h, inicializace `02h` a `0Ah`, stav čte z **680h** — stav tedy jde
+  číst na 680h i 681h.
+- **Zapojení** z převodních tabulek ovladače (`+19C9h` řízení, 16 B;
+  `+18C9h` stav, 256 B; obě čisté permutace bitů): řízení 682h bit 0
+  STROBE, 1 SELECT IN, 2 AUTOFEED, 3 INIT (PC bity 0, 3, 1, 2), stejný
+  smysl; stav bit 0 PAPER END, 1 BUSY, 2 ACK, 3 SELECT, 4 ERROR (PC bity
+  5, 7, 6, 4, 3), BUSY **neinvertovaný** (PC má bit 7 invertovaný).
+  Klid je řízení 0Ah = INIT a SELECT IN.
+- Emulátor: `src/parallel_port.*` (port Arie, uvnitř převod na PC
+  signály pro zařízení za ním), BDA LPT1 = 680h, slovo vybavení 4261h
+  (jedna tiskárna). Bez zařízení čte stav jako prázdný port PC (7Fh).
+- **Připojení jednotky** (`+1460h`, režim 3, který nastaví `+331Dh`):
+  řízení 04h, data = číslo jednotky, SELECT IN dvakrát přepnout (0Ch,
+  04h, 0Ch), AUTOFEED nahoru (0Eh), stav bity 3–5 musí být číslo & 7;
+  AUTOFEED dolů (0Ch), stav bity 3–5 musí být totéž invertované; pak
+  řízení 04h a jednotka je připojená. Ovladač zkouší čísla **0 až 99**
+  (`+3349h`) na každém LPT — číslo jednotky jsou zřejmě poslední dvě
+  číslice sériového čísla, podle nichž README.DOC řadí písmena.
+  Ověřeno stopou portu v dočasném `boot_test` (nezapsaný): při startu
+  přesně tato posloupnost pro čísla 0, 1, 2…
+- Linux `paride` `bpck.c` (Micro Solutions „backpack“ IDE, 1996–98) má
+  podobné připojení (inverzní číslo, číslo, pulzy řízení), ale jiné bity
+  a ID na stavu jinak; `ppc6lnx.c` (řada 6) začíná znaky „b“, „p“. Ani
+  jeden protokol tohoto ovladače není; slouží jen jako vodítko.
+- `FOSSIL.COM` sahá na 681h (mapa hardwaru, „nejspíš UART“) — s datovým
+  registrem tiskárny se to musí vyjasnit **[otevřené]**.
+- Další krok: co ovladač dělá po připojení — přístup k registrům
+  (nejspíš čtení po půlbajtech přes stavové linky) a řadič disket za
+  nimi.
+
 ### 6.8 PCMCIA
 
 `CARDMAN.EXE` (PKLITE); `TRICKSS2.EXE` čte `057Fh`, `ATKBD.COM` `057Eh`.

@@ -264,6 +264,8 @@ void AriaMachine::AcknowledgeTick() { cpu_.SetInterruptPin(2, false); }
 
 uint8_t AriaMachine::ReadIo(uint16_t port) {
   if (port >= 0x0500 && port <= 0x057F) return rtc_.Read(static_cast<uint8_t>(port - 0x0500));
+  if (port >= ParallelPort::kBase && port < ParallelPort::kBase + ParallelPort::kPorts)
+    return parallel_.Read(port - ParallelPort::kBase);
   switch (port) {
     case 0x0480:
     {
@@ -292,6 +294,10 @@ uint8_t AriaMachine::ReadIo(uint16_t port) {
 void AriaMachine::WriteIo(uint16_t port, uint8_t value) {
   if (port >= 0x0500 && port <= 0x057F) {
     rtc_.Write(static_cast<uint8_t>(port - 0x0500), value);
+    return;
+  }
+  if (port >= ParallelPort::kBase && port < ParallelPort::kBase + ParallelPort::kPorts) {
+    parallel_.Write(port - ParallelPort::kBase, value);
     return;
   }
   switch (port) {

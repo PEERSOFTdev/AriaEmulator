@@ -13,6 +13,7 @@
 #include "dac_renderer.h"
 #include "flash_image.h"
 #include "pc_card.h"
+#include "parallel_port.h"
 #include "rtc146818.h"
 
 class HleBios;
@@ -88,6 +89,7 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   Cpu80188& cpu() { return cpu_; }
   HleBios& bios() { return *bios_; }
   Rtc146818& rtc() { return rtc_; }
+  ParallelPort& parallel() { return parallel_; }
   BiosDisk& disk(int drive) { return disks_[drive & 1]; }
 
   // Direct memory access for the BIOS and tests, through the same decoding
@@ -199,6 +201,7 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   BiosDisk disks_[2];             // 0 = A: ROM disk, 1 = B: flash.
   Rtc146818::Clock clock_;        // For a new RTC after a battery cut.
   Rtc146818 rtc_;
+  ParallelPort parallel_;
   Cpu80188 cpu_;
   std::unique_ptr<HleBios> bios_;
 
