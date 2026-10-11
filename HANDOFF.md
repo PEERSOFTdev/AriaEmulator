@@ -1079,6 +1079,42 @@ a kód se v souboru střídají).
   SENSE INTERRUPT, READ ID, READ/WRITE DATA, FORMAT TRACK) a „DMA“ přes
   buffer; (3) nabídka Disketa podle Eureky (složka i obraz).
 
+**Čip Backpack v emulátoru, 11. 10. 2026 (`ar-l5v`, krok 3).**
+`src/backpack.*`, `BackpackFloppy` jako zařízení `ParallelPort`.
+
+- Připojení číslem jednotky, půlbajtový přístup k registrům, tříbajtové
+  registry 28h/2Ch/30h, buffer 128 KB přes 80h podle kroku 2. Půlbajt
+  na stavových linkách: bity 0–3 = PC stav bity 3, 4, 5, 7 (tabulka
+  `+17C9h`, jako `j44` v `bpck`).
+- **EEPROM 93C46** za vnitřním registrem 6 (bit 0 SK, 1 DI, 2 CS, 3 povolení;
+  `+1A19h`–`+1A6Ah`), DO na registru 0 bit 7 (`+1A71h`); slovo čte
+  `+33CFh` (start 1, READ 10, šest bitů adresy, 16 hodin, MSB první).
+  Co ovladač čte (`+318Ch`–`+3233h`): slovo 0 dolní bajt = NOT horní,
+  jinak jednotku odmítne; slovo 1 horní bajt → registr 5; slovo 2
+  dolní bajt (< 10h) typ řadiče, 2 = 82077 s DSR (`+2290h`), přes
+  tabulku `+365Fh` maska výměny diskety; slova 3–6 pozice mechanik, dolní
+  bajt typ (index do jmen `+0AABh`: 7 = „3.5 inch 1.4MB“), FFh žádná —
+  **kromě pozice 1 (slovo 4)**, která s FFh dostane typ z parametru
+  `DRIVETYPE` (`+31ECh`; hodnota na `+3EDEh`, výchozí 0); slova 37h–3Ah
+  sériové číslo, osm číslic ASCII (totéž místo tiskne `bpck`).
+  Parametry ovladače: NONSTOP, INTON, DELAY, T7, LASTLPT, DRIVETYPE, A:,
+  B:, STACK (`+3EAFh`…).
+- Emulátor: slovo 0 = 00FFh, 1 = 0, 2 = 2, slovo 4 = 7, ostatní FFFFh,
+  sériové „014187“ + číslo jednotky. **Hodnoty jsou odvozené z toho, co
+  ovladač přijme a vypíše, ne z výpisu skutečné jednotky.** S nimi ovladač
+  při startu napíše „The following BACKPACK drive is available: Drive E: -
+  3.5 inch 1.4MB“ (7.05 i 6.87, týž `BACKPACK.SYS`, MD5 shodné), tedy
+  jedna jednotka = E:, jak říká README.DOC. Mechanika je na pozici 1, tedy
+  **mechanika 1 řadiče** (výběr v DOR).
+- Při startu ovladač na řadiči jen zapíše DOR `0Ch` a přečte DIR; seznam
+  mechanik bere z EEPROM.
+- `boot_test` připojí jednotku 65 k **druhému** zapnutí (stroj ze snímku)
+  a čeká to hlášení. Připojená k prvnímu stroji na 6.87 (ne 7.05)
+  způsobila, že pozdější vložení prázdné karty DLFFSA nepoznal (bez
+  zkušebních zápisů, vytvoření souboru „uspělo“ z bufferů DOS) — týž
+  druh křehkosti 6.87 jako `ar-z2e`, zapsáno tam.
+- Další krok: řadič 82077 s obrazem diskety a přenos přes buffer čipu.
+
 ### 6.8 PCMCIA
 
 `CARDMAN.EXE` (PKLITE); `TRICKSS2.EXE` čte `057Fh`, `ATKBD.COM` `057Eh`.

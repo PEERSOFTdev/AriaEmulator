@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "aria_machine.h"
+#include "backpack.h"
 #include "card_folder.h"
 #include "hle_bios.h"
 #include "snapshot.h"
@@ -960,6 +961,12 @@ int wmain(int argc, wchar_t** argv) {
     std::cout << "FAIL boot: the memory snapshot did not survive a round trip\n";
     return 1;
   }
+  // A Backpack floppy drive on the printer port, unit 65 (HANDOFF 6.7):
+  // BACKPACK.SYS must find it at 680h-682h, read its EEPROM and announce
+  // it as drive E:. On this second machine and not the first: attached
+  // there, 6.87 missed the later swap to a blank card (ar-z2e).
+  BackpackFloppy backpack(65);
+  second.parallel().Attach(&backpack);
   second.PowerOn();
   SpeechLog second_speech;
   long long after_menu = -1;  // Cycles run since ">mainmenu", for MAINMENU's own start.
@@ -975,6 +982,11 @@ int wmain(int argc, wchar_t** argv) {
   if (verbose) {
     std::cout << "--- INT 10h output, second power-on ---\n" << Printable(second.bios().Teletype()) << "\n";
     std::cout << "--- speech, second power-on ---\n" << Printable(second_speech.text()) << "\n--- end ---\n";
+  }
+  if (second.bios().Teletype().find("BACKPACK drive is available:\r\n  Drive E: - 3.5 inch 1.4MB") ==
+      std::string::npos) {
+    std::cout << "FAIL boot: BACKPACK.SYS did not announce the Backpack floppy as drive E:\n";
+    return 1;
   }
   bool kept = vdisk(second);
   for (int i = 0; i < 11 && kept; ++i) kept = second.Peek(entry + i) == static_cast<uint8_t>(kMarker[i]);
@@ -1006,6 +1018,7 @@ int wmain(int argc, wchar_t** argv) {
                " cards swapped after 2 s and at once without mixing, write protection prompted and kept,"
                " card battery in the battery report, a blank card refused without a prompt,"
                " a 4 MB flash card formatted by DLFMT and a file kept through eject and reinsert,"
+               " a Backpack floppy announced as drive E:,"
                " konec says vypnuto and switches off, D: kept through"
                " a memory snapshot without a new question, F1 starts the word processor)\n";
   return 0;
