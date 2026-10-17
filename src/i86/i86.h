@@ -63,14 +63,20 @@ inline void logerror(const char*, Args&&...) {}
 // A MAME address space reduced to what the core calls, routed to I86Bus.
 // Addresses wrap at 20 bits for memory and 16 bits for I/O, like the
 // address lines do.
+//
+// `count`, when given, is incremented for every byte that crosses the bus:
+// the 80C188 bus model (BusTiming in i186.cpp) tells instruction fetches
+// from data by which space counted them.
 class AddressSpace {
  public:
-  AddressSpace(I86Bus*& bus, bool io) : bus_(bus), io_(io) {}
+  AddressSpace(I86Bus*& bus, bool io, uint32_t* count = nullptr) : bus_(bus), io_(io), count_(count) {}
   uint8_t read_byte(offs_t address) {
+    if (count_) ++*count_;
     return io_ ? bus_->ReadIo(static_cast<uint16_t>(address))
                : bus_->ReadMemory(address & 0xFFFFF);
   }
   void write_byte(offs_t address, uint8_t value) {
+    if (count_) ++*count_;
     if (io_) {
       bus_->WriteIo(static_cast<uint16_t>(address), value);
     } else {
@@ -97,6 +103,7 @@ class AddressSpace {
  private:
   I86Bus*& bus_;
   bool io_;
+  uint32_t* count_;
 };
 
 using address_space = AddressSpace;  // MAME's name, used by the DMA code.
@@ -438,10 +445,17 @@ protected:
 
 	// ARIA: the bus and MAME-style views onto it.
 	I86Bus* bus_ = nullptr;
-	AddressSpace m_program_space{bus_, false};
-	AddressSpace m_io_space{bus_, true};
+	// ARIA: bytes over the bus since the last instruction boundary, opcode
+	// fetches apart from data and I/O, for the 80C188 bus model
+	// (i80186_cpu_device::BusTiming). Opcodes get a space of their own so
+	// that the two can be told apart.
+	uint32_t m_fetch_bytes = 0;
+	uint32_t m_data_bytes = 0;
+	AddressSpace m_program_space{bus_, false, &m_data_bytes};
+	AddressSpace m_io_space{bus_, true, &m_data_bytes};
+	AddressSpace m_opcode_space{bus_, false, &m_fetch_bytes};
 	AddressSpace* m_program = &m_program_space;
-	AddressSpace* m_opcodes = &m_program_space;
+	AddressSpace* m_opcodes = &m_opcode_space;
 	AddressSpace* m_io = &m_io_space;
 
 	int m_icount;
@@ -521,6 +535,27 @@ protected:
 	// ARIA: called for the trap opcode 0Fh nn with nn (see execute_run).
 	std::function<void(uint8_t)> m_trap_handler;
 
+	// ARIA: the 80C188's 8-bit bus and 4-byte queue, which MAME's 80186
+	// timings leave out (HANDOFF 6.12, ar-4ku). Intel 80C186XL/80C188XL
+	// data sheet 272431-005: a bus cycle is at least four clocks; the
+	// instruction timings assume the instruction is already in the queue,
+	// and jumps include fetching the target's first opcode; for the
+	// 80C188 "for word operations, add 4 clock cycles for all memory
+	// transfers"; a DMA transfer is two bus cycles, at least 8 clocks; and
+	// with the 8-bit bus "actual program execution time will be
+	// substantially greater than that derived from adding the instruction
+	// timings". BusTiming settles each instruction at its end: the word
+	// penalty, and the clocks the execution unit waited for opcode bytes
+	// the bus had not yet prefetched. No wait states (the Aria's are
+	// unknown, its boot ROM is missing).
+	bool m_bus_model = true;
+	uint32_t m_word_transfers = 0;  // External word accesses since the boundary.
+	int m_bus_icount = 0;           // m_icount at the last boundary.
+	uint32_t m_bus_next = 0;        // Where the next instruction begins unless it jumps.
+	int m_prefetch = 0;             // Clocks of prefetch done ahead, 4 a byte, up to the queue.
+	void BusTiming();
+	void BusDma();
+
 	// ARIA: opcode fetch, MAME's opcode cache reduced to the bus.
 	uint8_t m_or8(uint32_t address) { return m_opcodes->read_byte(address); }
 
@@ -554,7 +589,11 @@ protected:
 	int64_t m_clock_base = 0;
 	int m_icount_base = 0;
 	void UpdateClock() { m_clock = m_clock_base + (m_icount_base - m_icount); }
-	void BeginRun(int cycles) { m_icount = m_icount_base = cycles; UpdateClock(); }
+	void BeginRun(int cycles) {
+		m_icount = m_icount_base = m_bus_icount = cycles;
+		m_fetch_bytes = m_data_bytes = m_word_transfers = 0;  // Bus traffic outside a run is not the CPU's.
+		UpdateClock();
+	}
 	void EndRun() { m_clock_base += m_icount_base - m_icount; m_icount_base = m_icount; UpdateClock(); }
 	attotime cycles_to_attotime(int64_t cycles) const { return attotime{cycles}; }
 	static int64_t attotime_to_cycles(attotime time) { return time.cycles; }

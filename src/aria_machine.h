@@ -160,6 +160,12 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   const std::vector<std::string>& DspLog() const { return dsp_log_; }
   int DspBoots() const { return dsp_boots_; }
 
+  // Bytes the CPU has moved over its 8-bit bus, memory and I/O, opcode
+  // fetches included (Peek and Poke count too). A real 80C188 needs at
+  // least four clocks for each (bus cycle T1-T4, Intel 80C186/80C188
+  // data sheet), so 4 x bytes bounds what code costs there from below.
+  uint64_t BusBytes() const { return bus_bytes_; }
+
   // Ports the model does not implement, with access counts.
   const std::map<uint16_t, int>& UnknownPorts() const { return unknown_ports_; }
 
@@ -216,6 +222,7 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   Cpu80188 cpu_;
   std::unique_ptr<HleBios> bios_;
 
+  uint64_t bus_bytes_ = 0;
   uint32_t ucs_start_ = 0xFFC00;  // Upper chip select start (UMCS).
   uint8_t latch_580_ = 0;         // Window mode and page (HANDOFF 6.2).
   uint8_t latch_480_ = 0;         // High page bits for the card.

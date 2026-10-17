@@ -2395,6 +2395,86 @@ nedotčený. Test `TestPrescaledTimer` staví CPU do paměti vyplněné
 projde. Týž test ověřuje i předdělič (bit P, časovač 0 počítá konce
 časovače 2), který tik BIOSu používá.
 
+**Emulované CPU je rychlejší než 80C188, 17. 10. 2026 (`ar-4ku`).**
+Hlášení testera: hra **Obránce** (Marek Susčík 1999, Turbo Pascal 7
+s jednotkou `ARIA.PAS`; mimo repozitář) běží od začátku rychleji než na
+Arii a ve vyšších úrovních se nedá hrát. Rozbor `OBRANCE.EXE` (offsety
+za hlavičkou MZ 3B0h): hra nemá žádné hodiny — nevolá `Wait`
+(ordinál 4Dh) ani `GetTickCount` (8Ch), tik ani časovače nečte. Tempo
+dělá **počítaná smyčka** `+111Bh`–`+12A5h`: `inc [84h]`, porovnání
+s `[82h]` (na začátku 1000), jinak `KbdGetStatus` (ordinál 0Dh, ukazatel
+`[118h]`); po tisíci průchodech raketa postoupí (`[86h]`, tón
+`!<toN/500/32768/1>`). Rychlost hry je tedy rychlost CPU.
+
+Jádro MAME účtuje takty z tabulek 80186 bez 8bitové sběrnice
+a bez fronty instrukcí. **Měření** (`boot_test -v` s `ARIA_GAME`,
+čítač `AriaMachine::BusBytes`, sestavení 7.05): za emulovanou sekundu
+(15 M taktů) přejde po sběrnici 5,485 M bajtů (operační kódy, data, I/O).
+80C188 potřebuje na každý bajt nejméně cyklus sběrnice T1–T4, tedy
+4 takty, takže skutečná Aria by na totéž potřebovala **nejméně
+1,46× tolik času** (bez čekacích stavů, bez fronty, bez kódu BIOSu, který
+tu běží v C++). V emulátoru raketa postoupí jednou za 1,0 s, na Arii
+nejméně za 1,46 s. I nečinný MAINMENU dává 1,35–1,45. Zpomalí to každou
+smyčku bez hodin, ne řeč (DSP má vlastní takt) ani to, co měří časovače.
+*Oprava týž den:* „raketa postoupí jednou za 1,0 s“ neplatí — jednou za
+sekundu zní tón, ne krok rakety; výška tónu (`[86h]`) rostla asi o 2,1
+za sekundu. Rychlost CPU odliší doba do dopadu rakety (níže).
+
+Návrh (k odsouhlasení): účtovat sběrnici podle dokumentace Intelu —
+4 takty na bajt sběrnice, fronta 4 bajty plněná, když EU sběrnici
+nepotřebuje, vyprázdněná skokem — a cílovou hodnotu zkalibrovat podle
+měření na skutečné Arii (kolik sekund trvá v první úrovni deset tónů
+rakety; v emulátoru 10 s).
+
+**Model sběrnice 80C188, týž den (odsouhlaseno uživatelem).** Podklad:
+katalogový list Intel 80C186XL/80C188XL, č. 272431-005 (2002) — cyklus
+sběrnice nejméně 4 takty; tabulka časů předpokládá instrukci už ve
+frontě a skoky v sobě mají načtení prvního opkódu cíle; fronta 80C188
+má **4 bajty** (80C186 šest); u 80C188 „for word operations, add 4
+clock cycles for all memory transfers“; přenos DMA jsou dva cykly
+sběrnice, nejméně 8 taktů; a výslovně: s 8bitovou sběrnicí je skutečná
+doba běhu „substantially greater“ než součet tabulky.
+
+- **Kde:** `BusTiming` v `src/i86/i186.cpp` (s komentáři `ARIA:`) na
+  konci každého průchodu `execute_run`, `BusDma` po přenosu DMA. Bajty
+  počítá shim `AddressSpace` (`i86.h`); operační kódy mají vlastní
+  prostor `m_opcode_space`, aby se odlišily od dat. Slovní přenosy
+  počítají `read_word`/`write_word`/`read_port_word`/`write_port_word`
+  (jen vnější, PCB je uvnitř 16bitové). Kód MAME jinak beze změny.
+- **Pravidlo:** EU = takty tabulky + 4 za slovní přenos. Sběrnice
+  přednačítá, když ji EU nepotřebuje (EU − 4 × datové bajty), 4 takty na
+  bajt, nejvýš 4 bajty; bajt operačního kódu, který ve frontě není,
+  zdrží EU o 4 takty. Skok (adresa další instrukce ≠ začátek + načtené
+  bajty, tedy i přerušení, `IRET`, opakování `REP` po konci úseku) frontu
+  vyprázdní a nechá v ní jen první opkód cíle. Čekací stavy nulové
+  (hodnoty boot ROM neznáme). `Cpu80188::SetBusModel(false)` vrátí čistou
+  tabulku (`boot_test` s `ARIA_NO_BUS_MODEL`).
+- **Známá odchylka od listu:** pravidlo +4 za slovo platí podle listu jen
+  u instrukcí s hvězdičkou; sloupec 80C188 ho nemá u `INT` (47, 10 bajtů
+  dat = 40 taktů sběrnice, tedy fyzicky možné) a `IRET` (28), a jinak
+  sedí i `PUSH`/`POP` paměti (list 20/24, model 24/28) a `XLAT` (list 15,
+  model 11). Model tam pravidlo účtuje plošně; v herní smyčce to dělá asi
+  32 taktů z ~12 500 na průchod (pod 1 %), po instrukcích se to
+  nerozlišuje. Tabulka MAME má `NOP` za 2 takty, list za 3.
+- **Ověřeno:** `cpu_selftest TestBusTiming` — řada `NOP` po vyprázdnění
+  fronty 4 takty každý (bez modelu 2), `REP MOVSW` přes deset slov
+  o 80 taktů víc; test běží s modelem i bez, takže vypnutý model selže.
+  `boot_test -v` s `ARIA_GAME`: po sběrnici 3,246 M bajtů za emulovanou
+  sekundu místo 5,485 M (**1,69× pomaleji**), vytížení sběrnice 0,866
+  (≤ 1, model tedy nepodúčtovává). Obránce: tóny zní jednou za sekundu
+  s modelem i bez (hra zřejmě čeká, až dozní tón 500 ms), mění se jen
+  krok výšky; nesestřelená raketa v první úrovni dopadne **asi 70 s** po
+  prvním tónu (poslední tón v 73. s běhu), bez modelu za 41 s (poslední
+  ve 45. s), `ARIA_GAME_SECONDS=130`. Start do MAINMENU 9,1 s místo
+  6,1 s (první zvuk 10,2 s). **Řeč beze změny:** WAV startu (`-wav`)
+  s modelem a bez: 7,73 / 7,71 s, aktivní 3,39 s v obou, 94 krátkých
+  pauz 3–60 ms v obou, stejná špička. 18 PASS.
+- **Zbývá:** kalibrace podle skutečné Arie, až se k ní tester dostane:
+  stopky od prvního tónu první úrovně do dopadu rakety, když se nestřílí
+  (v emulátoru teď asi 70 s). Návrh „deset tónů“ výše neplatí — tóny
+  jdou po sekundě nezávisle na rychlosti CPU. Rozdíl proti modelu by šel
+  na vrub čekacím stavům a BIOSu, který tu běží v C++ bez taktů.
+
 ### 6.13 Programy Arie na PC (DOS, DOSBox-X)
 
 Uživatel by rád programy Arie spouštěl i bez emulátoru, v DOSu nebo

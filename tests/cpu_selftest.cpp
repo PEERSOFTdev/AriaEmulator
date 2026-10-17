@@ -327,6 +327,53 @@ void TestBiosTrap() {
   }
 }
 
+// The 80C188 bus model (BusTiming, i186.cpp; HANDOFF 6.12, ar-4ku), by the
+// Intel 80C186XL/80C188XL data sheet 272431-005. Every case runs with the
+// model and without it, so that turning it off fails the test.
+void TestBusTiming() {
+  // One-byte NOPs, 2 clocks each by MAME's table (the data sheet says 3),
+  // are bound by fetching: the 8-bit bus brings one opcode byte per
+  // four-clock bus cycle, so once the queue has run dry each takes 4.
+  auto nops = [](bool model) {
+    Bus bus;
+    Cpu80188 cpu(bus);
+    cpu.SetBusModel(model);
+    std::vector<uint8_t> code(100, 0x90);
+    code.push_back(0xF4);
+    bus.Load(0x01000, code);
+    cpu.SetRegisters(At(0x0100, 0x0000));
+    int steady = 0;
+    for (int i = 0; i < 100; ++i) {
+      const int cycles = cpu.Step();
+      if (i >= 10) steady += cycles;
+    }
+    return steady;
+  };
+  Check(nops(true) == 90 * 4, "a run of NOPs takes 4 clocks each on the 8-bit bus");
+  Check(nops(false) == 90 * 2, "and 2 each by MAME's 80186 table");
+
+  // REP MOVSW over ten words: "for word operations, add 4 clock cycles for
+  // all memory transfers", two transfers a word, so 80 clocks more. A MUL
+  // before it (35 clocks, no bus cycles of its own) fills the queue, so
+  // the two opcode bytes cost nothing more; a NOP before that, because
+  // the first instruction after SetRegisters counts as a jump.
+  auto movsw = [](bool model) {
+    Bus bus;
+    Cpu80188 cpu(bus);
+    cpu.SetBusModel(model);
+    bus.Load(0x01000, {0x90, 0xF7, 0xE3, 0xF3, 0xA5, 0xF4});  // nop; mul bx; rep movsw; hlt
+    Cpu80188::Registers r = At(0x0100, 0x0000);
+    r.ds = 0x0300;
+    r.es = 0x0400;
+    r.cx = 10;
+    cpu.SetRegisters(r);
+    cpu.Step();
+    cpu.Step();
+    return cpu.Step();
+  };
+  Check(movsw(true) - movsw(false) == 80, "REP MOVSW pays 4 clocks for each word transfer");
+}
+
 }  // namespace
 
 int main() {
@@ -338,6 +385,7 @@ int main() {
   TestDma();
   TestEscapeTrap();
   TestBiosTrap();
+  TestBusTiming();
   std::cout << (failures == 0 ? "PASS" : "FAIL") << " cpu_selftest\n";
   return failures == 0 ? 0 : 1;
 }

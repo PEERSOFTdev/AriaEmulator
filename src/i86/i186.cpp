@@ -190,6 +190,7 @@ void i80186_cpu_device::execute_run()
 					channel = 1;
 				m_icount--;
 				drq_callback(channel);
+				BusDma();  // ARIA: two bus cycles (BusTiming).
 				continue;
 			}
 		}
@@ -675,12 +676,56 @@ void i80186_cpu_device::execute_run()
 					break;
 				}
 		}
+		// ARIA: the 80C188 bus model settles the instruction (i86.h).
+		BusTiming();
 		// ARIA: single-instruction stepping. A segment prefix is executed
 		// as its own pass through this loop, so only stop once the
 		// instruction it prefixes has run too.
 		if (m_single_step && !m_seg_prefix_next)
 			break;
 	}
+}
+
+// ARIA: the 80C188 bus model (i86.h, HANDOFF 6.12, ar-4ku). Called at
+// every instruction boundary, a segment prefix being one. The execution
+// unit spent what MAME's table charged, plus four clocks per word
+// transfer. The bus interface prefetches whenever the execution unit's
+// own bus cycles leave the bus free, four clocks a byte, until the queue
+// holds four bytes; opcode bytes it has not prefetched stall the
+// execution unit four clocks each. A jump, call, return or interrupt
+// empties the queue; its timing already includes the first opcode at the
+// target, so that one counts as fetched.
+void i80186_cpu_device::BusTiming()
+{
+	const uint32_t at = ((m_sregs[CS] << 4) + m_ip) & 0xfffff;
+	if (m_bus_model)
+	{
+		int extra = 4 * static_cast<int>(m_word_transfers);
+		const int busy = m_bus_icount - m_icount + extra;  // EU clocks.
+		const int fetch = 4 * static_cast<int>(m_fetch_bytes);
+		const int ready = std::min(m_prefetch, fetch);
+		extra += fetch - ready;
+		const int idle = busy - 4 * static_cast<int>(m_data_bytes);
+		if (at != ((m_bus_next + m_fetch_bytes) & 0xfffff))
+			m_prefetch = 4;
+		else
+			m_prefetch = std::min(16, m_prefetch - ready + std::max(0, idle));
+		m_icount -= extra;
+	}
+	m_fetch_bytes = m_data_bytes = m_word_transfers = 0;
+	m_bus_icount = m_icount;
+	m_bus_next = at;
+}
+
+// ARIA: one DMA transfer: MAME charged a clock, the data sheet says two
+// bus cycles of at least four (i86.h). The bus is the channel's, so the
+// queue gains nothing meanwhile.
+void i80186_cpu_device::BusDma()
+{
+	if (m_bus_model)
+		m_icount -= 8 - 1;
+	m_fetch_bytes = m_data_bytes = m_word_transfers = 0;
+	m_bus_icount = m_icount;
 }
 
 // ---- verbatim from i186.cpp lines 775-925 ----
@@ -752,6 +797,7 @@ uint16_t i80186_cpu_device::read_port_word(uint16_t port)
 		else
 			return internal_port_r((port >> 1) & 0x7f);
 	}
+	++m_word_transfers;  // ARIA: the 80C188's word penalty (BusTiming).
 	return m_io->read_word_unaligned(port);
 }
 
@@ -793,7 +839,10 @@ void i80186_cpu_device::write_port_word(uint16_t port, uint16_t data)
 			internal_port_w((port >> 1) & 0x7f, data);
 	}
 	else
+	{
+		++m_word_transfers;  // ARIA: the 80C188's word penalty (BusTiming).
 		m_io->write_word_unaligned(port, data);
+	}
 }
 
 uint8_t i80186_cpu_device::read_byte(uint32_t addr)
@@ -818,6 +867,7 @@ uint16_t i80186_cpu_device::read_word(uint32_t addr)
 	}
 	// ARIA: was m_program->read_word_unaligned(addr); the second byte wraps
 	// within the segment (m_ea_base in i86.h).
+	++m_word_transfers;  // ARIA: the 80C188's word penalty (BusTiming).
 	return m_program->read_byte(addr) | (m_program->read_byte(SegmentNext(addr)) << 8);
 }
 
@@ -843,6 +893,7 @@ void i80186_cpu_device::write_word(uint32_t addr, uint16_t data)
 	{
 		// ARIA: was m_program->write_word_unaligned(addr, data); the second
 		// byte wraps within the segment (m_ea_base in i86.h).
+		++m_word_transfers;  // ARIA: the 80C188's word penalty (BusTiming).
 		m_program->write_byte(addr, data & 0xff);
 		m_program->write_byte(SegmentNext(addr), data >> 8);
 	}

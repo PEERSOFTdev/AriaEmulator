@@ -28,8 +28,8 @@ class Cpu80188 : private mame_i86::i80186_cpu_device {
   // Power-on reset: CS:IP = FFFF:0000, PCB at I/O FF00h, peripherals off.
   void Reset();
   // Runs one whole instruction, prefixes and REP repetitions included.
-  // Returns the cycles it took by MAME's 80186 timing table; from HLT, the
-  // cycles until the next timer event.
+  // Returns the cycles it took by MAME's 80186 timing table and the
+  // 80C188 bus model; from HLT, the cycles until the next timer event.
   int Step();
   // Runs for at least `cycles` cycles; returns the cycles actually used.
   int Run(int cycles);
@@ -49,6 +49,11 @@ class Cpu80188 : private mame_i86::i80186_cpu_device {
   void SetTimerInput(int timer, bool asserted);
 
   bool Halted() const { return m_halt; }
+
+  // The 80C188's 8-bit bus and 4-byte queue on top of MAME's 80186 table
+  // (BusTiming, i186.cpp; HANDOFF 6.12, ar-4ku). On from construction;
+  // off only for tests that compare against the plain table.
+  void SetBusModel(bool on) { m_bus_model = on; }
   uint16_t RelocationRegister() const { return m_reloc; }
 
   // The emulator's BIOS trap: opcode 0Fh nn calls `handler(nn)` in the

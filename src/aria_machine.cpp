@@ -225,6 +225,7 @@ uint8_t AriaMachine::ReadWindow(uint32_t address) const {
 }
 
 uint8_t AriaMachine::ReadMemory(uint32_t address) {
+  ++bus_bytes_;
   if (WindowMapped(address)) return ReadWindow(address);
   if (address >= ucs_start_) {
     // Upper chip select: the boot ROM. Ours is the top 1 KB and the area
@@ -237,6 +238,7 @@ uint8_t AriaMachine::ReadMemory(uint32_t address) {
 }
 
 void AriaMachine::WriteMemory(uint32_t address, uint8_t value) {
+  ++bus_bytes_;
   if (WindowMapped(address)) {
     // Card memory takes writes; the internal flash's programming is not
     // emulated (HANDOFF 6.11).
@@ -263,6 +265,7 @@ void AriaMachine::AcknowledgeTick() { cpu_.SetInterruptPin(2, false); }
 // ---- I/O ----
 
 uint8_t AriaMachine::ReadIo(uint16_t port) {
+  ++bus_bytes_;
   if (port >= 0x0500 && port <= 0x057F) return rtc_.Read(static_cast<uint8_t>(port - 0x0500));
   if (port >= ParallelPort::kBase && port < ParallelPort::kBase + ParallelPort::kPorts)
     return parallel_.Read(port - ParallelPort::kBase);
@@ -292,6 +295,7 @@ uint8_t AriaMachine::ReadIo(uint16_t port) {
 }
 
 void AriaMachine::WriteIo(uint16_t port, uint8_t value) {
+  ++bus_bytes_;
   if (port >= 0x0500 && port <= 0x057F) {
     rtc_.Write(static_cast<uint8_t>(port - 0x0500), value);
     return;

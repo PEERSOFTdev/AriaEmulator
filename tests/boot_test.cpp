@@ -299,6 +299,9 @@ int wmain(int argc, wchar_t** argv) {
 
   // A fixed clock keeps the run deterministic: 1.1.2000 12:00.
   AriaMachine machine(flash, kernel, [] { return int64_t{946728000}; });
+  // Opt-in (ARIA_NO_BUS_MODEL set): MAME's plain 80186 timing, for
+  // comparing speech and timing with the 80C188 bus model (HANDOFF 6.12).
+  if (std::getenv("ARIA_NO_BUS_MODEL")) machine.cpu().SetBusModel(false);
   std::vector<std::string> disk_log;
   if (verbose) machine.bios().SetDiskLog([&](const std::string& line) { disk_log.push_back(line); });
   // A 512 KB SRAM card in the slot, drive C: (HANDOFF 6.8), made from a host
@@ -1022,6 +1025,7 @@ int wmain(int argc, wchar_t** argv) {
   std::error_code ec;
   std::filesystem::remove(memory_file, ec);
   AriaMachine second(flash, kernel, [] { return int64_t{946728000}; });
+  if (std::getenv("ARIA_NO_BUS_MODEL")) second.cpu().SetBusModel(false);
   if (!saved || read != snapshot::Result::kOk || !second.LoadState(loaded)) {
     std::cout << "FAIL boot: the memory snapshot did not survive a round trip\n";
     return 1;
@@ -1356,6 +1360,68 @@ int wmain(int argc, wchar_t** argv) {
     freed.ax = 0x4900;
     freed.ds = freed.es = own;
     DosCall(second, second_speech, waiting, top, freed);
+    // Opt-in measurement (ARIA_GAME = a folder with OBRANCE.EXE, with -v):
+    // the game as a folder diskette in E:, started by EXEC from E:\. Its
+    // pace is a counted loop around KbdGetStatus (OBRANCE.EXE code
+    // +111Bh-+12A5h after the header, 1000 passes a step at first), so it
+    // runs as fast as the emulated CPU. Each second prints the cycles the
+    // core charged against the bytes it moved over the 8-bit bus, and what
+    // the game said. The run ends here.
+    if (const char* game = std::getenv("ARIA_GAME"); verbose && game) {
+      FolderCard game_disk;
+      std::vector<uint8_t> image;
+      std::wstring game_error;
+      if (!game_disk.LoadDiskette(game, flash.encoding, image, game_error)) {
+        std::wcout << L"game: " << game_error << L"\n";
+        return 1;
+      }
+      backpack.fdc().Eject();
+      backpack.fdc().Insert(*Fdc82077::Disk::FromImage(std::move(image), true));
+      Cpu80188::Registers g{};
+      dos(0x0E00, 0, 0, 4, g);  // E: current, its root the folder.
+      g = {};
+      g.ax = 0x4800;
+      g.bx = 0x100;
+      g.ds = g.es = data;
+      if (!DosCall(second, second_speech, waiting, top, g) || (g.flags & 0x0001)) {
+        std::cout << "game: no DOS memory for the EXEC block\n";
+        return 1;
+      }
+      const uint16_t block = g.ax;
+      const uint32_t bb = static_cast<uint32_t>(block) << 4;
+      const char prog[] = "E:\\OBRANCE.EXE";
+      for (std::size_t i = 0; i < sizeof prog; ++i) second.Poke(bb + i, static_cast<uint8_t>(prog[i]));
+      second.Poke(bb + 0x40, 0);
+      second.Poke(bb + 0x41, 0x0D);
+      second.PokeWord(bb + 0x80, 0);
+      second.PokeWord(bb + 0x82, 0x40);
+      second.PokeWord(bb + 0x84, block);
+      second.PokeWord(bb + 0x86, 0xA0);
+      second.PokeWord(bb + 0x88, block);
+      second.PokeWord(bb + 0x8A, 0xA0);
+      second.PokeWord(bb + 0x8C, block);
+      for (int i = 0; i < 16; ++i) second.Poke(bb + 0xA0 + i, 0);
+      g = {};
+      g.ax = 0x4B00;
+      g.bx = 0x80;
+      g.ds = g.es = block;
+      std::size_t heard = second_speech.text().size();
+      uint64_t bytes_before = second.BusBytes();
+      int seconds = 0;
+      const char* keys = std::getenv("ARIA_GAME_KEYS");  // Seconds at which to press e, comma-separated.
+      DosCall(second, second_speech, waiting, static_cast<uint16_t>(block + 0x100), g, {}, [&] {
+        ++seconds;
+        const uint64_t bytes = second.BusBytes() - bytes_before;
+        bytes_before = second.BusBytes();
+        std::cout << "game " << seconds << " s: bus bytes " << bytes << ", 4 x bytes / cycles "
+                  << static_cast<double>(4 * bytes) / AriaMachine::kCpuHz << ", said: "
+                  << Printable(second_speech.text().substr(heard)) << "\n";
+        heard = second_speech.text().size();
+        const std::string at = "," + std::string(keys ? keys : "3") + ",";
+        if (at.find("," + std::to_string(seconds) + ",") != std::string::npos) press(second, 0, 0x14, 0);
+      }, std::getenv("ARIA_GAME_SECONDS") ? std::atoi(std::getenv("ARIA_GAME_SECONDS")) : 30);
+      return 0;
+    }
     // Opt-in measurement (ARIA_BP_SWAPS set, with -v): disk A read, out,
     // the drive empty for a gap, disk B in and read; does DOS see B? With
     // the change line (EEPROM flags 43h) it does at every gap; without it
