@@ -52,7 +52,7 @@ endif
 
 EMU_NAMES  := main main_window snapshot text_codec zip_reader fat12 flash_image cpu80188 aria_machine pc_card card_folder hle_bios \
               rtc146818 dac_renderer adsp2105 audio_player emulator_thread card_dialogs settings card_image \
-              parallel_port backpack fdc82077 floppy_image drive card_drive disk_drive
+              parallel_port backpack fdc82077 floppy_image drive card_drive disk_drive usart8251
 # Jadro CPU prevzate z MAME (src/i86/LICENSE.mame-i86.txt, HANDOFF 6.12).
 I86_NAMES  := i86 i186
 I86_OBJS   := $(addprefix $(BUILD)/i86_,$(addsuffix .o,$(I86_NAMES)))
@@ -69,6 +69,7 @@ CPU_OBJS   := $(BUILD)/cpu80188.o $(I86_OBJS)
 DSP_OBJS   := $(BUILD)/adsp2105.o $(BUILD)/adsp_adsp2100.o
 # Stroj Arie s BIOSem emulatoru (HANDOFF 6.10, 6.11).
 MACHINE_OBJS := $(BUILD)/aria_machine.o $(BUILD)/pc_card.o $(BUILD)/parallel_port.o $(BUILD)/backpack.o $(BUILD)/fdc82077.o \
+                $(BUILD)/usart8251.o \
                 $(BUILD)/hle_bios.o \
                 $(BUILD)/rtc146818.o \
                 $(BUILD)/dac_renderer.o $(CPU_OBJS) $(DSP_OBJS) $(CORE_OBJS)

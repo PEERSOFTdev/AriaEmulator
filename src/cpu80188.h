@@ -49,6 +49,10 @@ class Cpu80188 : private mame_i86::i80186_cpu_device {
   void SetTimerInput(int timer, bool asserted);
 
   bool Halted() const { return m_halt; }
+  // A PCB timer's max count A and control word, for devices clocked by
+  // its output (the serial port's baud clock is timer 1, HANDOFF 6.6).
+  uint16_t TimerMaxA(int timer) const { return m_timer[timer].maxA; }
+  uint16_t TimerControl(int timer) const { return m_timer[timer].control; }
 
   // The 80C188's 8-bit bus and 4-byte queue on top of MAME's 80186 table
   // (BusTiming, i186.cpp; HANDOFF 6.12, ar-4ku). On from construction;

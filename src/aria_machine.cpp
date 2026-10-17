@@ -19,6 +19,22 @@ AriaMachine::AriaMachine(const FlashImage& flash, std::vector<uint8_t> kernel, R
       clock_(std::move(clock)),
       rtc_(clock_),
       cpu_(*this),
+      // The 8251's baud clock is TMROUT1: timer 1 runs on the CPU clock
+      // over 4, its period max count A, 0 meaning 65536 (FOSSIL.COM+07DCh
+      // programs it, control C001h). Stopped while EN is clear.
+      serial_(
+          [this]() -> int64_t {
+            if (!(cpu_.TimerControl(1) & 0x8000)) return 0;
+            const uint16_t max = cpu_.TimerMaxA(1);
+            return 4 * static_cast<int64_t>(max ? max : 65536);
+          },
+          // Both level-triggered (FOSSIL writes 16h/17h to 38h/3Ah) and
+          // updated inside the I/O access, so that reading the data drops
+          // RxRDY before the handler's EOI (FOSSIL.COM+0908h).
+          [this](bool rx_ready, bool tx_ready) {
+            cpu_.SetInterruptPin(0, rx_ready);
+            cpu_.SetInterruptPin(1, tx_ready);
+          }),
       bios_(std::make_unique<HleBios>(*this)),
       dsp_(*this) {
   disks_[0] = MakeRomDisk();
@@ -69,6 +85,7 @@ void AriaMachine::PowerOn() {
   audio_time_ = 0;
   dsp_.Reset();
   cpu_.Reset();
+  serial_.Reset();
   bios_->PowerOn(kernel_);
   UpdateHostLines();
   // The drivers start afresh and look at the slot themselves.
@@ -104,6 +121,7 @@ void AriaMachine::Run(int cycles) {
   for (int done = 0; done < cycles && !powered_off_;) {
     const int used = cpu_.Run(std::min(kSlice, cycles - done));
     done += used;
+    serial_.Advance(used);
     // The tick sets a latch that holds INT2 until the BIOS takes it,
     // because MAME drops an external request as soon as its line falls.
     tick_debt_ += static_cast<int64_t>(used) * kTickNumerator;
@@ -284,6 +302,8 @@ uint8_t AriaMachine::ReadIo(uint16_t port) {
       if (card_->battery == PcCard::Battery::kLow) status |= 0x04;
       return status;
     }
+    case 0x0600: return serial_.Read(0);
+    case 0x0601: return serial_.Read(1);
     case 0x0581: return key_rows_[0];
     case 0x0582: return key_rows_[1];
     case 0x0584: return key_rows_[2];
@@ -318,6 +338,8 @@ void AriaMachine::WriteIo(uint16_t port, uint8_t value) {
       if (value == 0) powered_off_ = true;
       return;
     case 0x0702: slot_power_ = value; return;
+    case 0x0600: serial_.Write(0, value); return;
+    case 0x0601: serial_.Write(1, value); return;
     default:
       ++unknown_ports_[port];
       return;

@@ -10,6 +10,7 @@
 
 #include "adsp2105.h"
 #include "backpack.h"
+#include "usart8251.h"
 #include "cpu80188.h"
 #include "dac_renderer.h"
 #include "flash_image.h"
@@ -96,6 +97,8 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   // or out takes effect for the Aria at the next power-on or reset, as with
   // the real cable. Its diskette goes in and out through fdc().
   BackpackFloppy& backpack() { return backpack_; }
+  // The serial port, 0600h-0601h (HANDOFF 6.6); devices attach to it.
+  Usart8251& serial() { return serial_; }
   void ConnectBackpack(bool connected) { parallel_.Attach(connected ? &backpack_ : nullptr); }
   bool BackpackConnected() const { return parallel_.attached() == &backpack_; }
   BiosDisk& disk(int drive) { return disks_[drive & 1]; }
@@ -220,6 +223,8 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   // digits, and with one drive any number makes it E:.
   BackpackFloppy backpack_{1};
   Cpu80188 cpu_;
+  // After cpu_: its baud clock is timer 1 and its lines are INT0/INT1.
+  Usart8251 serial_;
   std::unique_ptr<HleBios> bios_;
 
   uint64_t bus_bytes_ = 0;

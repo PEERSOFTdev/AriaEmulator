@@ -194,10 +194,11 @@ std::vector<uint8_t> FloppyImage(bool high_density, const char* name83, const st
 // stub's free space at FFC0:0260h with the registers in `io` (CS:IP, SS:SP
 // and FLAGS are its own: the stack ends just below `scratch_top`, in a
 // free DOS block), and puts every register back afterwards. `io` gets the
-// registers after the call.
+// registers after the call. `interrupt` other than 21h calls that service
+// the same way (INT 14h, FOSSIL).
 bool DosCall(AriaMachine& m, SpeechLog& speech, const std::vector<Mcb>& waiting, uint16_t scratch_top,
              Cpu80188::Registers& io, const std::function<void()>& stalled = {},
-             const std::function<void()>& each_second = {}, long long seconds = 20) {
+             const std::function<void()>& each_second = {}, long long seconds = 20, uint8_t interrupt = 0x21) {
   if (!speech.hooked()) return false;
   for (int i = 0;; ++i) {
     const auto r = m.cpu().GetRegisters();
@@ -212,7 +213,7 @@ bool DosCall(AriaMachine& m, SpeechLog& speech, const std::vector<Mcb>& waiting,
     m.cpu().Step();
   }
   const Cpu80188::Registers saved = m.cpu().GetRegisters();
-  const uint8_t stub[] = {0xCD, 0x21, 0x0F, 0xF4, 0xEB, 0xFE};
+  const uint8_t stub[] = {0xCD, interrupt, 0x0F, 0xF4, 0xEB, 0xFE};
   std::memcpy(m.RomStub() + 0x260, stub, sizeof stub);
   Cpu80188::Registers call = io;
   call.cs = 0xFFC0;
@@ -252,6 +253,23 @@ bool DosCall(AriaMachine& m, SpeechLog& speech, const std::vector<Mcb>& waiting,
   m.cpu().SetRegisters(saved);
   return back;
 }
+
+// On the serial line (HANDOFF 6.6): answers every byte with the byte plus
+// one, so that neither a loopback nor a stale byte can pass for an answer.
+class EchoDevice : public SerialDevice {
+ public:
+  void Receive(uint8_t byte) override {
+    got.push_back(byte);
+    pending.push_back(static_cast<uint8_t>(byte + 1));
+  }
+  bool Transmit(uint8_t& byte) override {
+    if (pending.empty()) return false;
+    byte = pending.front();
+    pending.erase(pending.begin());
+    return true;
+  }
+  std::vector<uint8_t> got, pending;
+};
 
 }  // namespace
 
@@ -1356,6 +1374,48 @@ int wmain(int argc, wchar_t** argv) {
         return 1;
       }
     }
+    // The serial port through the Aria's own FOSSIL.COM (HANDOFF 6.6,
+    // ar-w6w): 9600 8N1 as ATKBD.COM sets it, two bytes out through the
+    // 8251's TxRDY interrupt (INT1), their answers in through RxRDY
+    // (INT0). FOSSIL's send and receive are both interrupt-driven, so the
+    // answers prove both lines.
+    {
+      EchoDevice echo;
+      second.serial().Attach(&echo);
+      auto fossil = [&](uint16_t ax, uint16_t bx, uint16_t cx, Cpu80188::Registers& out) {
+        out = {};
+        out.ax = ax;
+        out.bx = bx;
+        out.cx = cx;
+        out.dx = 0;  // Port 0, the Aria's only one.
+        out.ds = out.es = data;
+        return DosCall(second, second_speech, waiting, top, out, {}, {}, 3, 0x14);
+      };
+      Cpu80188::Registers f;
+      std::string failed;
+      if (!fossil(0x0400, 0, 0, f) || f.ax != 0x1954) failed = "FOSSIL init did not answer 1954h";
+      // AX=1E00h: no break, no parity, 8 data bits (CH=3), 9600 Bd (CL=7).
+      if (failed.empty() && !fossil(0x1E00, 0x0000, 0x0307, f)) failed = "line setup";
+      std::string answer;
+      for (char sent : std::string("AZ")) {
+        if (failed.empty() && !fossil(0x0100 | static_cast<uint8_t>(sent), 0, 0, f)) failed = "transmit";
+      }
+      for (int i = 0; failed.empty() && i < 2; ++i) {
+        if (!fossil(0x0200, 0, 0, f) || (f.ax & 0x8000)) {
+          failed = "receive";
+        } else {
+          answer.push_back(static_cast<char>(f.ax & 0xFF));
+        }
+      }
+      if (failed.empty() && (std::string(echo.got.begin(), echo.got.end()) != "AZ" || answer != "B["))
+        failed = "sent \"" + std::string(echo.got.begin(), echo.got.end()) + "\", answered \"" + answer + "\"";
+      fossil(0x0500, 0, 0, f);  // Deinit, as ATKBD does when it gives up.
+      second.serial().Attach(nullptr);
+      if (!failed.empty()) {
+        std::cout << "FAIL boot: serial port: " << failed << "\n";
+        return 1;
+      }
+    }
     Cpu80188::Registers freed{};
     freed.ax = 0x4900;
     freed.ds = freed.es = own;
@@ -1472,6 +1532,7 @@ int wmain(int argc, wchar_t** argv) {
                " an empty drive not ready, a write-protected 1.44 MB disk read and prompted,"
                " blank disks formatted by FORMAT.EXE as 720 KB and 1.44 MB and written,"
                " a host folder read as a diskette and the Aria's file saved back into it,"
+               " two bytes sent and answered through FOSSIL and the 8251 serial port,"
                " konec says vypnuto and switches off, D: kept through"
                " a memory snapshot without a new question, F1 starts the word processor)\n";
   return 0;

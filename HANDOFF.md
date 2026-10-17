@@ -957,6 +957,92 @@ Boot ROM navíc musí mít bajt na `FFFF:000Eh` (na PC modelový bajt BIOSu):
 `FOSSIL.COM` přebírá `INT 14h` a používá porty `0600h`, `0601h`, `0681h`
 a registry PCB `INT0`/`INT1` (`38h`, `3Ah`) a časovač 1 (`5Ah`, `5Eh`).
 
+**Rozbor 17. 10. 2026 (`ar-w6w`, sestavení 7.05; offsety v souborech COM
+od 100h).** Podnět: uživatel chce vnější klávesnici.
+
+*Sériový čip je USART typu Intel 8251* (`FOSSIL.COM`, „Ric's FOSSIL
+driver 1.10 (ARIA version)“, Robotron 1998):
+
+- `0600h` data, `0601h` řízení/stav. Inicializace `+082Bh`: třikrát
+  `00h`, `40h` (vnitřní reset 8251), pak režimový bajt a příkaz s bitem
+  4 (reset chyb). Režim skládá `+07F3h`: bity 1–0 = `10b` (hodiny ×16),
+  datové bity, parita, stop bity. Příkazy (`+0841h`–`+08BDh`, kopie
+  v `[0792h]`): bit 0 TxEN, 1 DTR, 2 RxE, 3 break, 4 reset chyb, 5 RTS.
+- Stav: bit 1 RxRDY, bity 3–5 chyby (`test al,38h`, `+0918h`), bit 7 DSR
+  (`+08F4h`, řízení toku).
+- Přerušení: **RxRDY na `INT0`** (vektor 0Ch, řízení `38h`; obsluha
+  `+0908h` přečte bajt a zavolá vzdálenou rutinu z `[si+0Ch]` — háček
+  pro jiné programy), **TxRDY na `INT1`** (vektor 0Dh, `3Ah`; obsluha
+  `+095Ah` posílá z bufferu a `INT1` zamaskuje, když je prázdný). EOI
+  nespecifické (`8000h` na `22h`).
+- Rychlost: **časovač 1** (`+07DCh`) s maximem z tabulky `+0793h`,
+  řízení `C001h` (spojitě, výstup TMROUT1) — hodiny 8251 ×16 (dělitele
+  6.4: 3,75 MHz / (16 × rychlost)).
+- `0681h` bit 1 se čte jen při chybě příjmu (`+092Fh`) [význam neznámý].
+
+*Vnější klávesnice* (`ATKBD.COM`, „ARIA external keyboard driver (CZ2)“):
+klávesnice IBM/AT za **adaptérem na sériovém portu**, který posílá
+skenkódy sady 1.
+
+- Spouští se z AUTOEXEC jen s „C“ v CMOS `057Eh` (`+0599h`, volba MODE
+  „IBM keyboard“), jinak „Disabled.“ `057Eh` čte jen ATKBD a píše jen
+  ARIAMODE (`tools/ports.py`: `ARIAMODE.EXE+1391h`, `ATKBD.COM+059Ch`);
+  BKB ho nečte, takže **braillská klávesnice pracuje dál** a znaky
+  z vnější se jen přidávají do její fronty (`INT 64h`). Adaptér musí být
+  připojený už při startu, jinak ATKBD skončí.
+- `+05ADh`: FOSSIL (`INT 14h` AH=04h → `1954h`), linka **9600 Bd 8N1**
+  (AX=1E00h, CL=7), řízení toku RTS/CTS (AH=0Fh AL=2), vyprázdnění
+  vstupu, **pošle `55h`** a asi sekundu (12h tiků) čeká na odpověď:
+  `FAh` = klávesnice připojená, `FFh` = adaptér bez klávesnice (řekne
+  „klávesnice není připojena.“, ale nainstaluje se), nic nebo jiné =
+  „adaptér klávsenice není připojen.“ a konec.
+- Instalace: FOSSIL AX=FD01h s ES:BX = `+0446h` (rozšíření FOSSIL.COM,
+  odpověď `5243h` „CR“) — rutina dostane každý přijatý bajt. Pak pošle
+  **`10h`** = příkaz LED, všechny zhasnuté.
+- `+0446h`: bajt ≥ `E0h` je předpona (`[0103h]`), jinak skenkód sady 1
+  (bit 7 = uvolnění, `+035Fh`). Tabulky po slovech podle skenkódu:
+  `+0131h` malé, `+01F1h` s Shiftem (české QWERTZ s diakritikou,
+  mrtvé klávesy `+02DBh`), F1–F10 na kódy Arie `01C0h`–`01C9h`.
+  Znak jde do BKB přes **`INT 64h`** (CX = kód) a echo přes `INT 6Ah`.
+- Zámky (`+0411h`): stav v `[0109h]` (Caps = bit 2), adaptéru pošle
+  **`10h` + bity LED**; u Caps Lock zahraje tón (`+010Ah`/`+011Eh`).
+
+Protokol adaptéru je tedy: `55h` → `FAh`/`FFh`, `10h`|LED bez odpovědi,
+dál proud skenkódů sady 1 (s `E0h` předponami). Emulace potřebuje
+8251 na `0600h`/`0601h` s `INT0`/`INT1`, adaptér jako zařízení na jeho
+lince a v okně přepínač, kdy klávesnice PC posílá skenkódy adaptéru
+místo braillských kláves. Windows dává skenkód sady 1 přímo
+(`lParam` bity 16–23, bit 24 = předpona `E0h`).
+
+Rozhodnutí uživatele týž den: adaptér se připojuje v nabídce a klávesnice
+PC pak píše jako vnější; `F11`, `Ctrl+K` ji přepne zpět na braillské
+klávesy a znovu (adaptér zůstává připojený), s tóny a v titulku. MODE
+„IBM keyboard“ zapíná uživatel v Arii sám, emulátor CMOS nemění.
+Obnova po vypnutí nevadí: snímek drží jen RAM a hodiny, zapnutí projde
+AUTOEXEC znovu, FOSSIL i ATKBD čip nastaví nanovo.
+
+**Krok 1, USART 8251 (týž den).** `src/usart8251.*`: stavový automat
+režim → (synchronní znaky) → příkaz, 40h vrací k režimu, takže
+00h 00h 00h 40h FOSSILu projde z každého stavu; stav bit 0 TxRDY, 1
+RxRDY, 2 TxEMPTY, 4 přetečení, bit 7 = 0 (FOSSIL to čte jako CTS,
+`+08F4h`); příjem jen s RxE, vysílání jen s TxEN, ER maže chyby.
+Bajt trvá tolik, kolik linka: bity z režimového bajtu × 16 × perioda
+časovače 1 (maximum A × 4 takty CPU, `Cpu80188::TimerMaxA`/
+`TimerControl`); při 9600 Bd (maximum 24) asi 15 400 taktů. Linky RxRDY
+→ `INT0` a TxRDY (s TxEN) → `INT1` se mění uvnitř přístupu na port,
+ne až po úseku, aby čtení dat shodilo `INT0` před EOI obsluhy
+(`+0908h`). Zařízení na lince: rozhraní `SerialDevice` (Receive po
+stop bitu, Transmit, kdykoli je přijímač volný). Reset při zapnutí.
+
+- Ověřeno `boot_test` (7.05 i 6.87): zařízení vracející bajt + 1, přes
+  `INT 14h` FOSSILu (`DosCall` dostal číslo přerušení): init `1954h`,
+  9600 8N1, odeslání „AZ“, zařízení dostalo „AZ“, FOSSIL přijal „B[“.
+  Mutace: `INT0` odpojené → „receive“ selže; `INT1` odpojené → selže
+  taky (nic neodejde). `0600h`/`0601h` zmizely z neznámých portů. 18
+  PASS, start do MAINMENU beze změny (7.05 9,1 s, 6.87 8,8 s).
+- Další krok: adaptér klávesnice (`55h` → `FAh`, `10h`|LED) a ATKBD
+  nainstalovaný v `boot_test`.
+
 ### 6.7 Paralelní port a Backpack
 
 `BACKPACK.SYS` přebírá `INT 13h`, `BPHDARIA.SYS` volá `INT 6Bh`.

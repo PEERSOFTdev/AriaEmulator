@@ -112,8 +112,12 @@ zašuměné daty; za doklad se berou jen porty načtené do `DX`.
   klávesy **[binárka]**, formát podle `KbdGetPowerOnState` **[API]**;
   `0584h` nejspíš kurzorový kříž se Shift uprostřed (maska `0Fh` = šipky,
   vzpomínka uživatele) **[předpoklad]** (HANDOFF 6.4)
-- `0600h`, `0601h`, `0681h` — `FOSSIL.COM`, nejspíš UART **[předpoklad]**;
-  `0681h` je ale i datový registr tiskárny (níže), vyjasnit
+- `0600h`, `0601h` — **sériový port, USART typu 8251**: 600h data, 601h
+  režim/příkaz/stav (reset 00h 00h 00h 40h), RxRDY na `INT0`, TxRDY na
+  `INT1` (obě hladinová), hodiny ×16 z časovače 1 (`FOSSIL.COM+082Bh`,
+  `+0908h`, `+095Ah`, `+07DCh`; HANDOFF 6.6). Emulováno
+  (`src/usart8251.*`). `0681h` čte FOSSIL jen při chybě příjmu; je to
+  i datový registr tiskárny (níže), význam tam neznámý
 - `0680h`–`0682h` — **paralelní port (tiskárna, Backpack)**: zápis 681h
   data, 682h řízení (bit 0 STROBE, 1 SELECT IN, 2 AUTOFEED, 3 INIT); čtení
   680h i 681h stav (bit 0 PAPER END, 1 BUSY neinvertovaný, 2 ACK,
