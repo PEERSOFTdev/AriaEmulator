@@ -275,6 +275,7 @@ int main() {
     Check(other && other->size == 512 * 1024 && !other->locked, "folders compare without case");
     Check(!loaded.FindCard((root / L"Nikdy").wstring()), "an unknown folder is no card");
     Check(!loaded.backpack_connected() && loaded.last_disk().empty(), "no Backpack unless connected");
+    Check(!loaded.keyboard_connected(), "no external keyboard unless connected");
   }
 
   // The Backpack drive's settings (HANDOFF 6.7): the cable, the last
@@ -285,6 +286,7 @@ int main() {
     const std::wstring image = (root / L"Diskety" / L"Hry; staré.img").wstring();
     Settings saved(file);
     saved.SetBackpackConnected(true);
+    saved.SetKeyboardConnected(true);
     saved.SetLastDisk(image);
     saved.SetDiskFolder((root / L"Diskety").wstring());
     saved.SetDiskLocked(image, true);
@@ -304,6 +306,7 @@ int main() {
     Check(loaded.disk_slot(2) == image && loaded.slot(2) == (root / L"Karta").wstring() && loaded.disk_slot(1).empty(),
           "diskette slots are their own");
     Check(!loaded.FindCard(image), "a diskette is no card");
+    Check(loaded.keyboard_connected(), "the external keyboard's adapter comes back");
   }
 
   // A settings file as an earlier build wrote it, or as a user edits it:

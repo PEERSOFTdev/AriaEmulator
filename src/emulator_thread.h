@@ -60,11 +60,20 @@ class EmulatorThread {
   // ports 0581h, 0582h, 0584h, `bits` the key's bits in that row
   // (HANDOFF 6.4). Called from the window thread.
   void Key(int row, uint8_t bits, bool down);
+  // A key of the external keyboard (HANDOFF 6.6, ar-w6w): its scan code,
+  // set 1 as Windows gives it, for the adapter on the serial line. Called
+  // from the window thread.
+  void ScanCode(uint8_t scan, bool extended, bool down);
 
  private:
   struct KeyEvent {
     int row;
     uint8_t bits;
+    bool down;
+  };
+  struct ScanEvent {
+    uint8_t scan;
+    bool extended;
     bool down;
   };
 
@@ -94,6 +103,7 @@ class EmulatorThread {
   bool thread_live_ = false;  // Started and not yet joined; under tasks_mutex_.
   std::mutex keys_mutex_;
   std::deque<KeyEvent> keys_;
+  std::deque<ScanEvent> scans_;
   uint8_t rows_[3] = {};
   int64_t last_press_ = 0;
   std::thread thread_;

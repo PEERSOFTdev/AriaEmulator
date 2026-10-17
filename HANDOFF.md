@@ -1072,6 +1072,23 @@ vypnuté.
   skenkódy (`lParam`), `F11`, `Ctrl+K` přepíná na braillské klávesy a
   zpět, tóny a titulek.
 
+**Krok 3, okno (týž den).** Klávesnice → „Připojit externí klávesnici“
+(zaškrtávací, nastavení `externi-klavesnice=`, vrací se při startu před
+zapnutím stroje) a „Psát na externí klávesnici“ (`F11`, `Ctrl+K`,
+zkouškou volné; šedé bez adaptéru, zkratka pak pípne). Připojení
+přepne klávesnici PC na vnější a ohlásí, že Aria ji bere po teplém
+resetu jen se zapnutou volbou v MODE. Psaní: `WM_KEYDOWN/UP` i
+`WM_SYSKEY*` (Alt je klávesa) → `ForwardScan`: skenkód z `lParam` bity
+16–22, bit 24 = `E0h`, opakování Windows prochází (klávesnice AT
+opakuje make kódem); `EmulatorThread::ScanCode` → fronta → adaptér.
+Držené klávesy se pustí při přepnutí i ztrátě fokusu (`ReleaseAll`).
+Tóny: dva krátké 1047 Hz = externí, dva 523 Hz = braillské; titulek
+„externí klávesnice“. Uživatelské texty říkají „externí“, ne „vnější“
+(přání uživatele: tak se tomu česky říká). Nápověda a README doplněné.
+Ověřeno: sestavení,
+`card_selftest` (nastavení tam a zpět), 18 PASS, řetězce v EXE;
+**v okně vyzkouší uživatel**.
+
 ### 6.7 Paralelní port a Backpack
 
 `BACKPACK.SYS` přebírá `INT 13h`, `BPHDARIA.SYS` volá `INT 6Bh`.

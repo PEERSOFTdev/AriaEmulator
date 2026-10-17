@@ -79,6 +79,29 @@ posledního stisku neuběhne pět snímání (asi 0,07 sekundy, HANDOFF
 6.4), takže i rychle zahraný akord dojde celý. Automatické opakování
 Windows se nepoužívá.
 
+### Externí klávesnice
+
+K Arii se dala připojit obyčejná klávesnice IBM přes adaptér na sériovém
+portu; Aria pak bere psaní z ní i z braillských kláves zároveň (HANDOFF
+6.6). V emulátoru:
+
+1. V Arii v MODE zapněte volbu **External Keyboard** (System). Aria si
+   ji ukládá do `D:\ARIA.INI` na RAM disku, takže po odpojení baterie
+   je zase vypnutá.
+2. **Klávesnice → Připojit externí klávesnici.** Klávesnice PC hned píše
+   jako externí klávesnice: písmena, české znaky podle rozložení QWERTZ
+   v ovladači Arie, `F1` až `F10`, Caps Lock s tónem Arie. Nastavení si
+   emulátor pamatuje.
+3. **Teplý reset** (`F11`, `Ctrl+P`): ovladač `ATKBD.COM` hledá adaptér
+   jen při startu. Pak řekne „External keyboard driver installed OK“.
+   Bez volby v MODE řekne „Disabled.“ a klávesy nikam nevedou.
+
+**`F11`, `Ctrl+K`** přepíná klávesnici PC mezi externí klávesnicí
+a braillskými klávesami (dva krátké vysoké tóny = externí, dva nízké =
+braillské); adaptér zůstává připojený, jako by na stole ležely obě
+klávesnice. V titulku okna stojí „externí klávesnice“, když píše externí.
+Akordy s mezerníkem a body jdou jen z braillských kláves.
+
 ## Okno a nabídka
 
 Okno se ovládá stejně jako emulátor Eureky A4. Arii berou jen tři
@@ -255,7 +278,7 @@ položek pojmenovaných podle karet ve slotech.
 
 ## Disketa (mechanika Backpack, jednotka E:)
 
-Arie se dala připojit vnější disketová mechanika **Micro Solutions
+Arie se dala připojit externí disketová mechanika **Micro Solutions
 Backpack** 3,5" na paralelní port; emulátor ji má i s řadičem disket
 a Aria s ní pracuje svým vlastním ovladačem `BACKPACK.SYS`. Disketa je
 buď **složka ve Windows**, jako u karty, nebo **obraz**: soubor

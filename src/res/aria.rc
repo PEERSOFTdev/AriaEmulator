@@ -123,6 +123,12 @@ BEGIN
         MENUITEM "&Uvolnit klávesnici\tShift+F11",              ID_KEYBOARD_RELEASE
         MENUITEM "&Jedna klávesa do Windows nebo zkratka\tF11", ID_KEYBOARD_PASSONCE
         MENUITEM SEPARATOR
+        /* The external keyboard (HANDOFF 6.6): its adapter on the serial
+           line, off unless the user plugs it in; plugged, the PC keyboard
+           types as it, and F11, Ctrl+K hands it back to the braille keys. */
+        MENUITEM "Připojit &externí klávesnici",                ID_KEYBOARD_EXTERNAL
+        MENUITEM "Psát na externí &klávesnici\tF11, Ctrl+K",    ID_KEYBOARD_EXTERNAL_TYPE
+        MENUITEM SEPARATOR
         /* No shortcut, as in Eureka's submenu: every host shortcut is a key
            the Aria never gets again.  The mnemonics reach it in four keys:
            F12, K, P, K. */
@@ -181,6 +187,7 @@ BEGIN
     "9",        40079,               VIRTKEY, CONTROL
     "0",        ID_CARD_EJECT,       VIRTKEY, CONTROL
     "Z",        ID_CARD_PROTECT,     VIRTKEY, CONTROL
+    "K",        ID_KEYBOARD_EXTERNAL_TYPE, VIRTKEY, CONTROL
     "I",        ID_DISK_INSERT,      VIRTKEY, CONTROL, SHIFT
     "O",        ID_DISK_INSERT_IMAGE, VIRTKEY, CONTROL, SHIFT
     "M",        ID_DISK_NEW,         VIRTKEY, CONTROL, SHIFT

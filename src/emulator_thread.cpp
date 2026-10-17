@@ -62,8 +62,17 @@ void EmulatorThread::Key(int row, uint8_t bits, bool down) {
   keys_.push_back({row, bits, down});
 }
 
+void EmulatorThread::ScanCode(uint8_t scan, bool extended, bool down) {
+  std::lock_guard<std::mutex> lock(keys_mutex_);
+  scans_.push_back({scan, extended, down});
+}
+
 void EmulatorThread::ApplyKeys(int64_t now) {
   std::lock_guard<std::mutex> lock(keys_mutex_);
+  // The external keyboard's keys need no holding: the adapter queues them
+  // and the serial line paces them.
+  for (const ScanEvent& event : scans_) machine_->keyboard_adapter().Key(event.scan, event.extended, event.down);
+  scans_.clear();
   while (!keys_.empty()) {
     const KeyEvent event = keys_.front();
     if (event.row < 0 || event.row > 2) {
@@ -88,6 +97,7 @@ void EmulatorThread::ApplyKeys(int64_t now) {
 void EmulatorThread::ClearKeys() {
   std::lock_guard<std::mutex> lock(keys_mutex_);
   keys_.clear();
+  scans_.clear();
   for (int row = 0; row < 3; ++row) {
     rows_[row] = 0;
     machine_->SetKeyRow(row, 0);

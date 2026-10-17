@@ -72,6 +72,10 @@ class Settings {
   // image that has been a diskette its write-protect tab.
   bool backpack_connected() const { return backpackConnected_; }
   void SetBackpackConnected(bool connected) { backpackConnected_ = connected; }
+  // The external keyboard's adapter on the serial line (HANDOFF 6.6,
+  // ar-w6w), off unless the user connects it.
+  bool keyboard_connected() const { return keyboardConnected_; }
+  void SetKeyboardConnected(bool connected) { keyboardConnected_ = connected; }
   const std::wstring& last_disk() const { return lastDisk_; }
   void SetLastDisk(std::wstring path) { lastDisk_ = std::move(path); }
   const std::wstring& disk_folder() const { return diskFolder_; }
@@ -94,6 +98,7 @@ class Settings {
   // In the order they were first used, so the file stays readable.
   std::vector<Card> cards_;
   bool backpackConnected_ = false;
+  bool keyboardConnected_ = false;
   std::wstring lastDisk_;
   std::wstring diskFolder_;
   // Diskettes whose tab is closed; one that is not here is writable.

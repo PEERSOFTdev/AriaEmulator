@@ -64,6 +64,15 @@ class MainWindow : public win::Window {
   void RefreshShortcutText(HMENU menu) const;
   // A host key went down or up while the Aria has the keyboard.
   void ForwardKey(bool down, WPARAM virtualKey, LPARAM lParam);
+  // The same while the PC keyboard types as the external keyboard: its
+  // scan code to the adapter (HANDOFF 6.6, ar-w6w).
+  void ForwardScan(bool down, LPARAM lParam);
+  // The external keyboard's adapter in or out of the serial port, said
+  // and remembered; ATKBD.COM notices after a warm reset.
+  void ToggleExternalKeyboard();
+  // F11, Ctrl+K: the PC keyboard between the external keyboard and the
+  // braille keys while the adapter stays in.
+  void SetExternalTyping(bool external, bool quiet = false);
   // Lets go of every Aria key the host holds: the releases of those keys will
   // go to whoever has the keyboard next, never to the machine.
   void ReleaseAll();
@@ -102,6 +111,11 @@ class MainWindow : public win::Window {
   bool switchOffOnExit_ = false;
   // Host keys down on the Aria, so that they can all be let go of.
   std::vector<WPARAM> held_;
+  // The PC keyboard types as the external keyboard (the adapter is in and
+  // the user has not switched back to the braille keys), and its scan
+  // codes held down there, (scan | extended << 8), to let go of likewise.
+  bool externalTyping_ = false;
+  std::vector<uint16_t> heldScans_;
   // The card slot (HANDOFF 6.8, ar-aj1) and the Backpack floppy drive
   // (HANDOFF 6.7, ar-l5v), one shared Drive each.
   CardDrive card_;

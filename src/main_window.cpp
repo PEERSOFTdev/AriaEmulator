@@ -33,6 +33,12 @@ void ToneDisarmed() { Tone(600, 50); }
 void TonePoweredOff() { Tone(700, 100); Tone(500, 100); Tone(300, 150); }
 void TonePoweredOn() { Tone(300, 100); Tone(500, 100); Tone(700, 150); }
 
+// The PC keyboard becomes the external keyboard, or the braille keys again
+// (HANDOFF 6.6): two short equal notes, high or low, a shape none of the
+// others has.
+void ToneExternal() { Tone(1047, 45); Tone(1047, 45); }
+void ToneBraille() { Tone(523, 45); Tone(523, 45); }
+
 // A host key as a key of the Aria's matrix (HANDOFF 6.4, from BKB.COM's
 // decoding at +02E5h-+0489h): row 0 = port 0581h (bits 0-5 dots 3, 2, 1,
 // 4, 5, 6, the keys' order from left to right; bit 7 the space bar), row
@@ -141,7 +147,14 @@ const wchar_t kShortcutHelp[] =
     L"Windows, Ctrl+Shift+O z obrazu (720 KB nebo 1,44 MB; kratší obraz\r\n"
     L"se doplní), Ctrl+Shift+M založí novou,\r\n"
     L"Ctrl+Shift+0 ji vysune a Ctrl+Shift+Z zamkne. Sloty disket mají\r\n"
-    L"F11, Ctrl+F1 až Ctrl+F9. Obraz jen pro čtení je zamčená disketa.";
+    L"F11, Ctrl+F1 až Ctrl+F9. Obraz jen pro čtení je zamčená disketa.\r\n"
+    L"\r\n"
+    L"Externí klávesnice:\r\n"
+    L"\r\n"
+    L"V nabídce Klávesnice se připojí externí klávesnice IBM; klávesnice PC\r\n"
+    L"pak píše jako ona. Aria ji bere po teplém resetu, je-li v MODE\r\n"
+    L"zapnutá volba External Keyboard. F11, Ctrl+K přepíná klávesnici PC\r\n"
+    L"mezi externí klávesnicí a braillskými klávesami.";
 
 }  // namespace
 
@@ -197,6 +210,15 @@ void MainWindow::RegisterCommands() {
     emulator_.Key(2, 0x0F, true);
     emulator_.Key(2, 0x0F, false);
   });
+  OnCommand(ID_KEYBOARD_EXTERNAL, [this] { ToggleExternalKeyboard(); });
+  OnCommand(ID_KEYBOARD_EXTERNAL_TYPE, [this] {
+    if (!settings_.keyboard_connected()) {
+      // Not silence: the shortcut works whatever the menu says.
+      MessageBeep(MB_ICONASTERISK);
+      return;
+    }
+    SetExternalTyping(!externalTyping_);
+  });
   OnCommand(ID_CARD_INSERT, [this] { card_.InsertFromFolder(); });
   OnCommand(ID_CARD_INSERT_IMAGE, [this] { card_.InsertFromImage(); });
   OnCommand(ID_CARD_NEW, [this] { card_.InsertNew(); });
@@ -232,6 +254,43 @@ void MainWindow::InsertRememberedMedia() {
   card_.InsertRemembered();
   disk_.ConnectRemembered();
   disk_.InsertRemembered();
+  // The keyboard adapter as the last run left it, before ATKBD.COM looks.
+  const bool keyboard = settings_.keyboard_connected();
+  emulator_.Call([keyboard](AriaMachine& machine) { machine.ConnectKeyboard(keyboard); });
+  externalTyping_ = keyboard;
+  RefreshTitle();
+}
+
+void MainWindow::ToggleExternalKeyboard() {
+  const bool on = !settings_.keyboard_connected();
+  settings_.SetKeyboardConnected(on);
+  emulator_.Call([on](AriaMachine& machine) { machine.ConnectKeyboard(on); });
+  std::wstring error;
+  if (!settings_.Save(error)) MessageBoxW(hwnd_, error.c_str(), L"Nastavení", MB_OK | MB_ICONWARNING);
+  // Plugged in, the PC keyboard is the external one at once, as hands on
+  // its keys would be; out, the braille keys are all there is.
+  SetExternalTyping(on, /*quiet=*/true);
+  if (on) ToneExternal(); else ToneBraille();
+  // ATKBD.COM looks for the adapter at start-up only, and only with MODE's
+  // External Keyboard on (HANDOFF 6.6).
+  MessageBoxW(hwnd_,
+              on ? L"Externí klávesnice je připojená a klávesnice PC teď píše jako ona. Aria ji začne brát po "
+                   L"teplém resetu (F11, Ctrl+P), je-li v MODE zapnutá volba External Keyboard; jinak klávesy "
+                   L"nikam nevedou.\r\n\r\nF11, Ctrl+K přepíná klávesnici PC mezi externí klávesnicí "
+                   L"a braillskými klávesami."
+                 : L"Externí klávesnice je odpojená, klávesnice PC je zase braillská. Ovladač v Arii o ní "
+                   L"přestane vědět po teplém resetu (F11, Ctrl+P).",
+              L"Externí klávesnice", MB_OK | MB_ICONINFORMATION);
+}
+
+void MainWindow::SetExternalTyping(bool external, bool quiet) {
+  if (externalTyping_ == external) return;
+  // What is down goes up on the side it was pressed on.
+  ReleaseAll();
+  externalTyping_ = external;
+  RefreshTitle();
+  if (quiet) return;
+  if (external) ToneExternal(); else ToneBraille();
 }
 
 void MainWindow::SaveMediaOnExit() {
@@ -262,6 +321,7 @@ void MainWindow::RefreshTitle() const {
   std::wstring title = L"Aria " + info_.version + L", " + info_.encoding +
                        (poweredOff_ ? L" — vypnutá"
                         : released_ ? L" — klávesnice uvolněná"
+                        : externalTyping_ ? L" — externí klávesnice"
                                     : L" — klávesy do Arie");
   // The card and the diskette: the folder or image each lives in, as
   // Eureka names a diskette's.
@@ -292,6 +352,11 @@ void MainWindow::RefreshMenu() const {
   EnableMenuItem(menu, ID_DISK_PROTECT, MF_BYCOMMAND | (disk_.present() ? MF_ENABLED : MF_GRAYED));
   CheckMenuItem(menu, ID_DISK_PROTECT, MF_BYCOMMAND | (disk_.locked() ? MF_CHECKED : MF_UNCHECKED));
   CheckMenuItem(menu, ID_DISK_CONNECT, MF_BYCOMMAND | (disk_.connected() ? MF_CHECKED : MF_UNCHECKED));
+  CheckMenuItem(menu, ID_KEYBOARD_EXTERNAL,
+                MF_BYCOMMAND | (settings_.keyboard_connected() ? MF_CHECKED : MF_UNCHECKED));
+  CheckMenuItem(menu, ID_KEYBOARD_EXTERNAL_TYPE, MF_BYCOMMAND | (externalTyping_ ? MF_CHECKED : MF_UNCHECKED));
+  EnableMenuItem(menu, ID_KEYBOARD_EXTERNAL_TYPE,
+                 MF_BYCOMMAND | (settings_.keyboard_connected() ? MF_ENABLED : MF_GRAYED));
   CheckMenuItem(menu, ID_KEYBOARD_PASSONCE, MF_BYCOMMAND | (passOnce_ ? MF_CHECKED : MF_UNCHECKED));
   // Meaningless while the keyboard is released: every key already goes to
   // Windows.  Greyed says so where a screen reader reads it.
@@ -311,7 +376,7 @@ void MainWindow::RefreshShortcutText(HMENU menu) const {
   std::vector<UINT> ids = {ID_FILE_EXIT,    ID_MACHINE_RESET,     ID_MACHINE_POWERON, ID_MACHINE_POWEROFF,
                            ID_CARD_INSERT,  ID_CARD_INSERT_IMAGE, ID_CARD_NEW,        ID_CARD_EJECT,
                            ID_CARD_PROTECT, ID_DISK_INSERT,       ID_DISK_INSERT_IMAGE, ID_DISK_NEW,
-                           ID_DISK_EJECT,   ID_DISK_PROTECT,      ID_HELP_KEYS};
+                           ID_DISK_EJECT,   ID_DISK_PROTECT,      ID_KEYBOARD_EXTERNAL_TYPE, ID_HELP_KEYS};
   for (UINT id = ID_CARD_SLOT_FIRST; id <= ID_CARD_SLOT_LAST; ++id) ids.push_back(id);
   for (UINT id = ID_DISK_SLOT_FIRST; id <= ID_DISK_SLOT_LAST; ++id) ids.push_back(id);
   for (UINT id : ids) {
@@ -354,12 +419,33 @@ void MainWindow::ForwardKey(bool down, WPARAM virtualKey, LPARAM lParam) {
   emulator_.Key(aria.row, aria.bits, down);
 }
 
+void MainWindow::ForwardScan(bool down, LPARAM lParam) {
+  // Windows gives the key's set-1 scan code in bits 16-23 and the E0h
+  // prefix as bit 24, which is what the adapter sends (HANDOFF 6.6).
+  const uint8_t scan = static_cast<uint8_t>((lParam >> 16) & 0x7F);
+  const bool extended = (lParam & (1 << 24)) != 0;
+  if (scan == 0) return;
+  const uint16_t id = static_cast<uint16_t>(scan | (extended ? 0x100 : 0));
+  const auto found = std::find(heldScans_.begin(), heldScans_.end(), id);
+  if (down) {
+    // A real AT keyboard repeats a held key by sending its make code again,
+    // so Windows' repeat goes through as it is.
+    if (found == heldScans_.end()) heldScans_.push_back(id);
+  } else {
+    if (found == heldScans_.end()) return;
+    heldScans_.erase(found);
+  }
+  emulator_.ScanCode(scan, extended, down);
+}
+
 void MainWindow::ReleaseAll() {
   for (WPARAM key : held_) {
     const AriaKey aria = KeyFor(key);
     emulator_.Key(aria.row, aria.bits, false);
   }
   held_.clear();
+  for (uint16_t id : heldScans_) emulator_.ScanCode(static_cast<uint8_t>(id), (id & 0x100) != 0, false);
+  heldScans_.clear();
 }
 
 void MainWindow::SetReleased(bool released, bool quiet) {
@@ -435,7 +521,11 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
       // Breaking out hands the key to DefWindowProc, which is what "handled
       // by Windows normally" means for a window with no controls of its own.
       if (HostKeepsKey(message == WM_KEYDOWN)) break;
-      ForwardKey(message == WM_KEYDOWN, wParam, lParam);
+      if (externalTyping_) {
+        ForwardScan(message == WM_KEYDOWN, lParam);
+      } else {
+        ForwardKey(message == WM_KEYDOWN, wParam, lParam);
+      }
       return 0;
 
     // Alt and F10 arrive here.  While the Aria has the keyboard they are
@@ -447,7 +537,12 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     case WM_SYSKEYUP:
       if (wParam == VK_F4 && message == WM_SYSKEYDOWN && (lParam & (1 << 29))) break;
       if (HostKeepsKey(message == WM_SYSKEYDOWN)) break;
-      ForwardKey(message == WM_SYSKEYDOWN, wParam, lParam);
+      // On the external keyboard Alt is a key like any other.
+      if (externalTyping_) {
+        ForwardScan(message == WM_SYSKEYDOWN, lParam);
+      } else {
+        ForwardKey(message == WM_SYSKEYDOWN, wParam, lParam);
+      }
       return 0;
 
     // Swallowed so that a key does not end in the system beep -- but not
