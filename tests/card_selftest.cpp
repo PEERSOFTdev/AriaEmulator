@@ -18,6 +18,7 @@
 #include "card_folder.h"
 #include "card_image.h"
 #include "fdc82077.h"
+#include "floppy_image.h"
 #include "pc_card.h"
 #include "fat12.h"
 #include "settings.h"
@@ -273,6 +274,36 @@ int main() {
     const Settings::Card* other = loaded.FindCard((root / L"JINÁ").wstring());
     Check(other && other->size == 512 * 1024 && !other->locked, "folders compare without case");
     Check(!loaded.FindCard((root / L"Nikdy").wstring()), "an unknown folder is no card");
+    Check(!loaded.backpack_connected() && loaded.last_disk().empty(), "no Backpack unless connected");
+  }
+
+  // The Backpack drive's settings (HANDOFF 6.7): the cable, the last
+  // diskette, the image folder, locks and the nine diskette slots, apart
+  // from the cards'.
+  {
+    const fs::path file = root / L"diskety.txt";
+    const std::wstring image = (root / L"Diskety" / L"Hry; staré.img").wstring();
+    Settings saved(file);
+    saved.SetBackpackConnected(true);
+    saved.SetLastDisk(image);
+    saved.SetDiskFolder((root / L"Diskety").wstring());
+    saved.SetDiskLocked(image, true);
+    saved.SetDiskLocked((root / L"Odemčená.img").wstring(), true);
+    saved.SetDiskLocked((root / L"Odemčená.img").wstring(), false);
+    saved.SetDiskSlot(2, image);
+    saved.SetSlot(2, (root / L"Karta").wstring());
+    std::wstring error;
+    Check(saved.Save(error), "the diskette settings save");
+    Settings loaded(file);
+    loaded.Load();
+    Check(loaded.backpack_connected() && loaded.last_disk() == image &&
+              loaded.disk_folder() == (root / L"Diskety").wstring(),
+          "the cable, the last diskette and its folder come back");
+    Check(loaded.DiskLocked(image) && !loaded.DiskLocked((root / L"Odemčená.img").wstring()),
+          "a diskette's lock comes back, an unlocked one stays unlocked");
+    Check(loaded.disk_slot(2) == image && loaded.slot(2) == (root / L"Karta").wstring() && loaded.disk_slot(1).empty(),
+          "diskette slots are their own");
+    Check(!loaded.FindCard(image), "a diskette is no card");
   }
 
   // A settings file as an earlier build wrote it, or as a user edits it:
@@ -373,6 +404,37 @@ int main() {
     Check(!Fdc82077::Disk::FromImage(bpb(1474561, 2880, 18), false), "an image longer than its disk is refused");
     Check(!Fdc82077::Disk::FromImage(std::vector<uint8_t>(1474560 + 512), false), "an image over 1.44 MB is refused");
     Check(!Fdc82077::Disk::FromImage({}, false), "an empty file is refused");
+
+    // New diskettes as DOS FORMAT lays them out, read back as FAT12.
+    for (bool high : {true, false}) {
+      const std::vector<uint8_t> image = FolderCard::FormattedDiskette(high, L"Nová", TextEncoding::kCp852);
+      Fat12Volume volume;
+      std::wstring error;
+      std::vector<FatEntry> entries;
+      const bool bpb = image.size() == (high ? 1474560u : 737280u) && image[0x0D] == (high ? 1 : 2) &&
+                       image[0x11] == (high ? 224 : 112) && image[0x15] == (high ? 0xF0 : 0xF9) &&
+                       image[0x16] == (high ? 9 : 3) && image[0x18] == (high ? 18 : 9) && image[0x1A] == 2;
+      Check(bpb && volume.Open(image, error) && volume.List("", entries) && volume.Label() == "NOV\xb5" &&
+                Fdc82077::Disk::FromImage(image, false),
+            high ? "a new 1.44 MB diskette has FORMAT's BPB" : "a new 720 KB diskette has FORMAT's BPB");
+    }
+    // A file that may not be written is a diskette with its tab open.
+    const fs::path locked_file = root / L"Zamčená.img";
+    {
+      const std::vector<uint8_t> image = FolderCard::FormattedDiskette(false, L"", TextEncoding::kCp852);
+      std::ofstream out(locked_file, std::ios::binary);
+      out.write(reinterpret_cast<const char*>(image.data()), static_cast<std::streamsize>(image.size()));
+    }
+    fs::permissions(locked_file, fs::perms::owner_write, fs::perm_options::remove);
+    Fdc82077::Disk read_disk;
+    std::wstring read_error;
+    Check(floppy_image::Read(locked_file, read_disk, read_error) && read_disk.write_protected &&
+              read_disk.sectors == 9,
+          "a read-only image is a write-protected diskette");
+    fs::permissions(locked_file, fs::perms::owner_write, fs::perm_options::add);
+    Put(root / L"Velká.img", std::string(1474560 + 1, '\0'));
+    Check(!floppy_image::Read(root / L"Velká.img", read_disk, read_error) && !read_error.empty(),
+          "an image over 1.44 MB is refused with a reason");
   }
 
   // A flash card of two 28F008SA pairs (pc_card.h, HANDOFF 6.8): what

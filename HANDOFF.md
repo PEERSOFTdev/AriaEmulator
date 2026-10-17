@@ -1263,6 +1263,50 @@ a kód se v souboru střídají).
   doběhnout (CPU zpět na `jmp $`, `2Ch` = 0). Možná příčina i křehkosti
   6.87 v `ar-z2e`.
 
+**Nabídka Disketa a společná třída mechanik, 11. 10. 2026 (`ar-l5v`,
+krok 7).** Rozhodnutí uživatele téhož dne: kabel mechaniky je přepínač
+v nabídce, výchozí odpojený (připojená bere `E:`, jinak starý formát fleš
+karty); zkratky karty se `Shiftem`; nejdřív obrazy, diskety ze složek
+v dalším kroku; formát 1,44 MB na 720 KB obraz zmenší.
+
+- **`Drive`** (`src/drive.*`) nese, co karta a disketa mají společné:
+  domov (obraz nebo složka), zámek, automatické uložení po sekundě klidu,
+  uložení při vysunutí a ukončení, vrácení po startu, devět slotů, tóny
+  a díl titulku. **`CardDrive`** a **`DiskDrive`** dodají přístup ke
+  stroji, čtení a zápis obrazu, záznamy v nastavení a slova zpráv.
+  `MainWindow` jen směruje příkazy. `SlotsDialog` dostává slova a zámky
+  zvenku. Kód karty se přestěhoval z `main_window.cpp` se třemi změnami
+  chování: (1) obraz karty jen pro čtení je zamčená karta; (2) **vysunutí
+  a ukončení ukládají jen médium, do kterého Aria zapsala** — obraz
+  z archivu jen prohlédnutý zůstane, jak byl (i krátký), a složková karta
+  nepřepíše změny udělané ve Windows; (3) médium vrácené po nepovedeném
+  uložení se sestaví znovu z bajtů (karta SRAM tím ztratí stav baterie)
+  a mechanika si pamatuje, že uložení dluží (`Drive::owed_`).
+- **Stroj vlastní mechaniku** (`AriaMachine::backpack()`, jednotka 1)
+  a kabel (`ConnectBackpack`); `boot_test` už jede přes ni.
+- **Obraz diskety** (`src/floppy_image.*`): čtení s důvodem odmítnutí
+  česky, soubor jen pro čtení = zamčená disketa, zápis přes dočasný
+  soubor. Nová disketa naformátovaná jako FORMAT v DOSu
+  (`FolderCard::FormattedDiskette`: 1,44 MB médium F0h, 1 sektor na
+  cluster, 224 položek kořene; 720 KB F9h, 2 sektory, 112), nebo
+  nenaformátovaná (F6h). `Fat12Format` k tomu dostal médium a velikost
+  clusteru.
+- Nastavení: `backpack=`, `posledni-disketa=`, `slozka-disket=`,
+  `zamcena-disketaN=`, `disketa-slotN=`; diskety nejsou mezi kartami.
+- Výměna bez pauzy: díky lince výměny (krok 6) ji `BACKPACK.SYS` pozná
+  hned, takže `DiskDrive` nevkládá žádnou prodlevu.
+- Ověřeno sestavením, `card_selftest` (nastavení diskety, BPB nové
+  diskety, obraz jen pro čtení) a 18 PASS; **nabídku v okně zatím
+  vyzkouší uživatel** (karta po přestěhování kódu i disketa).
+- **Ověřeno uživatelem 17. 10. 2026**, až na sloty disket: `Ctrl+Shift+1`
+  až `9` jen píply (tón zrušeného F11), z nabídky fungovaly. Příčina
+  mimo emulátor: `RegisterHotKey` na stroji uživatele všech devět odmítl
+  (chyba 1409, drží je jiný program jako globální zkratky — běží tam
+  HotkeyP, Ditto, PowerToys; který, Windows neřekne), takže stisk do okna
+  nedojde. `Ctrl+Shift+0`, `O`, `M`, `Z` a `Ctrl+1` až `9` volné byly.
+  Sloty disket proto mají **`Ctrl+F1` až `Ctrl+F9`** (volba uživatele,
+  zkouškou volné); `Ctrl+Shift+O`, `M`, `0`, `Z` zůstaly.
+
 ### 6.8 PCMCIA
 
 `CARDMAN.EXE` (PKLITE); `TRICKSS2.EXE` čte `057Fh`, `ATKBD.COM` `057Eh`.

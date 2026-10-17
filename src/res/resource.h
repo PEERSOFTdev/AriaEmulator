@@ -41,6 +41,17 @@
 #define ID_CARD_SLOT9        40079
 #define ID_CARD_SLOT_FIRST   ID_CARD_SLOT1
 #define ID_CARD_SLOT_LAST    ID_CARD_SLOT9
+// The Backpack floppy drive (HANDOFF 6.7, ar-l5v).
+#define ID_DISK_INSERT_IMAGE 40080
+#define ID_DISK_NEW          40081
+#define ID_DISK_EJECT        40082
+#define ID_DISK_PROTECT      40083
+#define ID_DISK_CONNECT      40084
+#define ID_DISK_SLOTS        40085
+#define ID_DISK_SLOT1        40091
+#define ID_DISK_SLOT9        40099
+#define ID_DISK_SLOT_FIRST   ID_DISK_SLOT1
+#define ID_DISK_SLOT_LAST    ID_DISK_SLOT9
 
 // Dialogs. IDC_STATIC as winres.h has it, which aria.rc does not include.
 #ifndef IDC_STATIC
@@ -63,5 +74,10 @@
 #define IDC_SLOT_CURRENT     224
 #define IDC_SLOT_CLEAR       225
 #define IDC_SLOT_LOCK        226
+#define IDD_DISK_NEW         230
+// Consecutive, for CheckRadioButton.
+#define IDC_DISK_NEW_HIGH    231
+#define IDC_DISK_NEW_LOW     232
+#define IDC_DISK_NEW_BLANK   233
 
 #endif

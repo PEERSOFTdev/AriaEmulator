@@ -23,7 +23,8 @@ class Fdc82077 {
   struct Disk {
     std::vector<uint8_t> bytes;
     bool write_protected = false;
-    bool modified = false;  // Written since inserted.
+    bool modified = false;  // Written since inserted, or since the host saved it.
+    uint64_t writes = 0;    // Sectors and tracks written, for the host's autosave.
 
     int cylinders = 0, heads = 0, sectors = 0;
     uint8_t rate = 0;  // CCR value the disk is read at.
@@ -58,6 +59,8 @@ class Fdc82077 {
   void Insert(Disk disk);
   std::optional<Disk> Eject();
   const Disk* disk() const { return disk_ ? &*disk_ : nullptr; }
+  // For the host's write-protect switch and its saves.
+  Disk* disk() { return disk_ ? &*disk_ : nullptr; }
 
   std::function<void(const std::string&)> log;
 

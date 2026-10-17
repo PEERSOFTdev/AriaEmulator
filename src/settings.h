@@ -65,6 +65,23 @@ class Settings {
   const std::wstring& slot(int number) const { return slots_[static_cast<std::size_t>(number - 1)]; }
   void SetSlot(int number, std::wstring path) { slots_[static_cast<std::size_t>(number - 1)] = std::move(path); }
 
+  // The Backpack floppy drive (HANDOFF 6.7, ar-l5v): whether its cable is
+  // in (off unless the user connects it: connected, it takes E:, where the
+  // old flash card format lives otherwise), the diskette in it at the end
+  // of the last run, the folder of the last diskette image, and for every
+  // image that has been a diskette its write-protect tab.
+  bool backpack_connected() const { return backpackConnected_; }
+  void SetBackpackConnected(bool connected) { backpackConnected_ = connected; }
+  const std::wstring& last_disk() const { return lastDisk_; }
+  void SetLastDisk(std::wstring path) { lastDisk_ = std::move(path); }
+  const std::wstring& disk_folder() const { return diskFolder_; }
+  void SetDiskFolder(std::wstring folder) { diskFolder_ = std::move(folder); }
+  bool DiskLocked(const std::wstring& path) const;
+  void SetDiskLocked(const std::wstring& path, bool locked);
+  // Nine slots of their own, F11, Ctrl+F1 to F9.
+  const std::wstring& disk_slot(int number) const { return diskSlots_[static_cast<std::size_t>(number - 1)]; }
+  void SetDiskSlot(int number, std::wstring path) { diskSlots_[static_cast<std::size_t>(number - 1)] = std::move(path); }
+
   // Case-insensitive, separators and a trailing one folded, so the same
   // folder typed two ways is one card.
   static bool SamePath(const std::wstring& left, const std::wstring& right);
@@ -76,6 +93,12 @@ class Settings {
   std::array<std::wstring, kSlots> slots_;
   // In the order they were first used, so the file stays readable.
   std::vector<Card> cards_;
+  bool backpackConnected_ = false;
+  std::wstring lastDisk_;
+  std::wstring diskFolder_;
+  // Diskettes whose tab is closed; one that is not here is writable.
+  std::vector<std::wstring> lockedDisks_;
+  std::array<std::wstring, kSlots> diskSlots_;
 };
 
 #endif

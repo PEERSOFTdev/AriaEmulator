@@ -1026,12 +1026,13 @@ int wmain(int argc, wchar_t** argv) {
     std::cout << "FAIL boot: the memory snapshot did not survive a round trip\n";
     return 1;
   }
-  // A Backpack floppy drive on the printer port, unit 65 (HANDOFF 6.7):
-  // BACKPACK.SYS must find it at 680h-682h, read its EEPROM and announce
-  // it as drive E:. On this second machine and not the first: attached
-  // there, 6.87 once missed the later swap to a blank card (ar-z2e; no
-  // longer reproducible on 11. 10. 2026, likely DosCall's fault, ar-fiu).
-  BackpackFloppy backpack(65);
+  // The machine's own Backpack floppy drive on the printer port, as the
+  // window plugs it in (HANDOFF 6.7): BACKPACK.SYS must find it at
+  // 680h-682h, read its EEPROM and announce it as drive E:. On this second
+  // machine and not the first: attached there, 6.87 once missed the later
+  // swap to a blank card (ar-z2e; no longer reproducible on 11. 10. 2026,
+  // likely DosCall's fault, ar-fiu).
+  BackpackFloppy& backpack = second.backpack();
   if (verbose) backpack.log = [](const std::string& line) {
     if (line.rfind("FDC", 0) == 0) std::cout << "backpack: " << line << "\n";
   };
@@ -1042,7 +1043,11 @@ int wmain(int argc, wchar_t** argv) {
   std::vector<uint8_t> short_image = FloppyImage(false, "DISKETA TXT", floppy_text);
   short_image.resize(18 * 512);
   backpack.fdc().Insert(*Fdc82077::Disk::FromImage(std::move(short_image), false));
-  second.parallel().Attach(&backpack);
+  if (second.BackpackConnected()) {
+    std::cout << "FAIL boot: the Backpack drive is connected before anyone plugged it in\n";
+    return 1;
+  }
+  second.ConnectBackpack(true);
   second.PowerOn();
   SpeechLog second_speech;
   long long after_menu = -1;  // Cycles run since ">mainmenu", for MAINMENU's own start.

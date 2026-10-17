@@ -28,6 +28,10 @@ struct Fat12Format {
   uint16_t root_entries = 112;
   uint16_t sectors_per_track = 0;  // BPB geometry; 0 for media without one.
   uint16_t heads = 0;
+  // A diskette as DOS FORMAT lays it out: its media byte (F0h 1.44 MB,
+  // F9h 720 KB) and cluster size; 0 picks the smallest that keeps FAT12.
+  uint8_t media = 0xF8;
+  uint8_t sectors_per_cluster = 0;
   std::string oem = "ARIAEMU ";    // 8 characters.
   std::string label;               // Up to 11 characters, in the volume's encoding.
 };

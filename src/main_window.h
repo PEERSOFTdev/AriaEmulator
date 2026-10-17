@@ -5,7 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "card_folder.h"
+#include "card_drive.h"
+#include "disk_drive.h"
 #include "emulator_thread.h"
 #include "settings.h"
 #include "text_codec.h"
@@ -43,12 +44,13 @@ class MainWindow : public win::Window {
   // cut, as in the Eureka emulator.
   bool SaveMemoryOnExit() const { return poweredOff_ || switchOffOnExit_; }
 
-  // Takes the card out and writes it back into its folder, once the
-  // emulator thread has stopped. A failure is told in a message box.
-  void SaveCardOnExit();
-  // Puts back the card that was in the slot when the last run ended, with
-  // its size and lock, before the machine starts. Told only when it cannot.
-  void InsertRememberedCard();
+  // Takes the card and the diskette out and writes them back home, once
+  // the emulator thread has stopped. A failure is told in a message box.
+  void SaveMediaOnExit();
+  // Puts back the card and the diskette the last run ended with, with
+  // their sizes and locks, and plugs the Backpack drive in if it was,
+  // before the machine starts. Told only when it cannot.
+  void InsertRememberedMedia();
 
  protected:
   LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) override;
@@ -77,48 +79,6 @@ class MainWindow : public win::Window {
   void SetPassOnce(bool armed);
   std::wstring AboutText() const;
 
-  // The card slot (HANDOFF 6.8, ar-aj1).
-  void InsertCardFromFolder();
-  // Asks for the card's size, among those `folder` fits on, and puts it in.
-  void InsertFolderAskingSize(const std::wstring& folder);
-  void InsertCardFromImage();
-  // Ctrl+1 to Ctrl+9: the card a slot names, at its remembered size and
-  // lock. An empty or stale slot is told, never silent.
-  void InsertSlot(int number);
-  void ManageSlots();
-  // The slot items take the names of their cards.
-  void RefreshSlotItems(HMENU menu) const;
-  // Karta -> Vložit novou kartu: an empty folder, or an image formatted or
-  // not, made and put in.
-  void InsertNewCard();
-  // Builds the card from `folder`, or reads it from the image `file`, and
-  // puts it in, the one in the slot going back to its home first. False,
-  // with the user told, when it cannot.
-  bool MountFolderCard(const std::wstring& folder, uint32_t size, bool locked);
-  bool MountImageCard(const std::wstring& file, bool locked);
-  // Takes out the card in the slot when it is the one at `path`; false when
-  // it could not be saved and stayed in.
-  bool EjectIfInSlot(const std::wstring& path);
-  // Where a card dialog opens: for an image, the folder of the last image;
-  // else, or before one, beside the card in the slot or the last card.
-  // Empty leaves it to the shell.
-  std::wstring CardDialogFolder(bool image) const;
-  bool PutCardIn(std::unique_ptr<FolderCard> folder, const std::wstring& home, std::vector<uint8_t> image,
-                 bool locked);
-  // Writes what the card holds now back into its folder while it stays in:
-  // the autosave after a second of quiet.
-  void AutosaveCard();
-  // Records the card in the settings and saves them; a failure is told.
-  void RememberCard();
-  // Writes `image` back into the card's image file or folder; files a
-  // folder card could not take are told (once per set) and the image kept
-  // for a look.
-  bool SaveCard(const std::vector<uint8_t>& image, std::wstring& error);
-  // Takes the card out and writes it back into its folder. False, with the
-  // card put back in and the user told, when the folder could not take it.
-  bool EjectCard(bool quiet);
-  void ToggleCardLock();
-
   EmulatorThread& emulator_;
   MachineInfo info_;
   Settings& settings_;
@@ -142,19 +102,10 @@ class MainWindow : public win::Window {
   bool switchOffOnExit_ = false;
   // Host keys down on the Aria, so that they can all be let go of.
   std::vector<WPARAM> held_;
-  // The card in the slot: its home, a folder or an image file, empty when
-  // the slot is; and for a folder card what writes it back.
-  std::filesystem::path cardHome_;
-  std::unique_ptr<FolderCard> cardFolder_;
-  uint32_t cardSize_ = 0;
-  bool cardLocked_ = false;
-  // The autosave: the card's write count at the last look, how many looks
-  // it has stood still, and whether the last save failed (told once).
-  uint64_t cardWrites_ = 0;
-  int cardQuietLooks_ = 0;
-  bool autosaveFailed_ = false;
-  // The damaged files last told about, so the autosave does not repeat it.
-  std::vector<std::wstring> damagedTold_;
+  // The card slot (HANDOFF 6.8, ar-aj1) and the Backpack floppy drive
+  // (HANDOFF 6.7, ar-l5v), one shared Drive each.
+  CardDrive card_;
+  DiskDrive disk_;
 };
 
 #endif

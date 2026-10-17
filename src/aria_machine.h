@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "adsp2105.h"
+#include "backpack.h"
 #include "cpu80188.h"
 #include "dac_renderer.h"
 #include "flash_image.h"
@@ -90,6 +91,13 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   HleBios& bios() { return *bios_; }
   Rtc146818& rtc() { return rtc_; }
   ParallelPort& parallel() { return parallel_; }
+  // The Backpack floppy drive (HANDOFF 6.7), on the printer port when
+  // connected. BACKPACK.SYS looks for it only at start-up, so plugging it in
+  // or out takes effect for the Aria at the next power-on or reset, as with
+  // the real cable. Its diskette goes in and out through fdc().
+  BackpackFloppy& backpack() { return backpack_; }
+  void ConnectBackpack(bool connected) { parallel_.Attach(connected ? &backpack_ : nullptr); }
+  bool BackpackConnected() const { return parallel_.attached() == &backpack_; }
   BiosDisk& disk(int drive) { return disks_[drive & 1]; }
 
   // Direct memory access for the BIOS and tests, through the same decoding
@@ -202,6 +210,9 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   Rtc146818::Clock clock_;        // For a new RTC after a battery cut.
   Rtc146818 rtc_;
   ParallelPort parallel_;
+  // Unit 1: README.DOC orders drives by the serial number's last two
+  // digits, and with one drive any number makes it E:.
+  BackpackFloppy backpack_{1};
   Cpu80188 cpu_;
   std::unique_ptr<HleBios> bios_;
 

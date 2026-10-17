@@ -68,7 +68,12 @@ std::wstring SlotLine(int number, const std::wstring& slot, bool locked) {
 }  // namespace
 
 bool SlotsDialog::OnInit() {
+  SetWindowTextW(hwnd_, texts_.caption.c_str());
+  SetDlgItemTextW(hwnd_, IDC_SLOT_CURRENT, texts_.current.c_str());
+  SetDlgItemTextW(hwnd_, IDC_SLOT_LOCK, texts_.lock.c_str());
   FillList(0);
+  // Greyed, so it is read as not yet there rather than missing.
+  if (texts_.folder_title.empty()) SetEnabled(IDC_SLOT_FOLDER, false);
   return false;
 }
 
@@ -113,18 +118,18 @@ bool SlotsDialog::OnCommand(int id, int notification) {
   // as the machine has it, any other as the settings remember it.
   auto lockOf = [&](const std::wstring& path) {
     if (!currentCard_.empty() && Settings::SamePath(path, currentCard_)) return currentLocked_;
-    const Settings::Card* known = settings_.FindCard(path);
-    return known && known->locked;
+    return knownLocked_(path);
   };
   switch (id) {
     case IDC_SLOT_FOLDER: {
-      const std::wstring folder = win::PickFolder(hwnd_, L"Vyberte složku s kartou pro tento slot");
+      if (texts_.folder_title.empty()) return true;
+      const std::wstring folder = win::PickFolder(hwnd_, texts_.folder_title.c_str());
       if (!folder.empty()) SetSlot(index, folder, lockOf(folder));
       return true;
     }
     case IDC_SLOT_IMAGE: {
-      const std::wstring file = win::PickFile(hwnd_, L"Vyberte obraz karty pro tento slot", L"Obrazy karet",
-                                              card_image::kPattern, imageFolder_.c_str());
+      const std::wstring file = win::PickFile(hwnd_, texts_.image_title.c_str(), texts_.image_filter.c_str(),
+                                              texts_.image_pattern.c_str(), imageFolder_.c_str());
       if (!file.empty()) SetSlot(index, file, lockOf(file));
       return true;
     }
@@ -209,5 +214,18 @@ bool NewCardDialog::OnOk() {
           : IsDlgButtonChecked(hwnd_, IDC_CARD_NEW_BLANK) == BST_CHECKED ? Kind::kBlankImage
           : IsDlgButtonChecked(hwnd_, IDC_CARD_NEW_FLASH) == BST_CHECKED ? Kind::kFlash
                                                                           : Kind::kFolder;
+  return true;
+}
+
+bool NewDiskDialog::OnInit() {
+  CheckRadioButton(hwnd_, IDC_DISK_NEW_HIGH, IDC_DISK_NEW_BLANK, IDC_DISK_NEW_HIGH);
+  SetFocus(Item(IDC_DISK_NEW_HIGH));
+  return true;
+}
+
+bool NewDiskDialog::OnOk() {
+  kind_ = IsDlgButtonChecked(hwnd_, IDC_DISK_NEW_LOW) == BST_CHECKED     ? Kind::kLow
+          : IsDlgButtonChecked(hwnd_, IDC_DISK_NEW_BLANK) == BST_CHECKED ? Kind::kBlank
+                                                                          : Kind::kHigh;
   return true;
 }

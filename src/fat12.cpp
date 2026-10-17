@@ -28,7 +28,7 @@ std::string Trimmed(const uint8_t* bytes, std::size_t length) {
 std::vector<uint8_t> FormatFat12(const Fat12Format& format) {
   constexpr uint32_t kSector = 512;
   const uint32_t root_sectors = (format.root_entries * 32u + kSector - 1) / kSector;
-  uint32_t per_cluster = 1;
+  uint32_t per_cluster = format.sectors_per_cluster ? format.sectors_per_cluster : 1;
   uint32_t fat_sectors = 1;
   for (;;) {
     // FAT size and cluster count depend on each other; a FAT sized for the
@@ -37,7 +37,7 @@ std::vector<uint8_t> FormatFat12(const Fat12Format& format) {
     const uint32_t clusters_upper = data_upper / per_cluster;
     fat_sectors = ((clusters_upper + 2) * 3 / 2 + kSector - 1) / kSector;
     const uint32_t clusters = (format.sectors - 1 - root_sectors - 2 * fat_sectors) / per_cluster;
-    if (clusters < 4085 || per_cluster == 128) break;
+    if (format.sectors_per_cluster || clusters < 4085 || per_cluster == 128) break;
     per_cluster *= 2;
   }
   std::vector<uint8_t> image(static_cast<std::size_t>(format.sectors) * kSector, 0);
@@ -61,7 +61,7 @@ std::vector<uint8_t> FormatFat12(const Fat12Format& format) {
     put16(32, format.sectors);
     put16(34, format.sectors >> 16);
   }
-  boot[21] = 0xF8;
+  boot[21] = format.media;
   put16(22, fat_sectors);
   put16(24, format.sectors_per_track);
   put16(26, format.heads);
@@ -69,7 +69,7 @@ std::vector<uint8_t> FormatFat12(const Fat12Format& format) {
   boot[511] = 0xAA;
   for (uint32_t fat = 0; fat < 2; ++fat) {
     uint8_t* table = image.data() + (1 + fat * fat_sectors) * kSector;
-    table[0] = 0xF8;
+    table[0] = format.media;
     table[1] = table[2] = 0xFF;
   }
   if (!format.label.empty()) {

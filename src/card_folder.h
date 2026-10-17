@@ -34,6 +34,12 @@ class FolderCard {
   // `label` made a volume label by the Aria's rules: what a new image card
   // starts as.
   static std::vector<uint8_t> Formatted(uint32_t size, const std::wstring& label, TextEncoding encoding);
+  // An empty diskette for the Backpack drive (HANDOFF 6.7), as DOS FORMAT
+  // lays one out, so other PCs and tools read it too: 1.44 MB with media
+  // F0h, 18 sectors a track, 224 root entries, one sector a cluster; 720 KB
+  // with F9h, 9 a track, 112 entries, two a cluster.
+  static std::vector<uint8_t> FormattedDiskette(bool high_density, const std::wstring& label,
+                                                TextEncoding encoding);
 
   // The card sizes `folder` fits on, smallest first, and the bytes its
   // files take. False with a Czech message when it cannot be read.

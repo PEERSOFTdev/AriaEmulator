@@ -42,6 +42,7 @@ class ParallelPort {
     virtual uint8_t Status() = 0;  // PC status byte, bits 3-7.
   };
   void Attach(Device* device) { device_ = device; }
+  const Device* attached() const { return device_; }
 
   // `reg` is the offset from kBase.
   uint8_t Read(int reg);

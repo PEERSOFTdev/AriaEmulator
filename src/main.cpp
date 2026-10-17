@@ -164,16 +164,17 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show) {
     return 1;
   }
   window.Show(show);
-  // The card the last run ended with, in before the machine starts, as it
-  // would have stayed in the slot.
-  window.InsertRememberedCard();
+  // The card and the diskette the last run ended with, in before the
+  // machine starts, as they would have stayed in; the Backpack's cable too,
+  // so BACKPACK.SYS finds the drive at start-up.
+  window.InsertRememberedMedia();
   emulator.Start();
   win::RunMessageLoop(window.handle(), window.accelerators(), window.hostAccelerators(),
                       [&window] { return window.HostShortcutsActive(); });
   emulator.Stop();
-  // The card is the user's files, kept by its own battery: it goes back to
-  // its folder whatever happens to the memory.
-  window.SaveCardOnExit();
+  // The card and the diskette are the user's files: they go back home
+  // whatever happens to the memory.
+  window.SaveMediaOnExit();
   if (window.SaveMemoryOnExit()) {
     std::vector<uint8_t> state;
     emulator.machine().SaveState(state);

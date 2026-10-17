@@ -23,6 +23,14 @@ constexpr char kSlotPrefix[] = "slot";
 // locked, then the folder or image file, last, because a path may hold a
 // ';'.
 constexpr char kCardPrefix[] = "karta";
+// The Backpack drive (HANDOFF 6.7): "backpack=1" when its cable is in, the
+// diskette in it at the end, the folder of the last image, and one line a
+// locked diskette, numbered for the same reason as the cards.
+constexpr char kBackpackKey[] = "backpack";
+constexpr char kLastDiskKey[] = "posledni-disketa";
+constexpr char kDiskFolderKey[] = "slozka-disket";
+constexpr char kLockedDiskPrefix[] = "zamcena-disketa";
+constexpr char kDiskSlotPrefix[] = "disketa-slot";
 constexpr char kBom[] = "\xef\xbb\xbf";
 
 std::string ToUtf8(const std::wstring& text) {
@@ -95,6 +103,18 @@ void Settings::SetCardLocked(const std::wstring& path, bool locked) {
   RememberCard(path, known ? known->size : 0, locked);
 }
 
+bool Settings::DiskLocked(const std::wstring& path) const {
+  for (const std::wstring& locked : lockedDisks_) {
+    if (SamePath(locked, path)) return true;
+  }
+  return false;
+}
+
+void Settings::SetDiskLocked(const std::wstring& path, bool locked) {
+  std::erase_if(lockedDisks_, [&](const std::wstring& known) { return SamePath(known, path); });
+  if (locked) lockedDisks_.push_back(path);
+}
+
 void Settings::Load() {
   std::ifstream input(file_, std::ios::binary);
   if (!input) return;
@@ -115,6 +135,27 @@ void Settings::Load() {
     }
     if (key == kImageFolderKey) {
       imageFolder_ = FromUtf8(value);
+      continue;
+    }
+    if (key == kBackpackKey) {
+      backpackConnected_ = value == "1";
+      continue;
+    }
+    if (key == kLastDiskKey) {
+      lastDisk_ = FromUtf8(value);
+      continue;
+    }
+    if (key == kDiskFolderKey) {
+      diskFolder_ = FromUtf8(value);
+      continue;
+    }
+    if (key.size() == std::size(kDiskSlotPrefix) && key.starts_with(kDiskSlotPrefix) && key.back() >= '1' &&
+        key.back() <= '0' + kSlots) {
+      SetDiskSlot(key.back() - '0', FromUtf8(value));
+      continue;
+    }
+    if (key.starts_with(kLockedDiskPrefix)) {
+      if (!value.empty()) SetDiskLocked(FromUtf8(value), true);
       continue;
     }
     if (key.size() == std::size(kSlotPrefix) && key.starts_with(kSlotPrefix) && key.back() >= '1' &&
@@ -157,6 +198,15 @@ bool Settings::Save(std::wstring& error) const {
     text += L"karta" + std::to_wstring(i + 1) + L"=" + std::to_wstring(cards_[i].size) + L";" +
             (cards_[i].locked ? L"1" : L"0") + L";" + cards_[i].path + L"\r\n";
   }
+  text += std::wstring(L"backpack=") + (backpackConnected_ ? L"1" : L"0") + L"\r\n";
+  if (!lastDisk_.empty()) text += L"posledni-disketa=" + lastDisk_ + L"\r\n";
+  if (!diskFolder_.empty()) text += L"slozka-disket=" + diskFolder_ + L"\r\n";
+  for (int number = 1; number <= kSlots; ++number) {
+    if (!disk_slot(number).empty())
+      text += L"disketa-slot" + std::to_wstring(number) + L"=" + disk_slot(number) + L"\r\n";
+  }
+  for (std::size_t i = 0; i < lockedDisks_.size(); ++i)
+    text += L"zamcena-disketa" + std::to_wstring(i + 1) + L"=" + lockedDisks_[i] + L"\r\n";
   // Through a temporary file, so a failed write leaves the old settings.
   const fs::path temporary = file_.wstring() + L".tmp";
   {

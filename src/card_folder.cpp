@@ -388,6 +388,19 @@ std::vector<uint8_t> FolderCard::Formatted(uint32_t size, const std::wstring& la
   return FormatFat12(CardFormat(size, label, encoding));
 }
 
+std::vector<uint8_t> FolderCard::FormattedDiskette(bool high_density, const std::wstring& label,
+                                                   TextEncoding encoding) {
+  Fat12Format format;
+  format.sectors = high_density ? 2880 : 1440;
+  format.root_entries = high_density ? 224 : 112;
+  format.sectors_per_track = high_density ? 18 : 9;
+  format.heads = 2;
+  format.media = high_density ? 0xF0 : 0xF9;
+  format.sectors_per_cluster = high_density ? 1 : 2;
+  format.label = VolumeLabel(label, encoding);
+  return FormatFat12(format);
+}
+
 bool FolderCard::FittingSizes(const fs::path& folder, TextEncoding encoding, std::vector<uint32_t>& sizes,
                               uint64_t& bytes, std::wstring& error) {
   Node root;

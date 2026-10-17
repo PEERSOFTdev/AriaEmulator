@@ -325,6 +325,7 @@ void Fdc82077::Format() {
       std::fill_n(disk->bytes.begin() + static_cast<std::ptrdiff_t>(offset), kSectorSize, filler);
     }
     disk->modified = true;
+    ++disk->writes;
   }
   Result({static_cast<uint8_t>((st1 ? kAbnormal : 0) | st0), st1, 0, id[0], id[1], id[2], id[3]});
   interrupt_ = true;
@@ -366,7 +367,10 @@ void Fdc82077::ReadWrite(bool write) {
     }
     const size_t offset = ((static_cast<size_t>(cylinder) * disk->heads + head) * disk->sectors + (r - 1)) * kSectorSize;
     const size_t moved = dma_.Transfer(&disk->bytes[offset], kSectorSize, !write);
-    if (write && moved) disk->modified = true;
+    if (write && moved) {
+      disk->modified = true;
+      ++disk->writes;
+    }
     if (moved < kSectorSize && !dma_.TerminalCount()) {
       st1 = kOverrun;
       break;

@@ -253,6 +253,52 @@ kartu proti zápisu** patří kartě, ne slotu: dva sloty s touž kartou mají
 jeden zámek a zámek platí i pro `Ctrl+I`. Na konci nabídky Karta je devět
 položek pojmenovaných podle karet ve slotech.
 
+## Disketa (mechanika Backpack, jednotka E:)
+
+Arie se dala připojit vnější disketová mechanika **Micro Solutions
+Backpack** 3,5" na paralelní port; emulátor ji má i s řadičem disket
+a Aria s ní pracuje svým vlastním ovladačem `BACKPACK.SYS`. Diskety jsou
+**obrazy**: soubory s obsahem diskety sektor po sektoru (`.img`, `.ima`,
+`.vfd`, `.flp`, `.dsk`), jak je dělají jiné emulátory a nástroje. Nabídka
+**Disketa** (`F12`, `D`); zkratky jsou zkratky karty se `Shiftem` navíc:
+
+- **Připojit mechaniku Backpack** zapojí kabel (zaškrtnuto) nebo ho
+  vytáhne. `BACKPACK.SYS` hledá mechaniku jen při startu, proto ji Aria
+  uvidí až po teplém resetu (`F11`, `Ctrl+P`) nebo dalším zapnutí; při
+  startu pak řekne „The following BACKPACK drive is available: Drive E:“.
+  Emulátor si to pamatuje. Bez mechaniky je jednotka `E:` starý formát
+  fleš karty; s mechanikou se ten posune na další písmeno.
+- **`F11`, `Ctrl+Shift+O`** (Vložit disketu z obrazu) bere diskety
+  **720 KB a 1,44 MB**. Velikost pozná podle zaváděcího sektoru, jinak
+  podle velikosti souboru. **Kratší obraz** (uříznutý za posledním
+  použitým sektorem, jak bývají v archivech) se doplní a uloží v plné
+  velikosti. Obraz diskety 5,25" (360 KB, 1,2 MB) nebo větší než 1,44 MB
+  mechanika odmítne a řekne proč. Obraz, který je ve Windows **jen pro
+  čtení**, je zamčená disketa a nic se do něj nezapíše.
+- **`F11`, `Ctrl+Shift+M`** (Vložit novou disketu) založí obraz
+  naformátovaný na 1,44 MB nebo 720 KB, jak ho dělá FORMAT v DOSu, nebo
+  nenaformátovaný. Ten naformátuje Aria: ve správci souborů `Shift+F7`,
+  písmeno `e`, pak otázka „sedm set dvacet kilo“ (ano = 720 KB, ne =
+  1,44 MB). Disketa 1,44 MB naformátovaná na 720 KB se stane disketou
+  720 KB i s menším obrazem.
+- **`F11`, `Ctrl+Shift+0`** disketu vysune a zapíše do obrazu;
+  **`F11`, `Ctrl+Shift+Z`** ji zamkne proti zápisu. Aria pak řekne
+  „e chráněn proti zápisu“. Prázdná mechanika hlásí „disk e není
+  připraven“.
+- Co Aria na disketu zapíše, uloží emulátor do obrazu sám asi sekundu po
+  posledním zápisu, při vysunutí a při ukončení. Obraz, na který Aria nic
+  nezapsala, zůstane, jak byl, i kratší. Výměnu diskety Aria pozná hned,
+  tak jako skutečná mechanika.
+- **Sloty** jsou tytéž jako u karet, jen vlastní: **`F11`,
+  `Ctrl+F1` až `Ctrl+F9`** a **Disketa → Spravovat sloty…**. Ne
+  `Ctrl+Shift` s číslicí: ty si rády berou jiné programy pro sebe
+  (správci schránky a klávesových zkratek) a do okna emulátoru by pak
+  nedošly.
+  Diskety ze složek ve Windows přijdou v dalším kroku.
+
+V titulku okna je disketa jako karta: „disketa Hry.img, 1,44 MB“, nebo
+„bez diskety“, když je mechanika připojená a prázdná.
+
 ## Zvuk
 
 Zvuk jde do výchozího zvukového zařízení Windows. Když se ho nepodaří
