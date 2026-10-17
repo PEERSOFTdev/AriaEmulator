@@ -2469,6 +2469,8 @@ doba běhu „substantially greater“ než součet tabulky.
   6,1 s (první zvuk 10,2 s). **Řeč beze změny:** WAV startu (`-wav`)
   s modelem a bez: 7,73 / 7,71 s, aktivní 3,39 s v obou, 94 krátkých
   pauz 3–60 ms v obou, stejná špička. 18 PASS.
+- **Ověřeno uživatelem** týž den: dlouhá řeč při nejvyšší rychlosti bez
+  vad a srozumitelná, hra i běžná práce v pořádku.
 - **Zbývá:** kalibrace podle skutečné Arie, až se k ní tester dostane:
   stopky od prvního tónu první úrovně do dopadu rakety, když se nestřílí
   (v emulátoru teď asi 70 s). Návrh „deset tónů“ výše neplatí — tóny

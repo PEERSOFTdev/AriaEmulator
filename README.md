@@ -321,9 +321,8 @@ Procesor Arie, 80C188 na 15 MHz, má jen osmibitovou sběrnici: každý bajt
 programu i dat po ní jde zvlášť, nejméně čtyři takty. Emulátor to od
 17. 10. 2026 počítá podle katalogového listu Intelu (HANDOFF 6.12).
 Opakování kláves a čekání v programech měří časovače, ty se nemění; řeč
-při startu zní stejně (porovnáno nahrávkou), delší řeč při nejvyšší
-rychlosti se teprve ověřuje poslechem. Zpomalí se to, co tempo počítá
-průchody smyčkou —
+zní stejně, i dlouhá při nejvyšší rychlosti (ověřeno nahrávkou
+a poslechem). Zpomalí se to, co tempo počítá průchody smyčkou —
 třeba hra Obránce, která předtím běžela asi 1,7× rychleji, než
 osmibitová sběrnice dovoluje. Start do hlavní nabídky trvá asi 9 sekund
 emulovaného času místo 6.
