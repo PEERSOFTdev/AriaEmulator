@@ -86,6 +86,7 @@ void AriaMachine::PowerOn() {
   dsp_.Reset();
   cpu_.Reset();
   serial_.Reset();
+  keyboard_adapter_.Reset();
   bios_->PowerOn(kernel_);
   UpdateHostLines();
   // The drivers start afresh and look at the slot themselves.

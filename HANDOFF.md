@@ -1043,6 +1043,35 @@ stop bitu, Transmit, kdykoli je přijímač volný). Reset při zapnutí.
 - Další krok: adaptér klávesnice (`55h` → `FAh`, `10h`|LED) a ATKBD
   nainstalovaný v `boot_test`.
 
+**Krok 2, adaptér klávesnice (týž den).** `src/keyboard_adapter.*`
+(`SerialDevice`): `55h` → `FAh` (bez klávesnice `FFh`), `10h`|LED
+uloží, jinak fronta skenkódů sady 1 (`Key(scan, extended, down)`, E0h
+před rozšířenými, bit 7 uvolnění), po bajtu, kdykoli je linka volná.
+`AriaMachine::ConnectKeyboard` ho připojí k 8251; při zapnutí se
+vyprázdní.
+
+*Kde MODE drží „External Keyboard“* (ověřil i uživatel: zapnul ho v MODE
+a nastavení je na RAM disku): `ARIAMODE.EXE` čte a píše
+**`D:\ARIA.INI`** (adresář z AAPI `GetRAMDisk`, ordinál 4Ch, ukazatel
+`[1204h]` nastavený na `+165Ah`, jméno `aria.ini` na DS:0C44h; DS =
+402h). Sekce **`[System]`** (tabulka sekcí DS:086Ch → položky od 0678h
+po 28h bajtech), klíč **`External Keyboard`**, hodnoty **`Off`/`On`**
+(seznam DS:00BCh). Při každém startu ARIAMODE (v AUTOEXEC před ATKBD)
+podle něj zapíše `057Eh` (`+137Bh`), takže zápis do CMOS zvenku nepřežije
+— nastavení patří do ARIA.INI. Po vybití baterie (prázdný D:) je zase
+vypnuté.
+
+- Ověřeno `boot_test` (7.05 i 6.87): první stroj zapíše
+  `D:\ARIA.INI` s `[System]` / `External Keyboard=On`, druhé zapnutí
+  (RAM drží) s připojeným adaptérem: ATKBD hlásí „External keyboard
+  driver installed OK“, LED 0; skenkódy „k“ a Shift+K z adaptéru vyjdou
+  z `INT 16h` AH=00h jako „kK“. Test sériové linky s ozvěnou se
+  přestěhoval na první stroj: nainstalovaný ATKBD bere FOSSILu každý
+  přijatý bajt (háček `FD01h`). 18 PASS.
+- Další krok: okno — připojení adaptéru v nabídce, klávesnice PC píše
+  skenkódy (`lParam`), `F11`, `Ctrl+K` přepíná na braillské klávesy a
+  zpět, tóny a titulek.
+
 ### 6.7 Paralelní port a Backpack
 
 `BACKPACK.SYS` přebírá `INT 13h`, `BPHDARIA.SYS` volá `INT 6Bh`.

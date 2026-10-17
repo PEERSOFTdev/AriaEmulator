@@ -10,6 +10,7 @@
 
 #include "adsp2105.h"
 #include "backpack.h"
+#include "keyboard_adapter.h"
 #include "usart8251.h"
 #include "cpu80188.h"
 #include "dac_renderer.h"
@@ -101,6 +102,11 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   Usart8251& serial() { return serial_; }
   void ConnectBackpack(bool connected) { parallel_.Attach(connected ? &backpack_ : nullptr); }
   bool BackpackConnected() const { return parallel_.attached() == &backpack_; }
+  // The external keyboard's adapter on the serial line (HANDOFF 6.6,
+  // ar-w6w). ATKBD.COM looks for it only at start-up.
+  KeyboardAdapter& keyboard_adapter() { return keyboard_adapter_; }
+  void ConnectKeyboard(bool connected) { serial_.Attach(connected ? &keyboard_adapter_ : nullptr); }
+  bool KeyboardConnected() const { return serial_.attached() == &keyboard_adapter_; }
   BiosDisk& disk(int drive) { return disks_[drive & 1]; }
 
   // Direct memory access for the BIOS and tests, through the same decoding
@@ -225,6 +231,7 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   Cpu80188 cpu_;
   // After cpu_: its baud clock is timer 1 and its lines are INT0/INT1.
   Usart8251 serial_;
+  KeyboardAdapter keyboard_adapter_;
   std::unique_ptr<HleBios> bios_;
 
   uint64_t bus_bytes_ = 0;

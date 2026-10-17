@@ -988,6 +988,70 @@ int wmain(int argc, wchar_t** argv) {
       DosCall(machine, speech, waiting, top, freed);
       machine.EjectCard();
     }
+    // The serial port through the Aria's own FOSSIL.COM (HANDOFF 6.6,
+    // ar-w6w): 9600 8N1 as ATKBD.COM sets it, two bytes out through the
+    // 8251's TxRDY interrupt (INT1), their answers in through RxRDY
+    // (INT0). FOSSIL's send and receive are both interrupt-driven, so the
+    // answers prove both lines. On this machine, where ATKBD stayed
+    // disabled: installed, it takes every byte FOSSIL receives.
+    {
+      EchoDevice echo;
+      machine.serial().Attach(&echo);
+      auto fossil = [&](uint16_t ax, uint16_t bx, uint16_t cx, Cpu80188::Registers& out) {
+        out = {};
+        out.ax = ax;
+        out.bx = bx;
+        out.cx = cx;
+        out.dx = 0;  // Port 0, the Aria's only one.
+        out.ds = out.es = data;
+        return DosCall(machine, speech, waiting, top, out, {}, {}, 3, 0x14);
+      };
+      Cpu80188::Registers f;
+      std::string failed;
+      if (!fossil(0x0400, 0, 0, f) || f.ax != 0x1954) failed = "FOSSIL init did not answer 1954h";
+      // AX=1E00h: no break, no parity, 8 data bits (CH=3), 9600 Bd (CL=7).
+      if (failed.empty() && !fossil(0x1E00, 0x0000, 0x0307, f)) failed = "line setup";
+      std::string answer;
+      for (char sent : std::string("AZ")) {
+        if (failed.empty() && !fossil(0x0100 | static_cast<uint8_t>(sent), 0, 0, f)) failed = "transmit";
+      }
+      for (int i = 0; failed.empty() && i < 2; ++i) {
+        if (!fossil(0x0200, 0, 0, f) || (f.ax & 0x8000)) {
+          failed = "receive";
+        } else {
+          answer.push_back(static_cast<char>(f.ax & 0xFF));
+        }
+      }
+      if (failed.empty() && (std::string(echo.got.begin(), echo.got.end()) != "AZ" || answer != "B["))
+        failed = "sent \"" + std::string(echo.got.begin(), echo.got.end()) + "\", answered \"" + answer + "\"";
+      fossil(0x0500, 0, 0, f);  // Deinit, as ATKBD does when it gives up.
+      machine.serial().Attach(nullptr);
+      if (!failed.empty()) {
+        std::cout << "FAIL boot: serial port: " << failed << "\n";
+        return 1;
+      }
+    }
+    // MODE's "External Keyboard" switched on, as the user does it: ARIAMODE
+    // keeps its settings in ARIA.INI on the RAM disk (AAPI GetRAMDisk,
+    // ARIAMODE.EXE+165Ah; the item in section "System", values Off/On)
+    // and at every start sets CMOS 057Eh from it (+137Bh), which ATKBD.COM
+    // checks. D: survives into the second power-on below.
+    {
+      const char kIni[] = "D:\\ARIA.INI";
+      const char kSetting[] = "[System]\r\nExternal Keyboard=On\r\n";
+      for (std::size_t i = 0; i < sizeof kIni; ++i) machine.Poke(base + 0x200 + i, static_cast<uint8_t>(kIni[i]));
+      for (std::size_t i = 0; i + 1 < sizeof kSetting; ++i)
+        machine.Poke(base + 0x220 + i, static_cast<uint8_t>(kSetting[i]));
+      Cpu80188::Registers w;
+      bool written = dos(0x3C00, 0, 0, 0x200, w);
+      const uint16_t ini = w.ax;
+      written = written && dos(0x4000, ini, sizeof kSetting - 1, 0x220, w) && w.ax == sizeof kSetting - 1;
+      written = dos(0x3E00, ini, 0, 0, w) && written;
+      if (!written) {
+        std::cout << "FAIL boot: D:\\ARIA.INI with External Keyboard=On not written\n";
+        return 1;
+      }
+    }
   }
 
   // The battery keeps the RAM disk D: through power-off (HANDOFF 6.9), and
@@ -1070,6 +1134,10 @@ int wmain(int argc, wchar_t** argv) {
     return 1;
   }
   second.ConnectBackpack(true);
+  // The external keyboard (HANDOFF 6.6, ar-w6w): switched on in D:\ARIA.INI
+  // above, and the adapter on the serial line before start-up, when
+  // ATKBD.COM looks for it.
+  second.ConnectKeyboard(true);
   second.PowerOn();
   SpeechLog second_speech;
   long long after_menu = -1;  // Cycles run since ">mainmenu", for MAINMENU's own start.
@@ -1089,6 +1157,11 @@ int wmain(int argc, wchar_t** argv) {
   if (second.bios().Teletype().find("BACKPACK drive is available:\r\n  Drive E: - 3.5 inch 1.4MB") ==
       std::string::npos) {
     std::cout << "FAIL boot: BACKPACK.SYS did not announce the Backpack floppy as drive E:\n";
+    return 1;
+  }
+  if (second.bios().Teletype().find("External keyboard driver installed OK") == std::string::npos ||
+      second.keyboard_adapter().leds() != 0) {
+    std::cout << "FAIL boot: ATKBD.COM did not install with the adapter answering FAh\n";
     return 1;
   }
   bool kept = vdisk(second);
@@ -1374,45 +1447,33 @@ int wmain(int argc, wchar_t** argv) {
         return 1;
       }
     }
-    // The serial port through the Aria's own FOSSIL.COM (HANDOFF 6.6,
-    // ar-w6w): 9600 8N1 as ATKBD.COM sets it, two bytes out through the
-    // 8251's TxRDY interrupt (INT1), their answers in through RxRDY
-    // (INT0). FOSSIL's send and receive are both interrupt-driven, so the
-    // answers prove both lines.
+    // The external keyboard (HANDOFF 6.6, ar-w6w): ATKBD.COM installed at
+    // this power-on; "k", then Shift+K, as scan codes from the adapter,
+    // must come out of INT 16h the way an application reads keys: ATKBD
+    // turns them into characters and hands them to BKB's queue (INT 64h).
     {
-      EchoDevice echo;
-      second.serial().Attach(&echo);
-      auto fossil = [&](uint16_t ax, uint16_t bx, uint16_t cx, Cpu80188::Registers& out) {
-        out = {};
-        out.ax = ax;
-        out.bx = bx;
-        out.cx = cx;
-        out.dx = 0;  // Port 0, the Aria's only one.
-        out.ds = out.es = data;
-        return DosCall(second, second_speech, waiting, top, out, {}, {}, 3, 0x14);
+      KeyboardAdapter& adapter = second.keyboard_adapter();
+      std::string typed;
+      Cpu80188::Registers k;
+      auto read_key = [&]() {
+        k = {};
+        k.ax = 0x0000;
+        k.ds = k.es = data;
+        return DosCall(second, second_speech, waiting, top, k, {}, {}, 3, 0x16);
       };
-      Cpu80188::Registers f;
-      std::string failed;
-      if (!fossil(0x0400, 0, 0, f) || f.ax != 0x1954) failed = "FOSSIL init did not answer 1954h";
-      // AX=1E00h: no break, no parity, 8 data bits (CH=3), 9600 Bd (CL=7).
-      if (failed.empty() && !fossil(0x1E00, 0x0000, 0x0307, f)) failed = "line setup";
-      std::string answer;
-      for (char sent : std::string("AZ")) {
-        if (failed.empty() && !fossil(0x0100 | static_cast<uint8_t>(sent), 0, 0, f)) failed = "transmit";
-      }
-      for (int i = 0; failed.empty() && i < 2; ++i) {
-        if (!fossil(0x0200, 0, 0, f) || (f.ax & 0x8000)) {
-          failed = "receive";
-        } else {
-          answer.push_back(static_cast<char>(f.ax & 0xFF));
-        }
-      }
-      if (failed.empty() && (std::string(echo.got.begin(), echo.got.end()) != "AZ" || answer != "B["))
-        failed = "sent \"" + std::string(echo.got.begin(), echo.got.end()) + "\", answered \"" + answer + "\"";
-      fossil(0x0500, 0, 0, f);  // Deinit, as ATKBD does when it gives up.
-      second.serial().Attach(nullptr);
-      if (!failed.empty()) {
-        std::cout << "FAIL boot: serial port: " << failed << "\n";
+      adapter.Key(0x25, false, true);   // k
+      adapter.Key(0x25, false, false);
+      const bool first_read = read_key();
+      if (first_read) typed.push_back(static_cast<char>(k.ax & 0xFF));
+      adapter.Key(0x2A, false, true);   // Left Shift
+      adapter.Key(0x25, false, true);
+      adapter.Key(0x25, false, false);
+      adapter.Key(0x2A, false, false);
+      const bool second_read = first_read && read_key();
+      if (second_read) typed.push_back(static_cast<char>(k.ax & 0xFF));
+      if (typed != "kK") {
+        std::cout << "FAIL boot: external keyboard: typed \"" << Printable(typed) << "\" (AX " << std::hex << k.ax
+                  << std::dec << (first_read && second_read ? "" : ", INT 16h did not return") << ")\n";
         return 1;
       }
     }
@@ -1533,6 +1594,7 @@ int wmain(int argc, wchar_t** argv) {
                " blank disks formatted by FORMAT.EXE as 720 KB and 1.44 MB and written,"
                " a host folder read as a diskette and the Aria's file saved back into it,"
                " two bytes sent and answered through FOSSIL and the 8251 serial port,"
+               " ATKBD.COM installed with the keyboard adapter and k, Shift+K typed through it,"
                " konec says vypnuto and switches off, D: kept through"
                " a memory snapshot without a new question, F1 starts the word processor)\n";
   return 0;
