@@ -88,11 +88,12 @@ BEGIN
     END
     /* The Backpack floppy drive on the printer port (HANDOFF 6.7): the
        card's items with Shift added to the shortcuts (user's choice, 11.
-       10. 2026); diskettes from folders come next. The cable is a switch
+       10. 2026), the slots on Ctrl+F1 to F9 (HANDOFF 6.7). The cable is a switch
        of its own, off unless the user plugs it in: BACKPACK.SYS finds the
        drive at start-up only, and then it takes E:. */
     POPUP "&Disketa"
     BEGIN
+        MENUITEM "&Vložit disketu ze složky…\tF11, Ctrl+Shift+I", ID_DISK_INSERT
         MENUITEM "Vložit disketu z &obrazu…\tF11, Ctrl+Shift+O",  ID_DISK_INSERT_IMAGE
         MENUITEM "Vložit &novou disketu…\tF11, Ctrl+Shift+M",     ID_DISK_NEW
         MENUITEM "V&ysunout disketu\tF11, Ctrl+Shift+0",          ID_DISK_EJECT
@@ -180,6 +181,7 @@ BEGIN
     "9",        40079,               VIRTKEY, CONTROL
     "0",        ID_CARD_EJECT,       VIRTKEY, CONTROL
     "Z",        ID_CARD_PROTECT,     VIRTKEY, CONTROL
+    "I",        ID_DISK_INSERT,      VIRTKEY, CONTROL, SHIFT
     "O",        ID_DISK_INSERT_IMAGE, VIRTKEY, CONTROL, SHIFT
     "M",        ID_DISK_NEW,         VIRTKEY, CONTROL, SHIFT
     "0",        ID_DISK_EJECT,       VIRTKEY, CONTROL, SHIFT
@@ -242,20 +244,22 @@ END
 /* A new diskette (HANDOFF 6.7): formatted as DOS FORMAT would at either
    density of the 3.5" drive, or blank for the Aria's own FORMAT, which
    asks the density itself. The file it goes in is asked next. */
-IDD_DISK_NEW DIALOGEX 0, 0, 260, 84
+IDD_DISK_NEW DIALOGEX 0, 0, 260, 96
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Nová disketa"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    GROUPBOX        "Jaká disketa", IDC_STATIC, 7, 7, 246, 50
+    GROUPBOX        "Jaká disketa", IDC_STATIC, 7, 7, 246, 62
     CONTROL         "&1,44 MB, naformátovaná", IDC_DISK_NEW_HIGH, "Button",
                     BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, 16, 19, 230, 10
     CONTROL         "&720 KB, naformátovaná", IDC_DISK_NEW_LOW, "Button",
                     BS_AUTORADIOBUTTON, 16, 31, 230, 10
     CONTROL         "&Nenaformátovaná — naformátuje ji Aria", IDC_DISK_NEW_BLANK, "Button",
                     BS_AUTORADIOBUTTON, 16, 43, 230, 10
-    DEFPUSHBUTTON   "OK", IDOK, 149, 63, 50, 14, WS_GROUP
-    PUSHBUTTON      "Storno", IDCANCEL, 203, 63, 50, 14
+    CONTROL         "&Prázdná složka ve Windows, disketa 1,44 MB", IDC_DISK_NEW_FOLDER, "Button",
+                    BS_AUTORADIOBUTTON, 16, 55, 230, 10
+    DEFPUSHBUTTON   "OK", IDOK, 149, 75, 50, 14, WS_GROUP
+    PUSHBUTTON      "Storno", IDCANCEL, 203, 75, 50, 14
 END
 
 /* The slots, after the Eureka emulator's "Sloty s disketami": a list that

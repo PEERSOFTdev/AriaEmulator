@@ -132,7 +132,7 @@ class NewCardDialog : public win::Dialog {
 // in, the window asks next.
 class NewDiskDialog : public win::Dialog {
  public:
-  enum class Kind { kHigh, kLow, kBlank };
+  enum class Kind { kHigh, kLow, kBlank, kFolder };
   Kind kind() const { return kind_; }
 
  protected:

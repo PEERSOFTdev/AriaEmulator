@@ -218,14 +218,15 @@ bool NewCardDialog::OnOk() {
 }
 
 bool NewDiskDialog::OnInit() {
-  CheckRadioButton(hwnd_, IDC_DISK_NEW_HIGH, IDC_DISK_NEW_BLANK, IDC_DISK_NEW_HIGH);
+  CheckRadioButton(hwnd_, IDC_DISK_NEW_HIGH, IDC_DISK_NEW_FOLDER, IDC_DISK_NEW_HIGH);
   SetFocus(Item(IDC_DISK_NEW_HIGH));
   return true;
 }
 
 bool NewDiskDialog::OnOk() {
   kind_ = IsDlgButtonChecked(hwnd_, IDC_DISK_NEW_LOW) == BST_CHECKED     ? Kind::kLow
-          : IsDlgButtonChecked(hwnd_, IDC_DISK_NEW_BLANK) == BST_CHECKED ? Kind::kBlank
-                                                                          : Kind::kHigh;
+          : IsDlgButtonChecked(hwnd_, IDC_DISK_NEW_BLANK) == BST_CHECKED  ? Kind::kBlank
+          : IsDlgButtonChecked(hwnd_, IDC_DISK_NEW_FOLDER) == BST_CHECKED ? Kind::kFolder
+                                                                           : Kind::kHigh;
   return true;
 }

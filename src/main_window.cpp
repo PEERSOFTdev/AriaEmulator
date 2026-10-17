@@ -137,8 +137,9 @@ const wchar_t kShortcutHelp[] =
     L"\r\n"
     L"Mechaniku Backpack připojíte v nabídce Disketa; Aria ji uvidí jako\r\n"
     L"jednotku E: po teplém resetu. Zkratky diskety jsou zkratky karty se\r\n"
-    L"Shiftem navíc: F11, Ctrl+Shift+O vloží disketu z obrazu (720 KB nebo\r\n"
-    L"1,44 MB; kratší obraz se doplní), Ctrl+Shift+M založí novou,\r\n"
+    L"Shiftem navíc: F11, Ctrl+Shift+I vloží disketu 1,44 MB ze složky ve\r\n"
+    L"Windows, Ctrl+Shift+O z obrazu (720 KB nebo 1,44 MB; kratší obraz\r\n"
+    L"se doplní), Ctrl+Shift+M založí novou,\r\n"
     L"Ctrl+Shift+0 ji vysune a Ctrl+Shift+Z zamkne. Sloty disket mají\r\n"
     L"F11, Ctrl+F1 až Ctrl+F9. Obraz jen pro čtení je zamčená disketa.";
 
@@ -204,6 +205,7 @@ void MainWindow::RegisterCommands() {
   OnCommand(ID_CARD_SLOTS, [this] { card_.ManageSlots(); });
   for (int number = 1; number <= Settings::kSlots; ++number)
     OnCommand(ID_CARD_SLOT_FIRST + number - 1, [this, number] { card_.InsertSlot(number); });
+  OnCommand(ID_DISK_INSERT, [this] { disk_.InsertFromFolder(); });
   OnCommand(ID_DISK_INSERT_IMAGE, [this] { disk_.InsertFromImage(); });
   OnCommand(ID_DISK_NEW, [this] { disk_.InsertNew(); });
   OnCommand(ID_DISK_EJECT, [this] { disk_.Eject(/*quiet=*/false); });
@@ -308,8 +310,8 @@ void MainWindow::RefreshShortcutText(HMENU menu) const {
   static constexpr wchar_t kPrefix[] = L"F11, ";
   std::vector<UINT> ids = {ID_FILE_EXIT,    ID_MACHINE_RESET,     ID_MACHINE_POWERON, ID_MACHINE_POWEROFF,
                            ID_CARD_INSERT,  ID_CARD_INSERT_IMAGE, ID_CARD_NEW,        ID_CARD_EJECT,
-                           ID_CARD_PROTECT, ID_DISK_INSERT_IMAGE, ID_DISK_NEW,        ID_DISK_EJECT,
-                           ID_DISK_PROTECT, ID_HELP_KEYS};
+                           ID_CARD_PROTECT, ID_DISK_INSERT,       ID_DISK_INSERT_IMAGE, ID_DISK_NEW,
+                           ID_DISK_EJECT,   ID_DISK_PROTECT,      ID_HELP_KEYS};
   for (UINT id = ID_CARD_SLOT_FIRST; id <= ID_CARD_SLOT_LAST; ++id) ids.push_back(id);
   for (UINT id = ID_DISK_SLOT_FIRST; id <= ID_DISK_SLOT_LAST; ++id) ids.push_back(id);
   for (UINT id : ids) {

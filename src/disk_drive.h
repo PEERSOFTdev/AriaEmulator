@@ -5,13 +5,16 @@
 
 // The Backpack floppy drive on the printer port (HANDOFF 6.7, ar-l5v),
 // drive E: when connected: 3.5" diskettes of 720 KB and 1.44 MB from
-// image files. Its cable is a switch of its own, remembered between runs;
-// BACKPACK.SYS finds the drive only at start-up.
+// image files, and 1.44 MB ones from host folders as the card slot has
+// them (FolderCard). Its cable is a switch of its own, remembered between
+// runs; BACKPACK.SYS finds the drive only at start-up.
 class DiskDrive : public Drive {
  public:
   DiskDrive(EmulatorThread& emulator, Settings& settings, TextEncoding encoding);
 
-  // Disketa -> Vložit novou disketu: formatted 1.44 MB or 720 KB, or blank.
+  void InsertFromFolder();
+  // Disketa -> Vložit novou disketu: formatted 1.44 MB or 720 KB, blank,
+  // or an empty folder.
   void InsertNew();
   // Plugs the cable in or out, says when the Aria will notice, and
   // remembers it.
@@ -45,6 +48,8 @@ class DiskDrive : public Drive {
   bool MountRememberedFolder(const std::wstring& folder, bool locked) override;
 
  private:
+  bool MountFolder(const std::wstring& folder, bool locked);
+
   Texts texts_;
 };
 

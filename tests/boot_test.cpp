@@ -1301,6 +1301,57 @@ int wmain(int argc, wchar_t** argv) {
         return 1;
       }
     }
+    // A folder diskette (FolderCard::LoadDiskette): DOS reads the host's
+    // file from it and writes one of its own, which Save puts in the
+    // folder beside it.
+    {
+      const std::filesystem::path disk_home =
+          std::filesystem::temp_directory_path() /
+          ("aria_boot_test_disketa_" + std::to_string(Crc32(flash.bytes.data(), flash.bytes.size())));
+      std::filesystem::remove_all(disk_home, card_ec);
+      std::filesystem::create_directories(disk_home);
+      const std::string host_text = "Ze slozky ve Windows\r\n";
+      const std::string answer = "Odpoved z Arie\r\n";
+      std::ofstream(disk_home / "Pozdrav.txt", std::ios::binary) << host_text;
+      FolderCard folder_disk;
+      std::vector<uint8_t> image;
+      std::wstring disk_error;
+      std::string failed;
+      if (!folder_disk.LoadDiskette(disk_home, flash.encoding, image, disk_error)) failed = "the folder did not load";
+      if (failed.empty()) {
+        backpack.fdc().Eject();
+        backpack.fdc().Insert(*Fdc82077::Disk::FromImage(std::move(image), false));
+      }
+      put(0x80, "E:\\POZDRAV.TXT");
+      put(0xA0, "E:\\ODPOVED.TXT");
+      Cpu80188::Registers x;
+      if (failed.empty() && !dos(0x3D00, 0, 0, 0x80, x)) failed = "open of E:\\POZDRAV.TXT";
+      const uint16_t read_handle = x.ax;
+      if (failed.empty() && (!dos(0x3F00, read_handle, 0x100, 0x100, x) || x.ax != host_text.size()))
+        failed = "read of E:\\POZDRAV.TXT";
+      if (failed.empty() && !dos(0x3E00, read_handle, 0, 0, x)) failed = "close of E:\\POZDRAV.TXT";
+      for (std::size_t i = 0; failed.empty() && i < host_text.size(); ++i)
+        if (second.Peek(base + 0x100 + i) != static_cast<uint8_t>(host_text[i])) failed = "compare of E:\\POZDRAV.TXT";
+      for (std::size_t i = 0; i < answer.size(); ++i) second.Poke(base + 0x200 + i, static_cast<uint8_t>(answer[i]));
+      if (failed.empty() && !dos(0x3C00, 0, 0, 0xA0, x)) failed = "create of E:\\ODPOVED.TXT";
+      const uint16_t write_handle = x.ax;
+      if (failed.empty() && (!dos(0x4000, write_handle, static_cast<uint16_t>(answer.size()), 0x200, x) ||
+                             x.ax != answer.size()))
+        failed = "write of E:\\ODPOVED.TXT";
+      if (failed.empty() && !dos(0x3E00, write_handle, 0, 0, x)) failed = "close of E:\\ODPOVED.TXT";
+      if (failed.empty() && !folder_disk.Save(backpack.fdc().disk()->bytes, disk_error)) failed = "the save into the folder";
+      if (failed.empty()) {
+        std::ifstream back(disk_home / "ODPOVED.TXT", std::ios::binary);
+        const std::string written((std::istreambuf_iterator<char>(back)), std::istreambuf_iterator<char>());
+        if (written != answer || !std::filesystem::exists(disk_home / "Pozdrav.txt"))
+          failed = "ODPOVED.TXT in the folder, Pozdrav.txt kept";
+      }
+      std::filesystem::remove_all(disk_home, card_ec);
+      if (!failed.empty()) {
+        std::cout << "FAIL boot: folder diskette: " << failed << " (AX " << std::hex << x.ax << std::dec << ")\n";
+        return 1;
+      }
+    }
     Cpu80188::Registers freed{};
     freed.ax = 0x4900;
     freed.ds = freed.es = own;
@@ -1354,6 +1405,7 @@ int wmain(int argc, wchar_t** argv) {
                " a Backpack floppy announced as drive E:, a file read from a short 720 KB image and one written there,"
                " an empty drive not ready, a write-protected 1.44 MB disk read and prompted,"
                " blank disks formatted by FORMAT.EXE as 720 KB and 1.44 MB and written,"
+               " a host folder read as a diskette and the Aria's file saved back into it,"
                " konec says vypnuto and switches off, D: kept through"
                " a memory snapshot without a new question, F1 starts the word processor)\n";
   return 0;

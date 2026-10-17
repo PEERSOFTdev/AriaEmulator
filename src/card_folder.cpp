@@ -269,11 +269,40 @@ Fat12Format CardFormat(uint32_t size, const std::wstring& label, TextEncoding en
   return format;
 }
 
-bool Fits(const Node& root, uint32_t size) {
-  if (root.children.size() + 1 > kRootEntries) return false;  // + the label.
-  const std::vector<uint8_t> image = FormatFat12(CardFormat(size, L"", TextEncoding::kCp852));
-  const Layout layout = LayoutOf(image);
+Fat12Format DisketteFormat(bool high_density, const std::wstring& label, TextEncoding encoding) {
+  Fat12Format format;
+  format.sectors = high_density ? 2880 : 1440;
+  format.root_entries = high_density ? 224 : 112;
+  format.sectors_per_track = high_density ? 18 : 9;
+  format.heads = 2;
+  format.media = high_density ? 0xF0 : 0xF9;
+  format.sectors_per_cluster = high_density ? 1 : 2;
+  format.label = VolumeLabel(label, encoding);
+  return format;
+}
+
+bool Fits(const Node& root, const Fat12Format& format) {
+  if (root.children.size() + 1 > format.root_entries) return false;  // + the label.
+  Fat12Format empty = format;
+  empty.label.clear();
+  const Layout layout = LayoutOf(FormatFat12(empty));
   return ClustersOf(root, layout.cluster_bytes, true) <= layout.clusters;
+}
+
+bool Fits(const Node& root, uint32_t size) { return Fits(root, CardFormat(size, L"", TextEncoding::kCp852)); }
+
+uint64_t BytesOf(const Node& root) {
+  uint64_t bytes = 0;
+  std::vector<const Node*> pending = {&root};
+  while (!pending.empty()) {
+    const Node* node = pending.back();
+    pending.pop_back();
+    for (const Node& child : node->children) {
+      bytes += child.size;
+      if (child.directory) pending.push_back(&child);
+    }
+  }
+  return bytes;
 }
 
 class Writer {
@@ -390,15 +419,7 @@ std::vector<uint8_t> FolderCard::Formatted(uint32_t size, const std::wstring& la
 
 std::vector<uint8_t> FolderCard::FormattedDiskette(bool high_density, const std::wstring& label,
                                                    TextEncoding encoding) {
-  Fat12Format format;
-  format.sectors = high_density ? 2880 : 1440;
-  format.root_entries = high_density ? 224 : 112;
-  format.sectors_per_track = high_density ? 18 : 9;
-  format.heads = 2;
-  format.media = high_density ? 0xF0 : 0xF9;
-  format.sectors_per_cluster = high_density ? 1 : 2;
-  format.label = VolumeLabel(label, encoding);
-  return FormatFat12(format);
+  return FormatFat12(DisketteFormat(high_density, label, encoding));
 }
 
 bool FolderCard::FittingSizes(const fs::path& folder, TextEncoding encoding, std::vector<uint32_t>& sizes,
@@ -409,38 +430,56 @@ bool FolderCard::FittingSizes(const fs::path& folder, TextEncoding encoding, std
   for (uint32_t candidate = kMinSize; candidate <= kMaxSize; candidate *= 2) {
     if (Fits(root, candidate)) sizes.push_back(candidate);
   }
-  bytes = 0;
-  std::vector<const Node*> pending = {&root};
-  while (!pending.empty()) {
-    const Node* node = pending.back();
-    pending.pop_back();
-    for (const Node& child : node->children) {
-      bytes += child.size;
-      if (child.directory) pending.push_back(&child);
-    }
-  }
+  bytes = BytesOf(root);
   return true;
 }
 
 bool FolderCard::Load(const fs::path& folder, uint32_t size, TextEncoding encoding, std::vector<uint8_t>& image,
                       std::wstring& error, uint32_t* needed) {
   if (needed) *needed = 0;
+  bool too_big = false;
+  if (LoadAs(folder, CardFormat(size, folder.filename().wstring(), encoding), encoding, image, error, too_big))
+    return true;
+  if (!too_big) return false;
+  std::vector<uint32_t> sizes;
+  uint64_t bytes = 0;
+  if (!FittingSizes(folder, encoding, sizes, bytes, error)) return false;
+  const uint32_t fitting = sizes.empty() ? 0 : sizes.front();
+  if (needed) *needed = fitting;
+  error = L"Složka „" + folder.wstring() + L"“ se na kartu " + std::to_wstring(size / 1024) + L" KB nevejde";
+  error += fitting ? L"; stačila by karta " + std::to_wstring(fitting / 1024) + L" KB."
+                   : L" ani na největší kartu (64 MB), nebo má víc než " + std::to_wstring(kRootEntries - 1) +
+                         L" položek v kořeni.";
+  return false;
+}
+
+bool FolderCard::LoadDiskette(const fs::path& folder, TextEncoding encoding, std::vector<uint8_t>& image,
+                              std::wstring& error) {
+  const Fat12Format format = DisketteFormat(/*high_density=*/true, folder.filename().wstring(), encoding);
+  bool too_big = false;
+  if (LoadAs(folder, format, encoding, image, error, too_big)) return true;
+  if (!too_big) return false;
   Node root;
   if (!Scan(folder, encoding, true, root, error)) return false;
-  if (!Fits(root, size)) {
-    uint32_t fitting = 0;
-    for (uint32_t candidate = kMinSize; candidate <= kMaxSize && !fitting; candidate *= 2) {
-      if (Fits(root, candidate)) fitting = candidate;
-    }
-    if (needed) *needed = fitting;
-    error = L"Složka „" + folder.wstring() + L"“ se na kartu " + std::to_wstring(size / 1024) + L" KB nevejde";
-    error += fitting ? L"; stačila by karta " + std::to_wstring(fitting / 1024) + L" KB."
-                     : root.children.size() + 1 > kRootEntries
-                           ? L": má víc než " + std::to_wstring(kRootEntries - 1) + L" položek v kořeni."
-                           : L" ani na největší kartu (64 MB).";
+  error = L"Složka „" + folder.wstring() + L"“ se na disketu 1,44 MB nevejde: ";
+  error += root.children.size() + 1 > format.root_entries
+               ? L"má v kořeni " + std::to_wstring(root.children.size()) + L" položek a disketa jich unese " +
+                     std::to_wstring(format.root_entries - 1) + L"; dejte část do podsložky."
+               : L"soubory v ní mají " + std::to_wstring((BytesOf(root) + 1023) / 1024) +
+                     L" KB a na disketu se vejde nejvýš 1 423 KB.";
+  return false;
+}
+
+bool FolderCard::LoadAs(const fs::path& folder, const Fat12Format& format, TextEncoding encoding,
+                        std::vector<uint8_t>& image, std::wstring& error, bool& too_big) {
+  too_big = false;
+  Node root;
+  if (!Scan(folder, encoding, true, root, error)) return false;
+  if (!Fits(root, format)) {
+    too_big = true;
     return false;
   }
-  image = FormatFat12(CardFormat(size, folder.filename().wstring(), encoding));
+  image = FormatFat12(format);
   std::map<std::string, Placed> files;
   Writer writer(image, files);
   if (!writer.WriteRoot(root, error)) return false;

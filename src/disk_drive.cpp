@@ -29,7 +29,7 @@ DiskDrive::DiskDrive(EmulatorThread& emulator, Settings& settings, TextEncoding 
   texts_.slots.caption = L"Sloty s disketami";
   texts_.slots.current = L"Sem &vloženou disketu";
   texts_.slots.lock = L"&Zamknout tuto disketu proti zápisu";
-  // Diskettes from folders come in the next step; the button stays grey.
+  texts_.slots.folder_title = L"Vyberte složku s disketou pro tento slot";
   texts_.slots.image_title = L"Vyberte obraz diskety pro tento slot";
   texts_.slots.image_filter = L"Obrazy disket";
   texts_.slots.image_pattern = floppy_image::kPattern;
@@ -94,15 +94,33 @@ std::wstring DiskDrive::TitlePart() const {
   return Drive::TitlePart();
 }
 
+void DiskDrive::InsertFromFolder() {
+  const std::wstring folder = win::PickFolder(owner_, L"Vyberte složku, ze které bude disketa");
+  if (folder.empty()) return;
+  InsertFolderSlot(folder, KnownLocked(folder));
+}
+
 void DiskDrive::InsertFolderSlot(const std::wstring& folder, bool locked) {
-  (void)locked;
-  Tell(L"„" + folder + L"“ je složka. Disketu ze složky emulátor zatím neumí; přiřaďte slotu obraz diskety.",
-       MB_ICONINFORMATION);
+  // Unlike a card, a diskette has no size to ask: always 1.44 MB.
+  if (!MountFolder(folder, locked)) return;
+  ToneInserted();
+  if (locked_) ToneLocked();
 }
 
 bool DiskDrive::MountRememberedFolder(const std::wstring& folder, bool locked) {
-  InsertFolderSlot(folder, locked);
-  return false;
+  return MountFolder(folder, locked);
+}
+
+bool DiskDrive::MountFolder(const std::wstring& folder, bool locked) {
+  if (!EjectIfIn(folder)) return false;
+  auto disk = std::make_unique<FolderCard>();
+  std::vector<uint8_t> image;
+  std::wstring error;
+  if (!disk->LoadDiskette(folder, encoding_, image, error)) {
+    Tell(error, MB_ICONERROR);
+    return false;
+  }
+  return PutIn(std::move(disk), folder, std::move(image), locked);
 }
 
 void DiskDrive::ConnectRemembered() {
@@ -129,6 +147,27 @@ void DiskDrive::ToggleConnection() {
 void DiskDrive::InsertNew() {
   NewDiskDialog dialog;
   if (dialog.ShowModal(owner_, IDD_DISK_NEW) != IDOK) return;
+  if (dialog.kind() == NewDiskDialog::Kind::kFolder) {
+    const std::wstring folder = win::PickFolderToCreate(owner_, L"Pojmenujte složku nové diskety", L"Disketa",
+                                                        DialogFolder(/*image=*/false).c_str());
+    if (folder.empty()) return;
+    std::error_code ec;
+    if (fs::exists(folder, ec) && (!fs::is_directory(folder, ec) || !fs::is_empty(folder, ec))) {
+      Tell(L"„" + folder + L"“ už existuje a není to prázdná složka. Nová disketa potřebuje novou nebo prázdnou "
+           L"složku; existující složku vložíte jako disketu přes F11, Ctrl+Shift+I.",
+           MB_ICONERROR);
+      return;
+    }
+    fs::create_directories(folder, ec);
+    if (ec) {
+      Tell(L"Složku „" + folder + L"“ nelze založit.", MB_ICONERROR);
+      return;
+    }
+    settings_.SetDiskLocked(folder, false);
+    if (!MountFolder(folder, /*locked=*/false)) return;
+    ToneInserted();
+    return;
+  }
   const std::wstring file = win::PickFileToCreate(owner_, L"Pojmenujte obraz nové diskety", L"Obrazy disket",
                                                   floppy_image::kExtension, L"Disketa",
                                                   DialogFolder(/*image=*/true).c_str());

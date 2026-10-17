@@ -1307,6 +1307,25 @@ v dalším kroku; formát 1,44 MB na 720 KB obraz zmenší.
   Sloty disket proto mají **`Ctrl+F1` až `Ctrl+F9`** (volba uživatele,
   zkouškou volné); `Ctrl+Shift+O`, `M`, `0`, `Z` zůstaly.
 
+**Diskety ze složek, 17. 10. 2026 (`ar-l5v`, krok 8).** `FolderCard`
+umí kromě karty i disketu: `LoadDiskette` rozvrhne složku jako
+`FormattedDiskette` 1,44 MB (F0h, 224 položek kořene, cluster 1 sektor,
+jmenovka podle složky); společné jádro je `LoadAs` s `Fat12Format`
+a `Fits` počítá s položkami kořene daného formátu. Zpět zapisuje
+nezměněné `Save`, které geometrii čte z BPB, takže disketu, kterou Aria
+FORMATem udělala 720 KB, zapíše taky (soubory, které už nemá, jdou do
+`.aria-trash`). `DiskDrive`: `F11`, `Ctrl+Shift+I` (zkouškou volné),
+složka ve slotu, poslední složka po startu, v dialogu Nová disketa
+prázdná složka. Na velikost se disketa neptá: vždy 1,44 MB, nepamatuje
+si 720 KB z minula.
+
+- Ověřeno: `card_selftest` (BPB a soubor diskety ze složky, zápis po
+  přeformátování na 720 KB, odmítnutí plné složky a složky s 224
+  položkami v kořeni) a `boot_test` v obou bězích: `BACKPACK.SYS` přečte
+  soubor složky přes 82077 a soubor, který Aria zapíše, `Save` uloží do
+  složky vedle něj. 18 PASS. **Ověřeno uživatelem** týž den; `ar-l5v`
+  tím uzavřen. Pevný disk Backpack zůstává v `ar-28o`.
+
 ### 6.8 PCMCIA
 
 `CARDMAN.EXE` (PKLITE); `TRICKSS2.EXE` čte `057Fh`, `ATKBD.COM` `057Eh`.

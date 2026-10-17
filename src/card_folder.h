@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "fat12.h"
 #include "text_codec.h"
 
 // An SRAM card whose home is a host folder (HANDOFF 6.8, ar-aj1), after the
@@ -51,6 +52,12 @@ class FolderCard {
   // the smallest card size that would take it (0 when none would).
   bool Load(const std::filesystem::path& folder, uint32_t size, TextEncoding encoding, std::vector<uint8_t>& image,
             std::wstring& error, uint32_t* needed = nullptr);
+  // The same for a Backpack diskette (HANDOFF 6.7): `folder` as a 1.44 MB
+  // diskette laid out as FormattedDiskette lays one, the label from the
+  // folder's name. Writing back is Save, whatever the Aria made of it --
+  // its FORMAT may turn it into 720 KB, Save reads the geometry anew.
+  bool LoadDiskette(const std::filesystem::path& folder, TextEncoding encoding, std::vector<uint8_t>& image,
+                    std::wstring& error);
   // Writes `image` back into the home folder Load read. A file the card
   // holds but cannot be read (a broken cluster chain) does not stop the
   // rest: its folder copy is left alone, never trashed, and its card path
@@ -60,6 +67,11 @@ class FolderCard {
   const std::filesystem::path& home() const { return home_; }
 
  private:
+  // Load's work for any layout: false with `too_big` when the folder does
+  // not fit `format`, the error then left to the caller.
+  bool LoadAs(const std::filesystem::path& folder, const Fat12Format& format, TextEncoding encoding,
+              std::vector<uint8_t>& image, std::wstring& error, bool& too_big);
+
   struct Imported {
     std::filesystem::path host;
     bool directory = false;

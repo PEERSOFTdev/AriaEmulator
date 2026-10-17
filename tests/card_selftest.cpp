@@ -435,6 +435,35 @@ int main() {
     Put(root / L"Velká.img", std::string(1474560 + 1, '\0'));
     Check(!floppy_image::Read(root / L"Velká.img", read_disk, read_error) && !read_error.empty(),
           "an image over 1.44 MB is refused with a reason");
+
+    // A folder diskette: 1.44 MB as FORMAT lays it out, the folder's name
+    // its label, its files on it; the drive takes it.
+    const fs::path home = root / L"Disketa A";
+    Put(home / L"hry.txt", "ahoj");
+    FolderCard folder_disk;
+    std::vector<uint8_t> image;
+    Fat12Volume volume;
+    std::vector<uint8_t> data;
+    Check(folder_disk.LoadDiskette(home, TextEncoding::kCp852, image, read_error) && image.size() == 1474560 &&
+              image[0x15] == 0xF0 && image[0x11] == 224 && Fdc82077::Disk::FromImage(image, false) &&
+              volume.Open(image, read_error) && volume.Label() == "DISKETA A" && volume.ReadFile("HRY.TXT", data) &&
+              std::string(data.begin(), data.end()) == "ahoj",
+          "a folder is a 1.44 MB diskette with its files");
+    // The Aria's FORMAT made it 720 KB: written back by the new BPB, the
+    // file it no longer has goes to the trash.
+    Check(folder_disk.Save(FolderCard::FormattedDiskette(false, L"", TextEncoding::kCp852), read_error) &&
+              !fs::exists(home / L"hry.txt") && fs::exists(home / FolderCard::kTrash / L"hry.txt"),
+          "a folder diskette formatted to 720 KB is written back, its old file in the trash");
+    Put(root / L"Plná" / L"velky.bin", std::string(1500 * 1024, 'D'));
+    FolderCard full;
+    Check(!full.LoadDiskette(root / L"Plná", TextEncoding::kCp852, image, read_error) &&
+              read_error.find(L"1500 KB") != std::wstring::npos,
+          "a folder over 1.44 MB is refused with its size");
+    for (int i = 0; i < 224; ++i) Put(root / L"Mnoho" / (std::to_wstring(i) + L".txt"), "x");
+    FolderCard many;
+    Check(!many.LoadDiskette(root / L"Mnoho", TextEncoding::kCp852, image, read_error) &&
+              read_error.find(L"podsložky") != std::wstring::npos,
+          "a folder with more root entries than a diskette has is refused");
   }
 
   // A flash card of two 28F008SA pairs (pc_card.h, HANDOFF 6.8): what

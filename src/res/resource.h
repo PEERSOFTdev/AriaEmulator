@@ -48,6 +48,7 @@
 #define ID_DISK_PROTECT      40083
 #define ID_DISK_CONNECT      40084
 #define ID_DISK_SLOTS        40085
+#define ID_DISK_INSERT       40086
 #define ID_DISK_SLOT1        40091
 #define ID_DISK_SLOT9        40099
 #define ID_DISK_SLOT_FIRST   ID_DISK_SLOT1
@@ -79,5 +80,6 @@
 #define IDC_DISK_NEW_HIGH    231
 #define IDC_DISK_NEW_LOW     232
 #define IDC_DISK_NEW_BLANK   233
+#define IDC_DISK_NEW_FOLDER  234
 
 #endif
