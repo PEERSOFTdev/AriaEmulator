@@ -1,0 +1,109 @@
+# Vydani. Spousti ho majitel, nic jineho -- obvykle skriptem ./release:
+#
+#   gh workflow run vydani.yml
+#
+# Cislo si dopocita samo jako v Eurece: rok a mesic podle dnesniho data
+# (UTC), poradi o jedno vyssi nez posledni znacka v tom mesici, v novem
+# mesici od 1.
+#
+# Poradi je zamerne: nejdriv cislo, potom sestaveni a testy, potom balik
+# (balik.sh i s kontrolou, ze v nem neni firmware), a znacka na GitHubu
+# vznikne AZ pri zverejneni. Kdyz cokoli selze, nezustane po tom ani znacka,
+# ani polovicni vydani.
+
+name: Vydání
+
+on:
+  workflow_dispatch:
+
+# Dve vydani naraz by si spocitala totez cislo.
+concurrency:
+  group: vydani
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  cislo:
+    name: Číslo vydání
+    runs-on: ubuntu-latest
+    outputs:
+      znacka: ${{ steps.cislo.outputs.znacka }}
+    steps:
+      - name: Zdrojáky
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Další číslo vydání
+        id: cislo
+        shell: bash
+        run: |
+          # Vydava se z main a nic jineho: vetev s rozdelanou veci by se jinak
+          # dostala k uzivatelum.
+          if [ "${{ github.ref }}" != refs/heads/main ]; then
+            echo "Vydání se dělá z main, ne z ${{ github.ref }}."; exit 1
+          fi
+          # Tentyz commit dvakrat by byla dve cisla pro jedno EXE.
+          here="$(git tag --points-at HEAD --list 'v[0-9]*')"
+          if [ -n "$here" ]; then echo "Tento commit už vydaný je: $here"; exit 1; fi
+          year="$(date -u +%Y)"
+          month="$(date -u +%-m)"
+          last="$(git tag --list "v$year.$month.*" | sed -n "s/^v$year\.$month\.\([0-9][0-9]*\)$/\1/p" | sort -n | tail -1)"
+          tag="v$year.$month.$(( ${last:-0} + 1 ))"
+          echo "Vydání: $tag"
+          echo "znacka=$tag" >> "$GITHUB_OUTPUT"
+
+  sestaveni:
+    name: Sestavení
+    needs: cislo
+    uses: ./.github/workflows/sestaveni.yml
+    with:
+      znacka: ${{ needs.cislo.outputs.znacka }}
+
+  zverejneni:
+    name: Zveřejnění
+    needs: [cislo, sestaveni]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      ZNACKA: ${{ needs.cislo.outputs.znacka }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Zdrojáky
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Artefakt sestavení
+        uses: actions/download-artifact@v7
+        with:
+          name: AriaEmulator
+          path: bin
+
+      # Tentyz skript, kterym si balik zkontroluje vyvojar lokalne; stahne
+      # jadro FreeDOS, overi ho a firmware do baliku nepusti.
+      - name: Balík
+        shell: bash
+        run: VERZE="${ZNACKA#v}" ./balik.sh bin/AriaEmulator.exe build/vydani
+
+      # Poznamky jsou predmety commitu od posledniho vydani; pri prvnim by to
+      # byla cela historie, a ta do poznamek nepatri.
+      - name: Zveřejnění
+        shell: bash
+        run: |
+          previous="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
+          if [ -n "$previous" ]; then
+            { echo "Změny od $previous:"; echo; git log --no-merges --pretty='- %s' "$previous..HEAD"; } > poznamky.md
+          else
+            echo 'První vydání.' > poznamky.md
+          fi
+          {
+            echo
+            echo 'Firmware Arie v balíku není; emulátor použije aktualizaci, kterou mu zkopírujete do složky (README, PRAVNI.md). Jádro FreeDOS je přiložené, jeho zdrojové texty jsou v ke2046s.zip.'
+          } >> poznamky.md
+          gh release create "$ZNACKA" --target "$GITHUB_SHA" \
+            --title "Aria Emulator ${ZNACKA#v}" --notes-file poznamky.md \
+            build/vydani/*

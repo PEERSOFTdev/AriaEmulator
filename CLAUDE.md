@@ -128,7 +128,11 @@ skript vynechá, řekne to a počet sníží.
 
 Balík vydání dělá `./balik.sh` do `build/vydani`; jádro FreeDOS do něj
 stahuje sám a ověřuje podle SHA256 (`PRAVNI.md` bod 2.4). Seznam souborů
-v balíku je výčet a firmware hlídá kontrola na konci skriptu.
+v balíku je výčet a firmware hlídá kontrola na konci skriptu. Vydání
+spouští uživatel skriptem `./release` (workflow `.github/workflows/
+vydani.yml`, sestavení `sestaveni.yml` na Windows s msys2); ty ho
+nespouštěj. `run-tests.sh` po úplném běhu zapíše `build/otestovany-strom`,
+podle kterého se `./release` ptá.
 
 Start stroje se ladí `bin/boot_test.exe ZIP KERNEL.SYS -v [cykly]`
 (výstup `INT 10h`, emulované sekundy jednotlivých fází startu, registry,

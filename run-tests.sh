@@ -100,6 +100,14 @@ else
 fi
 export SKIP_FREEDOS
 
+# Znacka pro ./release (jako v Eurece): hash stromu, ktery se jde testovat,
+# i s necommitnutymi zmenami, pres docasny index a hned ted. Stara znacka
+# jde pryc, aby neprezila neuspesny beh tehoz stromu.
+rm -f build/otestovany-strom
+mkdir -p build
+TESTED_TREE="$(GIT_INDEX_FILE=build/otestovany-index \
+  sh -c 'git read-tree HEAD && git add -A && git write-tree' 2>/dev/null || true)"
+
 ./build-tests.sh
 
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
@@ -122,6 +130,11 @@ fi
 PASSED="$(grep -c '^PASS' "$LOG" || true)"
 echo
 if [ "$PASSED" -eq "$EXPECTED" ] && ! grep -q '^FAIL' "$LOG"; then
+  # Znacka jen za uplny beh, vsech osmnact: s chybejicimi daty neni overeno,
+  # co vydani nese.
+  if [ "$EXPECTED" -eq 18 ] && [ -n "$TESTED_TREE" ]; then
+    printf '%s\n' "$TESTED_TREE" > build/otestovany-strom
+  fi
   echo "VÝSLEDEK: všechny testy prošly, PASS $PASSED z $EXPECTED."
 else
   echo "VÝSLEDEK: testy NEPROŠLY, PASS $PASSED z $EXPECTED, viz řádky výše."

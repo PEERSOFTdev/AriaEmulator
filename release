@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# Vydání jedním příkazem:  ./release
+#
+# 0. Ověří, že run-tests prošel na přesně tom obsahu, který má HEAD;
+#    když ne, zeptá se, zda vydat i tak.
+# 1. git push -- neškodný, když není co pushnout.
+# 2. Spustí vydani.yml, počká na něj a vypíše adresu vydání.
+#
+# Na "Sestavení", které spustil push, se nečeká: vydani.yml volá tentýž
+# sestaveni.yml znovu (se značkou, kterou EXE musí nést), a když v něm překlad
+# nebo test selže, zveřejnění se nespustí a nevznikne ani značka.
+#
+# Průběh jde na konzoli ŘÁDEK PO ŘÁDKU a jen při změně -- dokončený krok,
+# výsledek. Ne přes `gh run watch`: ten obrazovku stále překresluje, takže
+# čtečka čte dokola totéž. Na konci zazní tón: dva stoupající = vydáno, jeden
+# nízký = selhalo; čekání trvá několik minut a nemusí se u něj sedět.
+#
+# Převzato z Eureky (skript release tam). Potřebuje git a gh; JSON čte gh sám
+# přes --jq, jq netřeba. Funkce jdou načíst bez spuštění (`source release`).
+
+say() { printf '%s\n' "$*"; }
+
+# Tón hostitele, je-li po ruce PowerShell (Git Bash i WSL ho mají); jinak
+# zvonek terminálu.
+tone() {
+  local notes="$1"
+  if command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command "$notes" >/dev/null 2>&1 && return
+  fi
+  printf '\a'
+}
+
+fail() {
+  say "SELHALO: $*"
+  tone '[Console]::Beep(330,600)'
+  exit 1
+}
+
+# Čeká na běh a vypisuje každý dokončený krok právě jednou; výsledek běhu
+# (success, failure...) nechá v proměnné RESULT. Kroky, které GitHub dělá sám
+# (Set up job, Post ...), se nevypisují. Prázdná odpověď (výpadek sítě) je
+# jen "zatím nic".
+watch_run() {
+  local id="$1" answer status job step conclusion word
+  local -A seen=()
+  while true; do
+    answer=$(gh run view "$id" --json status,conclusion,jobs --jq '
+      (.status + "\t" + (.conclusion // "")),
+      (.jobs[] | .name as $job | .steps[] | select(.status == "completed")
+        | [$job, .name, (.conclusion // "")] | join("\t"))' 2>/dev/null)
+    if [[ -n "$answer" ]]; then
+      IFS=$'\t' read -r status conclusion <<<"${answer%%$'\n'*}"
+      while IFS=$'\t' read -r job step word; do
+        [[ -z "$step" || "$step" =~ ^(Set\ up\ job|Complete\ job|Post\ ) ]] && continue
+        [[ -n "${seen["$job|$step"]}" ]] && continue
+        seen["$job|$step"]=1
+        case "$word" in
+          success) word=hotovo ;;
+          skipped) word=přeskočeno ;;
+          *) word="SELHALO ($word)" ;;
+        esac
+        say "  $word: $job / ${step#Run }"
+      done < <(tail -n +2 <<<"$answer")
+      if [[ "$status" == completed ]]; then
+        RESULT="$conclusion"
+        return
+      fi
+    fi
+    sleep 5
+  done
+}
+
+# Běh se po `gh workflow run` objeví až za chvíli, proto se chvíli hledá.
+# Třetí argument je nejdřívější čas vzniku (ISO v UTC), aby se nenašel starší
+# běh téhož commitu.
+find_run() {
+  local workflow="$1" event="$2" since="${3:-}" id tries
+  for ((tries = 0; tries < 24; tries++)); do
+    id=$(gh run list --workflow "$workflow" --commit "$SHA" --event "$event" \
+           --limit 10 --json databaseId,createdAt \
+           --jq "[.[] | select(.createdAt >= \"$since\")][0].databaseId // empty" \
+           2>/dev/null)
+    if [[ -n "$id" ]]; then
+      printf '%s' "$id"
+      return
+    fi
+    sleep 5
+  done
+}
+
+main() {
+  cd "$(dirname "$0")" || fail 'nemohu přejít do složky repozitáře.'
+
+  # --- Kontroly před čímkoli --------------------------------------------------
+  local branch
+  branch=$(git rev-parse --abbrev-ref HEAD)
+  [[ "$branch" == main ]] || fail "vydává se z main, teď je větev $branch."
+  [[ -z "$(git status --porcelain)" ]] ||
+    say 'Pozor: v pracovním stromu jsou necommitnuté změny. Do vydání nepůjdou.'
+
+  # Testy s firmwarem nepouští CI ani tento skript; stojí na tom, že run-tests
+  # před commitem prošel celý. Ten zapíše hash stromu, který testoval, a tady
+  # se porovná se stromem HEAD. Je to otázka, ne zákaz: rozhoduje majitel.
+  local tested
+  tested=$(tr -d '\r\n ' 2>/dev/null < build/otestovany-strom)
+  if [[ "$tested" != "$(git rev-parse 'HEAD^{tree}')" ]]; then
+    if [[ -z "$tested" ]]; then
+      say 'Pozor: nenašel jsem záznam o úplném úspěšném běhu run-tests.'
+    else
+      say 'Pozor: run-tests naposledy prošel na jiném obsahu, než má HEAD.'
+    fi
+    say 'Testy s firmwarem tedy pro toto vydání ověřené nejsou.'
+    local answer=''
+    read -r -p 'Vydat i tak? Napište a, jinak se končí: ' answer || true
+    if [[ "$answer" != a ]]; then
+      say 'Vydání se nedělá.'
+      exit 1
+    fi
+  fi
+
+  # --- 1. Push ----------------------------------------------------------------
+  say '1/2 Push'
+  git push || fail 'git push neprošel.'
+  SHA=$(git rev-parse HEAD)
+  local short=${SHA:0:7} released
+  released=$(git ls-remote --tags origin 'v[0-9]*' | grep "^$SHA" | sed 's#.*refs/tags/##')
+  [[ -z "$released" ]] || fail "commit $short už vydaný je: $released."
+
+  # --- 2. Vydání --------------------------------------------------------------
+  say "2/2 Vydání commitu $short"
+  local started run
+  started=$(date -u -d '-10 seconds' +%Y-%m-%dT%H:%M:%SZ)
+  gh workflow run vydani.yml --ref main || fail 'vydání se nepodařilo spustit.'
+  run=$(find_run vydani.yml workflow_dispatch "$started")
+  [[ -n "$run" ]] || fail 'spuštěné vydání se nenašlo.'
+  watch_run "$run"
+  [[ "$RESULT" == success ]] || fail "vydání skončilo: $RESULT."
+
+  git fetch --tags -q || true
+  say ''
+  say "Vydáno: $(gh release view --json tagName --jq .tagName)"
+  say "Stránka: $(gh release view --json url --jq .url)"
+  say 'Trvalý odkaz na balík: https://github.com/PEERSOFTdev/AriaEmulator/releases/latest/download/AriaEmulator.zip'
+  tone '[Console]::Beep(660,150); [Console]::Beep(880,250)'
+}
+
+# Spuštěný, ne načtený přes `source`.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

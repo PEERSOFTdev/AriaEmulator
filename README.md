@@ -461,6 +461,15 @@ zdrojový archiv jádra a `SHA256SUMS.txt`. Archivy FreeDOS stáhne
 z vydání FDOS/kernel a ověří podle napevno zapsaných součtů SHA256;
 firmware do balíku nepustí.
 
+**Vydání** dělá `./release` (bash, potřebuje `gh`) na GitHubu
+`PEERSOFTdev/AriaEmulator`: pushne `main` a spustí workflow Vydání, které
+spočítá číslo (rok.měsíc.pořadí, jako u Eureky), sestaví emulátor na
+Windows, pustí pět testů bez dat, zabalí to `balik.sh` a zveřejní.
+Průběh vypisuje řádek po řádku a na konci zazní tón. Testy s firmwarem
+na GitHubu neběží; `./release` se proto zeptá, když `run-tests.sh` na
+přesně tomto obsahu neprošel celý (všech osmnáct). Sestavení a testy bez
+dat běží i při každém pushi do `main`.
+
 Nástroje na analýzu firmwaru (Python) jsou v `tools/`, viz
 `tools/README.md`. Co z firmwaru vznikne, do repozitáře nepatří, a
 příspěvky nesmějí obsahovat firmware ani výpisy jeho disassembly

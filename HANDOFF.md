@@ -112,7 +112,16 @@ a ověří je napevno zapsanými SHA256 (shodnými s archivy v
 `COPYING` ze zdrojového archivu a `ZDROJ.txt` do `FreeDOS/` v balíku,
 zdrojový archiv k vydání vedle balíku (GPL v2 oddíl 3, zdroje na témže
 místě). `PRAVNI.md` bod 2.4 je přepsaný. Ověřeno: rozbalený balík jen
-s přidaným `CC0705.ZIP` se spustil do 7.05 s přiloženým jádrem. Doložit, s čím je tam
+s přidaným `CC0705.ZIP` se spustil do 7.05 s přiloženým jádrem.
+
+**GitHub a vydání** (18. 10. 2026): repozitář `PEERSOFTdev/AriaEmulator`,
+zatím soukromý, Issues vypnuté (rozhodnutí uživatele, jako u Eureky).
+Workflow `sestaveni.yml` (Windows, msys2 MINGW64, `build.bat`,
+`build-tests.bat`, pět testů bez dat, při vydání kontrola verze EXE) a
+`vydani.yml` (číslo, sestavení, `balik.sh` na Ubuntu, `gh release
+create`) jsou převzaté z Eureky; `./release` taky, česky. Na GitHubu
+poprvé reálně běží `build.bat` a `build-tests.bat` s msys2 — dosud byly
+ověřené jen jejich chybové větve (CLAUDE.md). Doložit, s čím je tam
 nositel práv vystavil, se tedy nedá; `PRAVNI.md` o to nic neopírá.
 
 ## 2. Přehled stroje

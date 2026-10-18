@@ -1,0 +1,104 @@
+# Sestaveni a testy bez dat pri kazdem pushi do main a pri kazdem pull
+# requestu; vydani (vydani.yml) vola tentyz workflow.
+#
+# Bezi na Windows s msys2, ne krizovym prekladem z Linuxu: tak jdou tytez
+# build.bat a build-tests.bat, jako ve Windows u vyvojare. msys2 je na
+# runneri predinstalovany v C:\msys64, takze vychozi cesty v davkach plati.
+#
+# Firmware sem nepatri ani jako tajny soubor (PRAVNI.md, bod 3.5). Bezi proto
+# jen pet testu, ktere zadna data nepotrebuji; ostatni zustavaji na
+# run-tests.sh u vyvojare, a ./release se pta, kdyz na tomto obsahu neprosly.
+
+name: Sestavení
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      znacka:
+        description: Značka vydání, například v2026.10.1
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  sestaveni:
+    name: Překlad a testy
+    runs-on: windows-latest
+    steps:
+      # Cela historie i se znackami: bez nich git describe verzi nenajde
+      # a sestaveni by se jmenovalo 0.0.0-hash.
+      - name: Zdrojáky
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # Jen pri vydani. Znacka vznikne v tomto klonu, ne na GitHubu, takze ji
+      # git describe najde a EXE dostane presne tuto verzi. Na GitHub ji
+      # zapise az zverejneni, a to jen kdyz vsechno proslo.
+      - name: Značka vydání
+        if: inputs.znacka != ''
+        shell: pwsh
+        run: git tag "${{ inputs.znacka }}"
+
+      # Preklad se zamerne nekesuje: vydana binarka ma vzniknout z cisteho
+      # stromu. MINGW64, ne UCRT64, protoze tymz prekladacem se sestavuje
+      # lokalne (CLAUDE.md).
+      - name: Překladač msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          suppress-deprecation-warnings: msystem-mingw64
+          release: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+
+      # "Hotovo" znamena bez jedineho varovani (CLAUDE.md), a make pri
+      # varovani chybou neskonci -- proto se hleda ve vystupu.
+      - name: Emulátor
+        shell: pwsh
+        run: |
+          $out = cmd /c .\build.bat 2>&1
+          $out
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if ($out -match 'warning:') { Write-Error 'Překlad hlásí varování.'; exit 1 }
+
+      - name: Testy (sestavení)
+        shell: pwsh
+        run: |
+          $out = cmd /c .\build-tests.bat 2>&1
+          $out
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if ($out -match 'warning:') { Write-Error 'Překlad testů hlásí varování.'; exit 1 }
+
+      # Tytez cile, ktere pousti run-tests; seznam je jen v Makefile.
+      - name: Testy bez dat
+        shell: cmd
+        run: |
+          set "PATH=C:\msys64\mingw64\bin;%PATH%"
+          mingw32-make MINGW64=C:/msys64/mingw64 --output-sync=target -k check-codec check-flash check-dsp check-cpu check-card
+
+      # EXE musi o sobe rikat totez cislo, pod kterym se zverejni.
+      - name: Verze EXE
+        if: inputs.znacka != ''
+        shell: pwsh
+        run: |
+          $want = '${{ inputs.znacka }}'.Substring(1)
+          $have = (Get-Item bin\AriaEmulator.exe).VersionInfo.ProductVersion
+          if ($have -ne $want) { Write-Error "EXE říká '$have', vydání je '$want'."; exit 1 }
+          "EXE je $have"
+
+      # Vycet, ne cele bin\ -- lokalne v nem muze lezet cokoli z ladeni.
+      - name: Uložení artefaktu
+        uses: actions/upload-artifact@v6
+        with:
+          name: AriaEmulator
+          path: bin/AriaEmulator.exe
+          if-no-files-found: error
+          retention-days: 30
