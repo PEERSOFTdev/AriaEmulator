@@ -338,8 +338,10 @@ void TestBusTiming() {
     Bus bus;
     Cpu80188 cpu(bus);
     cpu.SetBusModel(model);
-    std::vector<uint8_t> code(100, 0x90);
-    code.push_back(0xF4);
+    // 100 NOPs and HLT. Sized at once: GCC 16 reports a false
+    // -Warray-bounds for push_back after the (count, value) constructor.
+    std::vector<uint8_t> code(101, 0x90);
+    code.back() = 0xF4;
     bus.Load(0x01000, code);
     cpu.SetRegisters(At(0x0100, 0x0000));
     int steady = 0;
