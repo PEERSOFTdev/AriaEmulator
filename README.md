@@ -1,18 +1,33 @@
 # Aria Emulator
 
 Emulátor kapesního počítače pro nevidomé **Aria** (Robotron, nástupce
-Eureky A4) pro Windows. Cílem je spouštět původní programy Arie z obrazu
-její interní flash — včetně řečového enginu PeterTalk na emulovaném DSP —
+Eureky A4) pro Windows. Spouští původní programy Arie z obrazu její
+interní flash — včetně řečového enginu PeterTalk na emulovaném DSP —
 takže hlas zní stejně jako na skutečném stroji.
 
-**Stav: vývoj.** Emulátor spustí Arii z obrazu disku B: až do hlavního
-menu a **je slyšet**: úvodní řeč PeterTalk a harfa vycházejí z původních
-programů na emulovaném DSP. Klávesnice hostitele hraje klávesy Arie a
-okno se ovládá stejně jako emulátor Eureky A4 (viz níže). Stav stojí
-v titulku okna (NVDA+T). Co je zjištěno a co je otevřené, popisuje
-`HANDOFF.md`, mapu hardwaru `hardware-map.md`.
+Aria v emulátoru mluví, hraje harfu, bere braillské klávesy z klávesnice
+PC i externí klávesnici, pracuje s kartami a disketami ze složek ve
+Windows a uchová si paměť i RAM disk mezi spuštěními. Okno se ovládá
+stejně jako emulátor Eureky A4 a stav stojí v titulku okna (NVDA+T).
+Některé věci ještě chybějí nebo se chovají jinak než na skutečné Arii,
+například přenos souborů po sériové lince; známé chyby a otevřenou
+práci popisuje `HANDOFF.md` (viz [Pro vývojáře](#pro-vývojáře)).
+
+## Rychlý start
+
+1. Rozbalte archiv vydání do vlastní složky, například `C:\Aria`.
+2. Zkopírujte do ní aktualizaci firmwaru Arie tak, jak ji Robotron
+   dodával, například `CC0705.ZIP` nebo `CSR0687.ZIP`. Nerozbalujte ji.
+3. Zkopírujte do ní jádro FreeDOS `KERNEL.SYS` (viz níže).
+4. Spusťte `AriaEmulator.exe`. Aria se zapne a promluví.
+
+Klávesy: `F`, `D`, `S`, `J`, `K`, `L` jsou body, `F1` až `F8` funkční
+klávesy, šipky kurzorový kříž. `F12` otevře nabídku emulátoru,
+`F11` a `Ctrl+Q` ho ukončí, `F11` a `Ctrl+H` vypíše klávesové zkratky.
 
 ## Co emulátor potřebuje
+
+Windows (64bitové). Nic se neinstaluje; emulátor je jediný soubor EXE.
 
 Firmware Arie není součástí projektu a projekt ho nešíří. Je to obsah
 interní flash, tedy disku B:, a dodával se jako aktualizace od Robotronu.
@@ -79,14 +94,6 @@ a nespustí se.
 
 Kódování lze vnutit volbou `--kodovani kamenicky` nebo
 `--kodovani cp852`.
-
-Pro vývoj: proměnná prostředí `ARIAFLASH` platí jako `--flash`. Když se
-nic nenajde ani vedle emulátoru, prohledá se ještě složka z proměnné
-`ARIAFW`, je-li nastavená. Výchozí složku emulátor nemá (do 18. 10. 2026
-hledal ještě v `D:\aria\update`, vývojové složce autora).
-
-Boot ROM Arie (BIOS a jádro ROM-DOS) se nedochovala. Emulátor ji nahrazuje
-vlastní implementací.
 
 ## Klávesnice
 
@@ -417,7 +424,41 @@ v programu (podrobnosti v HANDOFF).
   externí klávesnice (`ATKBD.COM+0509h`, sestavení 7.05), kterou Aria
   řekne, když adaptér při startu neodpoví.
 
+## Pro vývojáře
+
+Boot ROM Arie (BIOS, jádro ROM-DOS a ovladač interní flash) se
+nedochovala a fyzická Aria k dispozici není. Emulátor ji nahrazuje
+vlastní implementací; všechno z disku B: běží jako původní programy.
+Co je zjištěno, čím je to doloženo a co je otevřené, popisuje
+`HANDOFF.md`, mapu hardwaru `hardware-map.md`, otevřenou práci beads
+(`bd list`). Pravidla pro práci v repozitáři jsou v `CLAUDE.md`.
+
+**Sestavení** z WSL krosovým mingw-w64: `./build.sh`, testy
+`./build-tests.sh` a `./run-tests.sh`. Z Windows s msys2
+(`C:\msys64\mingw64`, jinak proměnná `MINGW64`): `build.bat`,
+`build-tests.bat`, `run-tests.bat`. Hotové EXE jsou v `bin\`.
+
+**Testy:** pět jich nepotřebuje žádná data. Ostatní potřebují data mimo
+repozitář a bez nich se vynechají:
+
+- firmware Arie ve složce z proměnné `ARIAFW` (s podsložkami `CARD`
+  a `SERIAL`, jak je měla sada aktualizací) nebo zadané argumentem;
+- data instrukčních testů CPU (SingleStepTests, asi 560 MB) ve složce
+  z proměnné `ARIA_CPUTESTS`; stáhne je `./get-cputests.sh SLOŽKA`;
+- jádro FreeDOS `KERNEL.SYS` ve složce z proměnné `ARIA_FREEDOS`.
+
+Proměnná `ARIAFLASH` platí jako `--flash`. Když se firmware nenajde ani
+vedle emulátoru, prohledá se ještě složka z `ARIAFW`, je-li nastavená.
+Výchozí složku emulátor nemá (do 18. 10. 2026 hledal ještě
+v `D:\aria\update`, vývojové složce autora).
+
+Nástroje na analýzu firmwaru (Python) jsou v `tools/`, viz
+`tools/README.md`. Co z firmwaru vznikne, do repozitáře nepatří, a
+příspěvky nesmějí obsahovat firmware ani výpisy jeho disassembly
+(`PRAVNI.md`, body 3.6 a 7).
+
 ## Licence
 
-MIT, viz `LICENSE.txt`. Firmware a technická dokumentace Arie pod ni
-nespadají.
+MIT, viz `LICENSE.txt`. Jádra procesorů převzatá z MAME jsou pod
+licencí BSD-3-Clause. Firmware a technická dokumentace Arie pod žádnou
+z nich nespadají; právní postavení projektu popisuje `PRAVNI.md`.
