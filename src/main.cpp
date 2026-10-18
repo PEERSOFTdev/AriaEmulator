@@ -8,7 +8,9 @@
 #include <objbase.h>
 #include <shellapi.h>
 
+#include <algorithm>
 #include <cstdlib>
+#include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -34,31 +36,118 @@ std::wstring Environment(const wchar_t* name) {
   return std::wstring(buffer, length);
 }
 
-// Order: --flash on the command line, then ARIAFLASH, then the Czech 7.05
-// card update inside ARIAFW (default D:\aria\update, CLAUDE.md).
-std::wstring DefaultFlashPath() {
-  std::wstring path = Environment(L"ARIAFLASH");
-  if (!path.empty()) return path;
-  std::wstring folder = Environment(L"ARIAFW");
-  if (folder.empty()) folder = L"D:\\aria\\update";
-  return folder + L"\\CARD\\CC0705.ZIP";
-}
-
-std::wstring ExeFolder() {
+std::filesystem::path ExeFolder() {
   wchar_t path[MAX_PATH];
   const DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
-  std::wstring folder(path, length);
-  const std::size_t slash = folder.find_last_of(L"\\/");
-  return slash == std::wstring::npos ? L"." : folder.substr(0, slash);
+  return std::filesystem::path(std::wstring(path, length)).parent_path();
 }
 
-// Order: --jadro, then KERNEL.SYS in ARIA_FREEDOS, then next to the EXE.
+// Where a user puts what the emulator needs: beside the EXE, the folder
+// above it (Spustit-Ariu.bat beside bin\, a release unpacked one level
+// down) and the working folder, as the Eureka emulator looks for its ROM.
+std::vector<std::filesystem::path> SearchFolders() {
+  std::vector<std::filesystem::path> folders;
+  const auto add = [&folders](const std::filesystem::path& folder) {
+    if (folder.empty()) return;
+    for (const auto& known : folders) {
+      if (Settings::SamePath(known.wstring(), folder.wstring())) return;
+    }
+    folders.push_back(folder);
+  };
+  const std::filesystem::path exe = ExeFolder();
+  add(exe);
+  add(exe.parent_path());
+  std::error_code ec;
+  add(std::filesystem::current_path(ec));
+  return folders;
+}
+
+// "7.05" as 705; a build whose label has no number ranks below any that has.
+int VersionRank(const std::wstring& version) {
+  int rank = 0;
+  bool any = false;
+  for (wchar_t c : version) {
+    if (c < L'0' || c > L'9') continue;
+    rank = rank * 10 + (c - L'0');
+    any = true;
+  }
+  return any ? rank : -1;
+}
+
+// The files in `folder` that may be drive B:, sorted because directory
+// order is not defined. Only the names an update came under: any ZIP (the
+// archive names differ per build and language), FLASHDSK.IMG and the first
+// serial part. Not any *.IMG, because card images live beside the EXE too
+// and a FAT12 card with a CONFIG.SYS would pass for B:. The size cap keeps a
+// large unrelated ZIP from being read whole; updates are about 1.5 MB.
+std::vector<std::filesystem::path> FlashFilesIn(const std::filesystem::path& folder) {
+  constexpr std::uintmax_t kLargest = 8u << 20;
+  std::vector<std::filesystem::path> files;
+  std::error_code ec;
+  for (std::filesystem::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
+    std::error_code size_ec;
+    if (!it->is_regular_file(size_ec) || it->file_size(size_ec) > kLargest || size_ec) continue;
+    std::wstring name = it->path().filename().wstring();
+    for (wchar_t& c : name) c = static_cast<wchar_t>(std::towupper(c));
+    if (name == L"FLASHDSK.IMG" || name == L"ARIAA4.1" || name.ends_with(L".ZIP")) files.push_back(it->path());
+  }
+  std::sort(files.begin(), files.end());
+  return files;
+}
+
+// Drive B: when neither --flash nor ARIAFLASH names it: the one of the last
+// run while it still loads, otherwise the newest build in the first search
+// folder that holds any. A folder counts with its CARD and SERIAL
+// subfolders, the layout Robotron's update set came in. ARIAFW (default
+// D:\aria\update, CLAUDE.md) is the developer's set, searched last. Files are
+// told by their contents (LoadFlashImage), so a FreeDOS ZIP or the
+// emulator's own release ZIP beside the EXE is passed over.
+bool FindFlash(const std::wstring& remembered, TextEncoding forced, FlashImage& image,
+               std::vector<std::filesystem::path>& searched) {
+  std::wstring ignored;
+  if (!remembered.empty() && LoadFlashImage(remembered, forced, image, ignored)) return true;
+  searched = SearchFolders();
+  std::wstring developer = Environment(L"ARIAFW");
+  if (developer.empty()) developer = L"D:\\aria\\update";
+  for (const auto& folder : searched) {
+    if (Settings::SamePath(folder.wstring(), developer)) developer.clear();
+  }
+  bool found = false;
+  const auto search = [&](const std::filesystem::path& folder) {
+    for (const auto& sub : {std::filesystem::path(), std::filesystem::path(L"CARD"), std::filesystem::path(L"SERIAL")}) {
+      for (const auto& file : FlashFilesIn(folder / sub)) {
+        FlashImage candidate;
+        if (!LoadFlashImage(file.wstring(), forced, candidate, ignored)) continue;
+        if (!found || VersionRank(candidate.version) > VersionRank(image.version)) image = std::move(candidate);
+        found = true;
+      }
+    }
+  };
+  for (const auto& folder : searched) {
+    search(folder);
+    if (found) return true;
+  }
+  if (!developer.empty()) search(developer);
+  return found;
+}
+
+// Order: --jadro, then KERNEL.SYS in ARIA_FREEDOS, then the search folders.
 // The kernel is FreeDOS under the GPL and ships as a separate file
-// (HANDOFF 6.10).
-std::wstring DefaultKernelPath() {
+// (HANDOFF 6.10). Empty when none is there.
+std::wstring FindKernel() {
   const std::wstring folder = Environment(L"ARIA_FREEDOS");
   if (!folder.empty()) return folder + L"\\KERNEL.SYS";
-  return ExeFolder() + L"\\KERNEL.SYS";
+  std::error_code ec;
+  for (const auto& candidate : SearchFolders()) {
+    if (std::filesystem::is_regular_file(candidate / L"KERNEL.SYS", ec)) return (candidate / L"KERNEL.SYS").wstring();
+  }
+  return {};
+}
+
+std::wstring FolderList(const std::vector<std::filesystem::path>& folders) {
+  std::wstring list;
+  for (const auto& folder : folders) list += L"\n" + folder.wstring();
+  return list;
 }
 
 bool ReadFile(const std::wstring& path, std::vector<uint8_t>& bytes) {
@@ -74,10 +163,16 @@ const wchar_t* kUsage =
     L"Použití: AriaEmulator.exe [--flash CESTA] [--kodovani kamenicky|cp852] [--jadro KERNEL.SYS]\n\n"
     L"CESTA je aktualizace Arie tak, jak ji Robotron dodával: archiv ZIP "
     L"(kartový i sériový), FLASHDSK.IMG, jeden z dílů ARIAA4.1 až ARIAA4.3, "
-    L"nebo složka s nimi. Bez --flash se použije proměnná ARIAFLASH, jinak "
-    L"CARD\\CC0705.ZIP ve složce z proměnné ARIAFW (výchozí D:\\aria\\update).\n\n"
+    L"nebo složka s nimi. Bez --flash se použije firmware z minulého spuštění, "
+    L"jinak se hledá vedle emulátoru, o složku výš a v pracovní složce; "
+    L"z několika verzí vyhraje nejnovější.\n\n"
     L"KERNEL.SYS je jádro FreeDOS (sestavení ke2046 pro 8086). Bez --jadro se "
-    L"hledá ve složce z proměnné ARIA_FREEDOS, jinak vedle emulátoru.";
+    L"hledá na stejných místech.";
+
+const wchar_t* kWhatToPut =
+    L"Položte vedle AriaEmulator.exe aktualizaci Arie tak, jak ji Robotron "
+    L"dodával, například CC0705.ZIP nebo CSR0687.ZIP (stačí kterýkoli z archivů "
+    L"ZIP), případně FLASHDSK.IMG nebo díly ARIAA4.1 až ARIAA4.3.";
 
 }  // namespace
 
@@ -104,13 +199,52 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show) {
     }
   }
   LocalFree(arguments);
-  if (flash_path.empty()) flash_path = DefaultFlashPath();
-  if (kernel_path.empty()) kernel_path = DefaultKernelPath();
+  // Before the image: it says which drive B: the last run had.
+  Settings settings(Settings::FindFile());
+  settings.Load();
 
+  // A path given (--flash, or ARIAFLASH for the developer) is the user's
+  // word, and a failure there is said rather than searched past.
+  if (flash_path.empty()) flash_path = Environment(L"ARIAFLASH");
   FlashImage image;
   std::wstring error;
-  if (!LoadFlashImage(flash_path, forced, image, error)) {
-    MessageBoxW(nullptr, (error + L"\n\n" + kUsage).c_str(), kTitle, MB_OK | MB_ICONERROR);
+  if (!flash_path.empty()) {
+    if (!LoadFlashImage(flash_path, forced, image, error)) {
+      MessageBoxW(nullptr, (error + L"\n\n" + kUsage).c_str(), kTitle, MB_OK | MB_ICONERROR);
+      return 1;
+    }
+  } else {
+    std::vector<std::filesystem::path> searched;
+    if (!FindFlash(settings.flash(), forced, image, searched)) {
+      const std::wstring message = L"Firmware Arie (obsah disku B:) se nenašel. Hledal se v těchto složkách:" +
+                                   FolderList(searched) + L"\n\n" + kWhatToPut;
+      MessageBoxW(nullptr, message.c_str(), kTitle, MB_OK | MB_ICONERROR);
+      return 1;
+    }
+    flash_path = image.origin;
+  }
+  // Absolute, or a --flash given relative to one working folder would be
+  // lost from the next. Not std::filesystem::absolute: MinGW's prefixes an
+  // already absolute UNC path (\\server\share) with the share once more.
+  {
+    wchar_t full[MAX_PATH * 2];
+    const DWORD length = GetFullPathNameW(flash_path.c_str(), static_cast<DWORD>(std::size(full)), full, nullptr);
+    if (length > 0 && length < std::size(full)) flash_path.assign(full, length);
+  }
+  if (!Settings::SamePath(settings.flash(), flash_path)) {
+    settings.SetFlash(flash_path);
+    // Not worth stopping for: the next run searches again.
+    std::wstring ignored;
+    settings.Save(ignored);
+  }
+
+  if (kernel_path.empty()) kernel_path = FindKernel();
+  if (kernel_path.empty()) {
+    const std::wstring message =
+        L"Jádro FreeDOS KERNEL.SYS se nenašlo. Hledalo se v těchto složkách:" + FolderList(SearchFolders()) +
+        L"\n\nPoložte vedle AriaEmulator.exe soubor KERNEL.SYS ze sestavení ke2046 pro 8086 "
+        L"(archiv ke2046_86f16.zip z projektu FDOS/kernel na GitHubu).";
+    MessageBoxW(nullptr, message.c_str(), kTitle, MB_OK | MB_ICONERROR);
     return 1;
   }
   std::vector<uint8_t> kernel;
@@ -155,8 +289,6 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show) {
     }
   }
 
-  Settings settings(Settings::FindFile());
-  settings.Load();
   EmulatorThread emulator(std::move(machine));
   MainWindow window(emulator, std::move(info), settings);
   if (!window.Create()) {

@@ -34,6 +34,8 @@ constexpr char kLockedDiskPrefix[] = "zamcena-disketa";
 // when it is on the serial line.
 constexpr char kKeyboardKey[] = "externi-klavesnice";
 constexpr char kDiskSlotPrefix[] = "disketa-slot";
+// Drive B: of the last run, "disk-b=C:\Aria\CSR0687.ZIP".
+constexpr char kFlashKey[] = "disk-b";
 constexpr char kBom[] = "\xef\xbb\xbf";
 
 std::string ToUtf8(const std::wstring& text) {
@@ -132,6 +134,10 @@ void Settings::Load() {
     const std::string key = Trim(line.substr(0, equals));
     if (key.empty() || key.front() == '#') continue;
     const std::string value = Trim(line.substr(equals + 1));
+    if (key == kFlashKey) {
+      flash_ = FromUtf8(value);
+      continue;
+    }
     if (key == kLastCardKey) {
       lastCard_ = FromUtf8(value);
       continue;
@@ -196,6 +202,7 @@ bool Settings::Save(std::wstring& error) const {
       L"# Nastavení emulátoru Aria.\r\n"
       L"# Soubor přepisuje emulátor, vlastní řádky v něm nepřežijí.\r\n"
       L"\r\n";
+  if (!flash_.empty()) text += L"disk-b=" + flash_ + L"\r\n";
   if (!lastCard_.empty()) text += L"posledni-karta=" + lastCard_ + L"\r\n";
   if (!imageFolder_.empty()) text += L"slozka-obrazu=" + imageFolder_ + L"\r\n";
   for (int number = 1; number <= kSlots; ++number) {

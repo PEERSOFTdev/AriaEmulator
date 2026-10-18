@@ -20,8 +20,9 @@ interní flash, tedy disku B:, a dodává se jako aktualizace od Robotronu.
 Dále potřebuje **jádro FreeDOS**, které nahrazuje ztracený ROM-DOS: soubor
 `KERNEL.SYS` z vydání ke2046, sestavení pro 8086 (`ke2046_86f16.zip` na
 GitHubu projektu FDOS/kernel). Je pod licencí GNU GPL a s emulátorem se
-nespojuje, jen se načte jako samostatný soubor. Emulátor ho hledá ve
-složce z proměnné `ARIA_FREEDOS`, jinak vedle sebe; jinou cestu lze zadat
+nespojuje, jen se načte jako samostatný soubor. Stačí ho položit vedle
+`AriaEmulator.exe`. Emulátor ho hledá ve složce z proměnné `ARIA_FREEDOS`,
+jinak vedle sebe, o složku výš a v pracovní složce; jinou cestu lze zadat
 volbou `--jadro`.
 
 ROM-DOS na Arii běžel z paměti ROM a programům nebral žádnou paměť.
@@ -48,14 +49,39 @@ Robotron dodával, bez rozbalování:
 stejně jako Eureka A4. Verze 6.99 a 7.05 používají **CP852 (Latin 2)**.
 Kódování emulátor pozná z obsahu disku sám.
 
-Spuštění:
+**Nejjednodušší je položit aktualizaci vedle `AriaEmulator.exe`** a
+spustit ho bez parametrů. Emulátor ji najde sám, nic se nevybírá
+v dialogu, protože Aria běží hned od spuštění. Hledá:
+
+1. firmware z minulého spuštění, dokud jde načíst (pamatuje si ho
+   v souboru `nastaveni.txt`, řádek `disk-b`),
+2. jinak vedle `AriaEmulator.exe`, potom o složku výš a nakonec
+   v pracovní složce, v každé z nich i v podsložkách `CARD` a `SERIAL`,
+   jak je měla sada aktualizací od Robotronu.
+
+Soubory se poznávají podle obsahu, ne podle jména: vezme se každý archiv
+ZIP s `FLASHDSK.IMG` nebo díly `ARIAA4`, samotný `FLASHDSK.IMG` a díl
+`ARIAA4.1`. Jiné archivy ZIP vedle emulátoru (například s jádrem FreeDOS)
+nevadí. Obrazy karet `*.IMG` se za disk B: nepovažují. Prohledávání
+skončí u první složky, ve které se něco najde; je-li v ní (včetně jejích
+podsložek `CARD` a `SERIAL`) několik verzí, vyhraje nejnovější bez ohledu
+na jazyk, takže anglická 7.04 přebije českou 6.87.
+
+Jinou verzi spustíte jednou s volbou `--flash` a emulátor si ji
+zapamatuje, takže příště ji vezme i bez ní:
 
     AriaEmulator.exe --flash D:\aria\update\SERIAL\CSR0687.ZIP
 
-Bez `--flash` se použije proměnná prostředí `ARIAFLASH`, a když není
-nastavená, `CARD\CC0705.ZIP` ve složce z proměnné `ARIAFW` (výchozí
-`D:\aria\update`). Kódování lze vnutit volbou `--kodovani kamenicky` nebo
+Verzi a kódování spuštěného firmwaru hlásí titulek okna (NVDA+T).
+Když se firmware nenajde, emulátor to řekne, vyjmenuje prohledané složky
+a nespustí se.
+
+Kódování lze vnutit volbou `--kodovani kamenicky` nebo
 `--kodovani cp852`.
+
+Pro vývoj: proměnná prostředí `ARIAFLASH` platí jako `--flash`. Když se
+nic nenajde ani vedle emulátoru, prohledá se ještě složka z proměnné
+`ARIAFW` (výchozí `D:\aria\update`).
 
 Boot ROM Arie (BIOS a jádro ROM-DOS) se nedochovala. Emulátor ji nahrazuje
 vlastní implementací.

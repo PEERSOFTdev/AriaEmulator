@@ -9,8 +9,9 @@
 // means defaults; a failed save is returned to the caller, which says so at
 // the moment of the act that did not stick.
 //
-// So far it remembers cards (HANDOFF 6.8, ar-aj1): the one in the slot at
-// the end of the last run, and for every folder or image file that has been
+// Besides drive B: of the last run, it remembers cards (HANDOFF 6.8,
+// ar-aj1): the one in the slot at the end of the last run, and for every
+// folder or image file that has been
 // a card its size and write-protect switch -- both belong to the card, as
 // on a real one, so they come back whenever that card goes in again. Which
 // of the two a card is, the file does not say: a path that is a folder is a
@@ -34,6 +35,12 @@ class Settings {
   // meant to be editable by hand.
   void Load();
   bool Save(std::wstring& error) const;
+
+  // Drive B: of the last run (a firmware update, main.cpp), taken again
+  // while it still loads, so that of several builds beside the EXE the one
+  // chosen once with --flash stays; empty before the first run.
+  const std::wstring& flash() const { return flash_; }
+  void SetFlash(std::wstring path) { flash_ = std::move(path); }
 
   // The card (folder or image) to put back in at the next start; empty for
   // none.
@@ -92,6 +99,7 @@ class Settings {
 
  private:
   std::filesystem::path file_;
+  std::wstring flash_;
   std::wstring lastCard_;
   std::wstring imageFolder_;
   std::array<std::wstring, kSlots> slots_;

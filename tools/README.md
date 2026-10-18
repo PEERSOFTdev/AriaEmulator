@@ -6,7 +6,8 @@
 repozitáře a `flashdisk.py --extract` cíl uvnitř repozitáře odmítne,
 protože rozbalené soubory jsou firmware třetí strany (`ROM-NOTICE.txt`).
 
-Obraz disku B: se vybírá stejně jako v emulátoru: první argument, jinak
+Obraz disku B: se vybírá takto (emulátor od 18. 10. 2026 hledá jinak, viz
+README): první argument, jinak
 proměnná `ARIAFLASH`, jinak `CARD\CC0705.ZIP` ve složce z `ARIAFW`
 (výchozí `D:\aria\update`, ve WSL se čte jako `/mnt/d/aria/update`).
 Přijme se kartový i sériový ZIP, `FLASHDSK.IMG`, díl `ARIAA4.n` i složka.
