@@ -71,6 +71,7 @@ void AriaMachine::PowerOn() {
   // at every start, and none of it is battery-kept state.
   std::fill(rom_area_.begin(), rom_area_.end(), 0xFF);
   dsp_bytes_.clear();
+  pot_settings_.clear();
   samples_.clear();
   sample_dividers_.clear();
   dsp_log_.clear();
@@ -168,7 +169,24 @@ void AriaMachine::WriteDspControl(uint8_t value) {
   // SPEAK writes (shadow XOR 7) OR 8 from its copy at DS:561Ch
   // (SPEAK.EXE+896Ah), so bit 3 is set in every write except the plain 0
   // before booting (+09F9h) and the 8 after it (+0A14h): bit 3 releases
-  // the DSP's reset. The meaning of bits 0-2 is unknown.
+  // the DSP's reset.
+  //
+  // Bits 0-2 are the volume potentiometer's pins, inverted on the way out
+  // (the XOR 7), so in SPEAK's own terms: bit 0 chip select (low active),
+  // bit 1 up/down, bit 2 increment. SPEAK.EXE+89BEh sets a volume N the
+  // Xicor X9C way: select with INC high, 99 falling INC edges down to tap
+  // 0, then N edges up, then deselect; the N is DS:54F9h, the volume of the
+  // current voice (+0F0Ah, +31C8h, +3351h). The Mode volume 0-9 maps to
+  // taps 3, 6, ... 27, 31 by the table at +BD9Dh; the default 5 sets tap
+  // 18, as measured on 7.05 and 6.87 (boot_test).
+  const uint8_t pins = (value ^ 0x07) & 0x07;
+  const uint8_t was_pins = (dsp_control_ ^ 0x07) & 0x07;
+  const bool selected = !(pins & 0x01);
+  if (selected && (was_pins & 0x04) && !(pins & 0x04)) {
+    pot_wiper_ = std::clamp(pot_wiper_ + ((pins & 0x02) ? 1 : -1), 0, 99);
+  }
+  if (!(was_pins & 0x01) && (pins & 0x01) && pot_settings_.size() < 1000) pot_settings_.push_back(pot_wiper_);
+
   const bool was_running = (dsp_control_ & 0x08) != 0;
   dsp_control_ = value;
   ++dsp_control_writes_;

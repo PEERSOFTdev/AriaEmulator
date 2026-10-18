@@ -90,7 +90,12 @@ zašuměné daty; za doklad se berou jen porty načtené do `DX`.
 - `0401h`, `0402h` — zápis z `SPEAK.EXE`, nejspíš DSP **[předpoklad]**
 
   **Upřesněno 7. 10. 2026 (HANDOFF 6.3):** `0401h` je řídicí latch DSP,
-  bit 3 = DSP běží (0 drží reset), bity 0–2 neznámé **[binárka]**;
+  bit 3 = DSP běží (0 drží reset), bity 0–2 neznámé **[binárka]**
+  (**18. 10. 2026:** bity 0–2 jsou negované vývody číslicového
+  potenciometru hlasitosti typu Xicor X9C se 100 odbočkami: výběr, směr,
+  krok; `SPEAK.EXE+89BEh`, hlasitost 0–9 na odbočky 3–31 tabulkou
+  `+BD9Dh` **[binárka]**, lineární vliv na amplitudu **[předpoklad]**;
+  HANDOFF 6.3);
   `0402h` je jednobajtová schránka do DSP: zápis dá DSP IRQ2 (při
   zavádění bajt zaváděcí stránky), DSP ji čte na vnější datové adrese
   `3000h`, prázdná schránka dává 80188 DRQ0 a INT3 **[binárka, výklad]**.

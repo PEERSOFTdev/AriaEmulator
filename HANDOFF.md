@@ -561,6 +561,34 @@ není PKLITE, a běh s jímkou):
   Sekvence `+89BEh` (nastav 5, smaž 1, smaž 2, prodleva, nastav 2,
   prodleva, nastav 1) vypadá na řízení resetu a výběru, význam bitů
   zatím neznámý.
+
+  **Upřesněno 18. 10. 2026: bity 0–2 jsou potenciometr hlasitosti,
+  ne reset.** Ve stínové kopii (port je její negace, `XOR 7`) je bit 0
+  výběr čipu (aktivní v nule), bit 1 směr (1 = nahoru), bit 2 krok
+  (sestupná hrana posune jezdec). `+89BEh` je nastavení hlasitosti N po
+  způsobu číslicového potenciometru Xicor X9C se 100 odbočkami: výběr při
+  INC = 1, 99 kroků dolů na odbočku 0 (`+899Ch`, `push 63h`), N kroků
+  nahoru, uvolnění výběru. N je `DS:54F9h`, hlasitost aktuálního hlasu
+  (`+0F0Ah` z příkazu v textu, `+31C8h` výchozí, `+3351h` obnovení).
+  Hlasitost 0–9 z nabídky Režim převádí tabulka `SPEAK.EXE+BD9Dh` na
+  odbočky 3, 6, 9, 12, 15, 18, 21, 24, 27, 31 **[binárka]**; výchozí 5
+  je odbočka 18, změřeno `boot_test` na 7.05 i 6.87 (kolem každého
+  přepnutí programu DSP nejdřív 0, pak 18). Že potenciometr mění
+  amplitudu lineárně, je **[předpoklad]**, desku nemáme. Emulátor
+  (`AriaMachine::WriteDspControl`) jezdec sleduje a násobí jím zvuk
+  posílaný do DAC; odbočka 18 je jednička, aby výchozí hlasitost zněla
+  jako dřív, hlasitost 9 je 1,7× hlasitější. Slova ze SPORT1 v testech
+  a výpisech WAV zůstávají nevynásobená. Do 18. 10. 2026 se bity 0–2
+  zahazovaly, proto posuvník hlasitosti v Režimu nic nedělal.
+
+  **Otevřené (18. 10. 2026): občas tišší start.** Uživatel slyšel
+  některé starty bez uložené paměti (testovací běhy, kopie EXE jinde)
+  „mnohem tišší“. Potenciometr to být nemohl, do té doby se nebral
+  v úvahu. `boot_test -v` srovná řeč studeného startu a startu ze
+  snímku: 7.05 RMS 254 / 240, špička 2002 / 1997, 6.87 RMS 254 / 238,
+  obojí odbočka 18 — výstup DSP je stejně hlasitý. Kandidát mimo
+  emulátor: směšovač hlasitosti Windows si pamatuje úroveň pro každou
+  cestu k EXE zvlášť (neověřeno). Emulátor `waveOutSetVolume` nevolá.
 - **`0402h` je datový port DSP a jediná cesta dat.** Žádný program na B:
   z `0401h` ani `0402h` nečte; DSP hostiteli odpovídá jen dvěma linkami.
 - **Zavedení programu DSP (`+09EAh`):** `0401h` ← 0, `0402h` ← bajt
@@ -591,6 +619,8 @@ MAINMENU (6.10). `boot_test` ověřuje, že DSP dostal nejdřív celý
 `LPC.DSP` a později `HARPUP.04`, oboje čtené z načteného obrazu. Pro
 skutečnou řeč (fáze 4) zbývá: jádro ADSP-2105, význam bitů `0401h`,
 formát zaváděcího proudu a rámců „Sync“/„Play“ a cesta zvuku z DSP.
+(Bity 0–2 `0401h` jsou od 18. 10. 2026 vysvětlené výše: potenciometr
+hlasitosti.)
 
 **Zdroje k ADSP-2105 (7. 10. 2026):**
 

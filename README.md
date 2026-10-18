@@ -378,6 +378,12 @@ otevřít, emulátor pípne a do titulku připíše „bez zvuku“; Arie to nev
 běží dál. Vzorkovací frekvence řeči Arie se nedochovala ani v dokumentaci;
 emulátor používá 32 kHz pro českou řeč, podle poslechu (HANDOFF 6.3).
 
+Hlasitost nastavená v Arii (nabídka Režim i řídicí sekvence v textu)
+platí: emulátor napodobuje potenciometr hlasitosti, který Aria nastavuje.
+Výchozí hlasitost 5 zní stejně jako dřív, 9 je asi o 70 % hlasitější,
+0 je asi šestina. Jak přesně potenciometr na skutečné Arii zeslaboval,
+se nedochovalo; emulátor bere lineární průběh.
+
 ## Rychlost procesoru
 
 Procesor Arie, 80C188 na 15 MHz, má jen osmibitovou sběrnici: každý bajt

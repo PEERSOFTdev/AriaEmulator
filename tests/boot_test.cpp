@@ -13,6 +13,7 @@
 // -wav PATH RATE the samples the DSP shifted out, as a WAV file.
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -482,6 +483,9 @@ int wmain(int argc, wchar_t** argv) {
                 machine.DspControlWrites(), machine.DspControl());
     for (std::size_t i = 0; i < dsp.size() && i < 32; ++i) std::printf(" %02X", dsp[i]);
     std::printf("\n");
+    std::printf("Volume potentiometer: wiper %d, settings:", machine.PotWiper());
+    for (int tap : machine.PotSettings()) std::printf(" %d", tap);
+    std::printf("\n");
     const auto& samples = machine.Samples();
     int peak = 0;
     for (int16_t s : samples) peak = std::max(peak, std::abs(static_cast<int>(s)));
@@ -576,6 +580,14 @@ int wmain(int argc, wchar_t** argv) {
     std::cout << "FAIL boot: audible DSP output at fewer than two clock dividers:";
     for (const auto& [divider, count] : audible) std::cout << " " << divider << ":" << count;
     std::cout << "\n";
+    return 1;
+  }
+  // The volume potentiometer on 0401h (aria_machine.cpp, HANDOFF 6.3):
+  // SPEAK sets the default volume 5, tap 18 by its table at SPEAK.EXE+BD9Dh.
+  // Guards the pin decoding and the unity tap of the sound together.
+  if (machine.PotSettings().empty() || machine.PotWiper() != 18) {
+    std::cout << "FAIL boot: the volume potentiometer is at tap " << machine.PotWiper() << " after "
+              << machine.PotSettings().size() << " settings, not at the default 18\n";
     return 1;
   }
   // The keyboard: BKB scans the matrix in timer 2's interrupt (vector 13h)
@@ -1598,8 +1610,27 @@ int wmain(int argc, wchar_t** argv) {
               << ")\n";
     return 1;
   }
+  if (verbose) {
+    // Loudness of the speech of a cold start and of one from the snapshot,
+    // to tell a quieter start in the DSP's output from one in the host.
+    for (AriaMachine* m : {&machine, &second}) {
+      double sum = 0;
+      std::size_t count = 0;
+      int peak = 0;
+      for (std::size_t i = 0; i < m->Samples().size(); ++i) {
+        if (m->SampleDividers()[i] > 6) continue;
+        const int s = m->Samples()[i];
+        sum += static_cast<double>(s) * s;
+        peak = std::max(peak, std::abs(s));
+        ++count;
+      }
+      std::printf("%s start: speech RMS %.1f, peak %d over %zu samples; potentiometer at %d\n",
+                  m == &machine ? "cold" : "snapshot", count ? std::sqrt(sum / count) : 0.0, peak, count,
+                  m->PotWiper());
+    }
+  }
   std::cout << "PASS boot_test (CONFIG.SYS and AUTOEXEC.BAT from drive B: up to MAINMENU, speech and harp from the DSP,"
-               " space + dot 4 answered, D: formatted on y, C:\\KARTA.TXT written and read on an SRAM card from a host"
+               " the volume potentiometer at its default, space + dot 4 answered, D: formatted on y, C:\\KARTA.TXT written and read on an SRAM card from a host"
                " folder, its subfolder's letter read and the card saved back into the folder,"
                " a card locked since power-on read through its CIS,"
                " cards swapped after 2 s and at once without mixing, write protection prompted and kept,"

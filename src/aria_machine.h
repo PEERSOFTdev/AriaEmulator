@@ -1,6 +1,7 @@
 #ifndef ARIA_ARIA_MACHINE_H
 #define ARIA_ARIA_MACHINE_H
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -154,6 +155,11 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   const std::vector<uint8_t>& DspBytes() const { return dsp_bytes_; }
   int DspControlWrites() const { return dsp_control_writes_; }
   uint8_t DspControl() const { return dsp_control_; }
+  // The volume: a 100-tap up/down digital potentiometer of the Xicor X9C
+  // kind on bits 0-2 of 0401h (HANDOFF 6.3). Its wiper, 0-99, and where it
+  // came to rest each time SPEAK let go of it (chip select raised).
+  int PotWiper() const { return pot_wiper_; }
+  const std::vector<int>& PotSettings() const { return pot_settings_; }
   // The sound the machine made since the last call, at kAudioHz.
   std::vector<int16_t> TakeAudio() { return dac_.Take(); }
   static constexpr int kAudioHz = 44100;
@@ -195,7 +201,14 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
       samples_.push_back(static_cast<int16_t>(sample));
       sample_dividers_.push_back(clock_divider);
     }
-    dac_.Sample(slice_base_ + (dsp_.Cycles() - slice_dsp_start_), static_cast<int16_t>(sample));
+    // The potentiometer after the DAC, taken as linear in amplitude (a
+    // guess: there is no board to measure). Tap 18, SPEAK's default volume
+    // 5, is unity, so the default sounds as it did before the pot was
+    // modelled; volume 9 (tap 31) is 1.7 times that. The tests and WAV
+    // dumps above keep the DSP's own words.
+    const int scaled = static_cast<int16_t>(sample) * pot_wiper_ / kPotUnity;
+    dac_.Sample(slice_base_ + (dsp_.Cycles() - slice_dsp_start_),
+                static_cast<int16_t>(std::clamp(scaled, -32768, 32767)));
   }
   uint16_t ReadExternalData(uint32_t address) override;
   void Log(const char* text) override {
@@ -266,6 +279,12 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   std::vector<std::string> dsp_log_;
   uint8_t dsp_control_ = 0;
   int dsp_control_writes_ = 0;
+  // A real X9C comes up where it was last stored; SPEAK sets it before the
+  // DSP makes a sound (tap 0 at +09C6h, then the volume), so where it
+  // starts here is never heard.
+  static constexpr int kPotUnity = 18;
+  int pot_wiper_ = kPotUnity;
+  std::vector<int> pot_settings_;
   std::map<uint16_t, int> unknown_ports_;
 };
 
