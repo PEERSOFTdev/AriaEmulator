@@ -4,7 +4,7 @@
   python flashdisk.py [IMAGE] --extract DIR   extract all files into DIR
 
 IMAGE as in ariafw.load(); without it $ARIAFLASH / $ARIAFW is used.
-Extracted files are third-party firmware (ROM-NOTICE.txt): DIR must lie
+Extracted files are third-party firmware (PRAVNI.md, 3.6): DIR must lie
 outside the repository, and the tool refuses a DIR inside it.
 """
 

@@ -4,7 +4,7 @@
 `nasm` (na Ubuntu a ve WSL `sudo apt install nasm`), který potřebují
 `ports.py`, `ints.py` a `dis.py`. Nástroje jen **čtou**: nic nezapisují do
 repozitáře a `flashdisk.py --extract` cíl uvnitř repozitáře odmítne,
-protože rozbalené soubory jsou firmware třetí strany (`ROM-NOTICE.txt`).
+protože rozbalené soubory jsou firmware třetí strany (`PRAVNI.md`, bod 3.6).
 
 Obraz disku B: se vybírá takto (emulátor od 18. 10. 2026 hledá jinak, viz
 README): první argument, jinak

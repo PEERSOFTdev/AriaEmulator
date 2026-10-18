@@ -14,8 +14,9 @@ v titulku okna (NVDA+T). Co je zjištěno a co je otevřené, popisuje
 
 ## Co emulátor potřebuje
 
-Firmware Arie není součástí projektu (viz `ROM-NOTICE.txt`). Je to obsah
-interní flash, tedy disku B:, a dodává se jako aktualizace od Robotronu.
+Firmware Arie není součástí projektu a projekt ho nešíří. Je to obsah
+interní flash, tedy disku B:, a dodával se jako aktualizace od Robotronu.
+Co projekt obsahuje, co ne a o co se opírá, popisuje `PRAVNI.md`.
 
 Dále potřebuje **jádro FreeDOS**, které nahrazuje ztracený ROM-DOS: soubor
 `KERNEL.SYS` z vydání ke2046, sestavení pro 8086 (`ke2046_86f16.zip` na

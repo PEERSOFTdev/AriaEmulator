@@ -15,7 +15,7 @@ rem
 rem Volani:  run-tests.bat                    (firmware z %ARIAFW%, jinak D:\aria\update)
 rem          run-tests.bat D:\cesta\k\update
 rem
-rem Firmware je material tretich stran a v repozitari neni (ROM-NOTICE.txt).
+rem Firmware je material tretich stran a v repozitari neni (PRAVNI.md).
 
 if "%MINGW64%"=="" set "MINGW64=C:\msys64\mingw64"
 set "PATH=%MINGW64%\bin;%PATH%"

@@ -93,7 +93,11 @@ Uživatel je **nevidomý**, pracuje se čtečkou obrazovky NVDA. Z toho plyne:
 
 Leží **mimo repozitář**, cesta je v proměnné `ARIAFW`, jinak
 `D:\aria\update` (z WSL `/mnt/d/aria/update`). Je to firmware třetí strany
-— nikdy ho necommituj a nikam neposílej (`ROM-NOTICE.txt`). Hlavní cíl:
+— nikdy ho necommituj a nikam neposílej (`PRAVNI.md`). Totéž platí pro
+všechno z něj odvozené: rozbalené programy, výpisy paměti, uloženou paměť
+emulátoru, proud bajtů pro DSP (`PRAVNI.md`, bod 3.6). Dokumentace
+neuvádí, kde firmware získat, a na žádný zdroj neodkazuje (bod 4.2) —
+uživatelé Arie to vědí. Hlavní cíl:
 
 - `CARD/CC0705.ZIP` → `FLASHDSK.IMG`, sestavení 7.05, česky, Latin 2.
   ZIP MD5 `0d220f7c41d5b177b2a65c0231c83bb3`, obraz MD5

@@ -173,7 +173,7 @@ $(BIN)/cpu_selftest.exe: $(BUILD)/test_cpu_selftest.o $(CPU_OBJS) | $(BIN)
 # Testy
 #
 # Kazdy test je samostatny cil, aby je make -j pustil naraz. Firmware neni
-# v repozitari (ROM-NOTICE.txt); kdyz ho run-tests.sh nenajde, nastavi
+# v repozitari (PRAVNI.md); kdyz ho run-tests.sh nenajde, nastavi
 # v PROSTREDI SKIP_FIRMWARE=1 a testu s firmwarem se vynechaji.
 #
 # Seznam rezimu je jen tady. Druha kopie jinde by se s touto rozesla potichu.

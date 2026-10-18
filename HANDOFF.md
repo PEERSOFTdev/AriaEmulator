@@ -68,6 +68,43 @@ zbytek je `FFh`. Konec (oblast resetovacího vektoru) je prázdný.
 - `AAPI.EXE` (85 374 B) — „verze Aria API, která běží na PC“. Liší se od
   `B:\SYSTEM\AAPI.EXE` (48 135 B, PKLITE).
 
+### Právní rámec (`PRAVNI.md`, 18. 10. 2026)
+
+`PRAVNI.md` nahradil `ROM-NOTICE.txt`. Je to česká úprava slovenského
+`PRAVNE.md` z projektu Eureka (stav po recenzii PR 8, 17. 10. 2026);
+citace zákonů a směrnice jsou převzaté odtamtud, kde jsou ověřené proti
+úředním textům, a nově se neověřovaly. Rozdíly proti Eurece:
+
+- firmware je disk B: z aktualizačních balíků, které nositel práv sám
+  zveřejňoval (seznam sestavení výše); bod o rozmnoženině z vlastního
+  stroje a nástroj na ni (Eureka body 4 a 5) odpadly. Projekt neposuzuje,
+  kdo je oprávněný uživatel, a **neuvádí, kde firmware získat** — přání
+  uživatele: uživatelé Arie to vědí;
+- disk B: má víc nositelů práv (Datalight, PKWARE, Borland, PeterTalk);
+- zaváděcí ROM chybí a HLE je vlastní kód podle rozhraní (bod 2.3),
+  jádro FreeDOS dodává uživatel (bod 2.4);
+- bod 3.6 jmenuje, co z firmwaru vzniká nástroji tohoto projektu
+  (rozbalené PKLITE, `-dump`, uložená paměť, `-dsp`, výpis `dsp_disasm`);
+- u materiálu pro vývojáře není doložené, že byl zveřejněn, proto
+  `PRAVNI.md` neopírá nic o citační licenci, jen o popis rozhraní.
+
+Ověřeno při sepsání: `pklite_unpack` rozbaluje vlastním stubem programu
+na emulovaném CPU, kód rozbalování PKLITE v projektu není; v HANDOFF ani
+v mapě hardwaru nejsou bloky disassembly. Bod 7.4 stojí na tom, co řekl
+uživatel: Arii vlastnil a aktualizace získal tak, jak se uživatelům Arie
+dodávaly. Podmínky, za kterých se dodávaly, nezná a prohlášení je
+neuvádí.
+
+Ověřeno 18. 10. 2026 na webu (zdroj se v repozitáři záměrně
+nejmenuje): česká sestavení 6.87 a 7.05 (sériová) a 6.99 (kartová) jsou
+od března 2000 v knihovně serveru české organizace nevidomých, dodnes
+**bez přihlášení**, tedy přístupná komukoli, ne jen nevidomým. Popisy
+souborů jsou návody k instalaci; podmínky užití ani původce (Robotron,
+český dodavatel Arie TR Instruments) neuvádějí. TR Instruments byl
+podle uživatele českým prodejcem Eureky, Arie a možná i dalších výrobků
+Robotronu; dodavatelem Arie ho jmenuje i stránka SONS. Doložit, s čím je tam
+nositel práv vystavil, se tedy nedá; `PRAVNI.md` o to nic neopírá.
+
 ## 2. Přehled stroje
 
 Podle robotron.net.au/aria.htm: CPU **80C188**, DSP **ADSP-2105**, 1 MB

@@ -8,7 +8,7 @@
 //
 // IMAGE is any drive B: source LoadFlashImage accepts. OUTDIR must lie
 // outside the repository: the output is third-party firmware
-// (ROM-NOTICE.txt).
+// (PRAVNI.md, 3.6).
 //
 // How: the program is loaded as DOS would load it, with a PSP and a top of
 // memory of A000h. The stub first runs inside the load module, copies itself
