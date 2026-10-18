@@ -98,8 +98,10 @@ std::vector<std::filesystem::path> FlashFilesIn(const std::filesystem::path& fol
 // Drive B: when neither --flash nor ARIAFLASH names it: the one of the last
 // run while it still loads, otherwise the newest build in the first search
 // folder that holds any. A folder counts with its CARD and SERIAL
-// subfolders, the layout Robotron's update set came in. ARIAFW (default
-// D:\aria\update, CLAUDE.md) is the developer's set, searched last. Files are
+// subfolders, the layout Robotron's update set came in. ARIAFW, when set, is
+// the developer's set (CLAUDE.md), searched last; a release build carries no
+// default path, since one from a developer's machine means nothing on
+// anyone else's. Files are
 // told by their contents (LoadFlashImage), so a FreeDOS ZIP or the
 // emulator's own release ZIP beside the EXE is passed over.
 bool FindFlash(const std::wstring& remembered, TextEncoding forced, FlashImage& image,
@@ -108,7 +110,6 @@ bool FindFlash(const std::wstring& remembered, TextEncoding forced, FlashImage& 
   if (!remembered.empty() && LoadFlashImage(remembered, forced, image, ignored)) return true;
   searched = SearchFolders();
   std::wstring developer = Environment(L"ARIAFW");
-  if (developer.empty()) developer = L"D:\\aria\\update";
   for (const auto& folder : searched) {
     if (Settings::SamePath(folder.wstring(), developer)) developer.clear();
   }
@@ -170,7 +171,7 @@ const wchar_t* kUsage =
     L"hledá na stejných místech.";
 
 const wchar_t* kWhatToPut =
-    L"Položte vedle AriaEmulator.exe aktualizaci Arie tak, jak ji Robotron "
+    L"Zkopírujte do složky s AriaEmulator.exe aktualizaci Arie tak, jak ji Robotron "
     L"dodával, například CC0705.ZIP nebo CSR0687.ZIP (stačí kterýkoli z archivů "
     L"ZIP), případně FLASHDSK.IMG nebo díly ARIAA4.1 až ARIAA4.3.";
 
@@ -242,7 +243,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show) {
   if (kernel_path.empty()) {
     const std::wstring message =
         L"Jádro FreeDOS KERNEL.SYS se nenašlo. Hledalo se v těchto složkách:" + FolderList(SearchFolders()) +
-        L"\n\nPoložte vedle AriaEmulator.exe soubor KERNEL.SYS ze sestavení ke2046 pro 8086 "
+        L"\n\nZkopírujte do složky s AriaEmulator.exe soubor KERNEL.SYS ze sestavení ke2046 pro 8086 "
         L"(archiv ke2046_86f16.zip z projektu FDOS/kernel na GitHubu).";
     MessageBoxW(nullptr, message.c_str(), kTitle, MB_OK | MB_ICONERROR);
     return 1;

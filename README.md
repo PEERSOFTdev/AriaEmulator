@@ -21,8 +21,8 @@ Co projekt obsahuje, co ne a o co se opírá, popisuje `PRAVNI.md`.
 Dále potřebuje **jádro FreeDOS**, které nahrazuje ztracený ROM-DOS: soubor
 `KERNEL.SYS` z vydání ke2046, sestavení pro 8086 (`ke2046_86f16.zip` na
 GitHubu projektu FDOS/kernel). Je pod licencí GNU GPL a s emulátorem se
-nespojuje, jen se načte jako samostatný soubor. Stačí ho položit vedle
-`AriaEmulator.exe`. Emulátor ho hledá ve složce z proměnné `ARIA_FREEDOS`,
+nespojuje, jen se načte jako samostatný soubor. Stačí ho zkopírovat do
+složky s `AriaEmulator.exe`. Emulátor ho hledá ve složce z proměnné `ARIA_FREEDOS`,
 jinak vedle sebe, o složku výš a v pracovní složce; jinou cestu lze zadat
 volbou `--jadro`.
 
@@ -50,7 +50,7 @@ Robotron dodával, bez rozbalování:
 stejně jako Eureka A4. Verze 6.99 a 7.05 používají **CP852 (Latin 2)**.
 Kódování emulátor pozná z obsahu disku sám.
 
-**Nejjednodušší je položit aktualizaci vedle `AriaEmulator.exe`** a
+**Nejjednodušší je zkopírovat aktualizaci do složky s `AriaEmulator.exe`** a
 spustit ho bez parametrů. Emulátor ji najde sám, nic se nevybírá
 v dialogu, protože Aria běží hned od spuštění. Hledá:
 
@@ -71,7 +71,7 @@ na jazyk, takže anglická 7.04 přebije českou 6.87.
 Jinou verzi spustíte jednou s volbou `--flash` a emulátor si ji
 zapamatuje, takže příště ji vezme i bez ní:
 
-    AriaEmulator.exe --flash D:\aria\update\SERIAL\CSR0687.ZIP
+    AriaEmulator.exe --flash C:\Aria\SERIAL\CSR0687.ZIP
 
 Verzi a kódování spuštěného firmwaru hlásí titulek okna (NVDA+T).
 Když se firmware nenajde, emulátor to řekne, vyjmenuje prohledané složky
@@ -82,7 +82,8 @@ Kódování lze vnutit volbou `--kodovani kamenicky` nebo
 
 Pro vývoj: proměnná prostředí `ARIAFLASH` platí jako `--flash`. Když se
 nic nenajde ani vedle emulátoru, prohledá se ještě složka z proměnné
-`ARIAFW` (výchozí `D:\aria\update`).
+`ARIAFW`, je-li nastavená. Výchozí složku emulátor nemá (do 18. 10. 2026
+hledal ještě v `D:\aria\update`, vývojové složce autora).
 
 Boot ROM Arie (BIOS a jádro ROM-DOS) se nedochovala. Emulátor ji nahrazuje
 vlastní implementací.
