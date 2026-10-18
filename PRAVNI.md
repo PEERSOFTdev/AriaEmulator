@@ -69,8 +69,11 @@ nikdy neměl. Zdrojový kód emulátora neobsahuje firmware počítače Aria ani
 jeho část, překlad, úpravu nebo přepis do jiného jazyka.
 
 2.4. Místo ztraceného jádra ROM-DOS emulátor zavádí jádro FreeDOS, které
-je pod licencí GNU GPL. Repozitář ani vydání ho neobsahují; dodává ho ten,
-kdo emulátor spouští, jako samostatný soubor, který emulátor nemění.
+je pod licencí GNU GPL verze 2. Repozitář ho neobsahuje. Vydání ho
+obsahují jako samostatný, nezměněný soubor `KERNEL.SYS` z vydání projektu
+FDOS/kernel, s textem licence a údajem o původu; zdrojové texty přesně
+této verze jsou přiloženy ke každému vydání. Emulátor jádro nemění a
+s jádrem se nespojuje; licence emulátoru se na jádro nevztahuje.
 
 ## 3. Firmware
 

@@ -15,9 +15,10 @@ Scope: this licence covers the repository except for:
 Two things this project uses are deliberately NOT in the repository and are
 not covered by any licence here: the Aria firmware images, and the Aria
 technical material (API reference, headers, demo sources). Both are supplied
-by whoever runs the emulator. The same holds for the FreeDOS kernel, which
-is under the GNU GPL. See PRAVNI.md (in Czech) for the project's legal
-position.
+by whoever runs the emulator. The FreeDOS kernel (KERNEL.SYS) is not in
+the repository either; releases include it unchanged, under its own
+licence, the GNU GPL version 2 (see FreeDOS/ in the release package). See
+PRAVNI.md (in Czech) for the project's legal position.
 
 Copyright (c) 2026 Aria Emulator contributors
 

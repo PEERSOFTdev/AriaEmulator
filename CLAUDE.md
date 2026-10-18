@@ -126,6 +126,10 @@ když je firmware i jádro FreeDOS
 sestavení ke2046 pro 8086; GPL, do repozitáře nepatří). Co chybí,
 skript vynechá, řekne to a počet sníží.
 
+Balík vydání dělá `./balik.sh` do `build/vydani`; jádro FreeDOS do něj
+stahuje sám a ověřuje podle SHA256 (`PRAVNI.md` bod 2.4). Seznam souborů
+v balíku je výčet a firmware hlídá kontrola na konci skriptu.
+
 Start stroje se ladí `bin/boot_test.exe ZIP KERNEL.SYS -v [cykly]`
 (výstup `INT 10h`, emulované sekundy jednotlivých fází startu, registry,
 neznámé porty, stav a log DSP, vzorky kolem přepnutí programu DSP); `-dsp

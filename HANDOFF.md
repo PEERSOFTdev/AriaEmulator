@@ -102,7 +102,17 @@ od března 2000 v knihovně serveru české organizace nevidomých, dodnes
 souborů jsou návody k instalaci; podmínky užití ani původce (Robotron,
 český dodavatel Arie TR Instruments) neuvádějí. TR Instruments byl
 podle uživatele českým prodejcem Eureky, Arie a možná i dalších výrobků
-Robotronu; dodavatelem Arie ho jmenuje i stránka SONS. Doložit, s čím je tam
+Robotronu; dodavatelem Arie ho jmenuje i stránka SONS.
+
+**„Jádro FreeDOS dodává uživatel“ už neplatí** (18. 10. 2026, rozhodnutí
+uživatele): vydání ho obsahuje, aby uživatel přidával jen firmware.
+`balik.sh` stáhne `ke2046_86f16.zip` a `ke2046s.zip` z vydání FDOS/kernel
+a ověří je napevno zapsanými SHA256 (shodnými s archivy v
+`D:\aria\freedos` z 6. 10. 2026); `KERNEL.SYS` jde nezměněný vedle EXE,
+`COPYING` ze zdrojového archivu a `ZDROJ.txt` do `FreeDOS/` v balíku,
+zdrojový archiv k vydání vedle balíku (GPL v2 oddíl 3, zdroje na témže
+místě). `PRAVNI.md` bod 2.4 je přepsaný. Ověřeno: rozbalený balík jen
+s přidaným `CC0705.ZIP` se spustil do 7.05 s přiloženým jádrem. Doložit, s čím je tam
 nositel práv vystavil, se tedy nedá; `PRAVNI.md` o to nic neopírá.
 
 ## 2. Přehled stroje

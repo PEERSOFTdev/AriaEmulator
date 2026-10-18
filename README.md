@@ -18,8 +18,9 @@ práci popisuje `HANDOFF.md` (viz [Pro vývojáře](#pro-vývojáře)).
 1. Rozbalte archiv vydání do vlastní složky, například `C:\Aria`.
 2. Zkopírujte do ní aktualizaci firmwaru Arie tak, jak ji Robotron
    dodával, například `CC0705.ZIP` nebo `CSR0687.ZIP`. Nerozbalujte ji.
-3. Zkopírujte do ní jádro FreeDOS `KERNEL.SYS` (viz níže).
-4. Spusťte `AriaEmulator.exe`. Aria se zapne a promluví.
+3. Spusťte `AriaEmulator.exe`. Aria se zapne a promluví.
+
+Jádro FreeDOS, které emulátor také potřebuje, je ve vydání přiložené.
 
 Klávesy: `F`, `D`, `S`, `J`, `K`, `L` jsou body, `F1` až `F8` funkční
 klávesy, šipky kurzorový kříž. `F12` otevře nabídku emulátoru,
@@ -35,9 +36,11 @@ Co projekt obsahuje, co ne a o co se opírá, popisuje `PRAVNI.md`.
 
 Dále potřebuje **jádro FreeDOS**, které nahrazuje ztracený ROM-DOS: soubor
 `KERNEL.SYS` z vydání ke2046, sestavení pro 8086 (`ke2046_86f16.zip` na
-GitHubu projektu FDOS/kernel). Je pod licencí GNU GPL a s emulátorem se
-nespojuje, jen se načte jako samostatný soubor. Stačí ho zkopírovat do
-složky s `AriaEmulator.exe`. Emulátor ho hledá ve složce z proměnné `ARIA_FREEDOS`,
+GitHubu projektu FDOS/kernel). **Vydání emulátoru ho obsahuje** vedle
+`AriaEmulator.exe`, nezměněné; licenci (GNU GPL verze 2) a původ najdete
+ve složce `FreeDOS` balíku a zdrojové texty jádra jako `ke2046s.zip`
+u každého vydání. S emulátorem se jádro nespojuje, jen se načte jako
+samostatný soubor. Emulátor ho hledá ve složce z proměnné `ARIA_FREEDOS`,
 jinak vedle sebe, o složku výš a v pracovní složce; jinou cestu lze zadat
 volbou `--jadro`.
 
@@ -452,6 +455,12 @@ vedle emulátoru, prohledá se ještě složka z `ARIAFW`, je-li nastavená.
 Výchozí složku emulátor nemá (do 18. 10. 2026 hledal ještě
 v `D:\aria\update`, vývojové složce autora).
 
+**Balík vydání** udělá `./balik.sh` (ve WSL, po `./build.sh`) do
+`build/vydani`: archiv ZIP s EXE, dokumenty, licencemi a jádrem FreeDOS,
+zdrojový archiv jádra a `SHA256SUMS.txt`. Archivy FreeDOS stáhne
+z vydání FDOS/kernel a ověří podle napevno zapsaných součtů SHA256;
+firmware do balíku nepustí.
+
 Nástroje na analýzu firmwaru (Python) jsou v `tools/`, viz
 `tools/README.md`. Co z firmwaru vznikne, do repozitáře nepatří, a
 příspěvky nesmějí obsahovat firmware ani výpisy jeho disassembly
@@ -460,5 +469,6 @@ příspěvky nesmějí obsahovat firmware ani výpisy jeho disassembly
 ## Licence
 
 MIT, viz `LICENSE.txt`. Jádra procesorů převzatá z MAME jsou pod
-licencí BSD-3-Clause. Firmware a technická dokumentace Arie pod žádnou
-z nich nespadají; právní postavení projektu popisuje `PRAVNI.md`.
+licencí BSD-3-Clause, přiložené jádro FreeDOS pod GNU GPL verze 2.
+Firmware a technická dokumentace Arie pod žádnou z nich nespadají; právní
+postavení projektu popisuje `PRAVNI.md`.
