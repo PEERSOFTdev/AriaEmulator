@@ -116,6 +116,9 @@ class MainWindow : public win::Window {
   // codes held down there, (scan | extended << 8), to let go of likewise.
   bool externalTyping_ = false;
   std::vector<uint16_t> heldScans_;
+  // Whether the Aria's driver had taken the adapter over at the last look
+  // of the timer, so the title changes when that does.
+  bool adapterTaken_ = false;
   // The card slot (HANDOFF 6.8, ar-aj1) and the Backpack floppy drive
   // (HANDOFF 6.7, ar-l5v), one shared Drive each.
   CardDrive card_;

@@ -1142,6 +1142,14 @@ int wmain(int argc, wchar_t** argv) {
   SpeechLog second_speech;
   long long after_menu = -1;  // Cycles run since ">mainmenu", for MAINMENU's own start.
   for (long long t = 0; t < AriaMachine::kCpuHz * 40LL && after_menu < AriaMachine::kCpuHz * 10LL; t += kSlice) {
+    // Ctrl pressed and let go two seconds into the start, long before
+    // FOSSIL opens the line, as a user silencing the screen reader would:
+    // it must not come before the adapter's answer to ATKBD (user's
+    // report, 18. 10. 2026: "adaptér klávsenice není připojen").
+    if (t == AriaMachine::kCpuHz * 2LL / kSlice * kSlice) {
+      second.keyboard_adapter().Key(0x1D, false, true);
+      second.keyboard_adapter().Key(0x1D, false, false);
+    }
     second.Run(kSlice);
     second_speech.Poll(second);
     if (after_menu >= 0) {
@@ -1471,9 +1479,17 @@ int wmain(int argc, wchar_t** argv) {
       adapter.Key(0x2A, false, false);
       const bool second_read = first_read && read_key();
       if (second_read) typed.push_back(static_cast<char>(k.ax & 0xFF));
-      if (typed != "kK") {
+      // Escape is Shift+Esc: ATKBD's table has nothing for Esc alone (it
+      // beeps, INT 6Ah AL=6) and 1Bh with Shift (ATKBD.COM+0134h/+01F4h).
+      adapter.Key(0x2A, false, true);
+      adapter.Key(0x01, false, true);
+      adapter.Key(0x01, false, false);
+      adapter.Key(0x2A, false, false);
+      const bool third_read = second_read && read_key();
+      if (third_read) typed.push_back(static_cast<char>(k.ax & 0xFF));
+      if (typed != "kK\x1b") {
         std::cout << "FAIL boot: external keyboard: typed \"" << Printable(typed) << "\" (AX " << std::hex << k.ax
-                  << std::dec << (first_read && second_read ? "" : ", INT 16h did not return") << ")\n";
+                  << std::dec << (third_read ? "" : ", INT 16h did not return") << ")\n";
         return 1;
       }
     }
@@ -1594,7 +1610,7 @@ int wmain(int argc, wchar_t** argv) {
                " blank disks formatted by FORMAT.EXE as 720 KB and 1.44 MB and written,"
                " a host folder read as a diskette and the Aria's file saved back into it,"
                " two bytes sent and answered through FOSSIL and the 8251 serial port,"
-               " ATKBD.COM installed with the keyboard adapter and k, Shift+K typed through it,"
+               " ATKBD.COM installed despite a key pressed during start-up and k, Shift+K, Shift+Esc typed through it,"
                " konec says vypnuto and switches off, D: kept through"
                " a memory snapshot without a new question, F1 starts the word processor)\n";
   return 0;

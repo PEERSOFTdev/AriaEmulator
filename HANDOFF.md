@@ -1089,6 +1089,48 @@ Ověřeno: sestavení,
 `card_selftest` (nastavení tam a zpět), 18 PASS, řetězce v EXE;
 **v okně vyzkouší uživatel**.
 
+**Hlášení uživatele 18. 10. 2026 a opravy.**
+
+- *Po novém spuštění „adaptér klávsenice není připojen“.* Klávesa
+  stisknutá na začátku startu (např. Ctrl kvůli čtečce) čekala ve frontě
+  adaptéru, dokud FOSSIL nezapnul příjem; pak přišla před `FAh` a ATKBD
+  ji vzal za odpověď. Oprava (`KeyboardAdapter`): klávesy jdou ven až po
+  prvním `10h`|LED (adaptér „převzatý“), `55h` frontu vyprázdní
+  **[předpoklad o skutečném adaptéru]**. `boot_test` stiskne Ctrl ve
+  2. s startu; se starým chováním (mutace) ATKBD selže, s opravou se
+  nainstaluje.
+- *Escape nefunguje, Aria pípne.* Tabulky ATKBD (`+0132h` bez Shiftu,
+  `+01F2h` se Shiftem, po slovech podle skenkódu, jen kódy < 59h): `Esc`
+  bez Shiftu je 0 → pípnutí (`INT 6Ah` AL=6), se Shiftem `001Bh`. Escape
+  je tedy **Shift+Esc** (chování firmwaru); `boot_test` ho píše. Šipky
+  a numerický blok → kódy Arie `0181h`–`018Eh` (se Shiftem `0191h`–),
+  F1–F12 → `01C0h`–`01CBh` (`01D0h`–), Alt a pravý Shift nic.
+- *Braillské klávesy nešly zapnout:* nejspíš `Ctrl+K` bez `F11`, které
+  v režimu externí klávesnice jde do Arie. Navíc klávesy, které nikam
+  nevedou (adaptér nepřevzatý), teď pípnou (`ForwardScan`,
+  `KeyboardAdapter::enabled`, atomické, čte okno).
+- Překlep „klávsenice“ je v ATKBD (`+0509h`): README, Známé chyby
+  firmwaru.
+
+**Druhé kolo připomínek, týž den.**
+
+- Terminologie Arie (uživatel): mezerník+A nebo F9 otevře **Parametry**
+  (Eureka říkala „režim“), položka se ozve jako **„Podpora externí
+  klávesnice“**. Hláška při připojení, nápověda a README tak mluví
+  (znění hlášky od uživatele).
+- *Po odpojení pípaly šipky kritickou chybou Windows*, dvakrát, pak se
+  to nepodařilo zopakovat. Jediný kód, který u kláves hraje
+  `MB_ICONHAND`, bylo nové pípnutí nepřevzaté externí klávesnice; to
+  zní jen při `externalTyping_` (psaní externí klávesnicí), a odpojení
+  ho vypíná. Nejpravděpodobnější je, že klávesnice byla mezitím zase
+  připojená (nebo vrácená při startu), ale ovladač ji ještě nepřevzal
+  — tedy zamýšlené pípnutí, jen nesrozumitelné. Úpravy: místo zvuku
+  Windows vlastní krátký hluboký tón (`ToneNowhere`, 220 Hz), titulek
+  „externí klávesnice, Aria ji nebere“, dokud ovladač adaptér
+  nepřevezme (časovač 500 ms sleduje `KeyboardAdapter::enabled`).
+  **Potvrzeno uživatelem:** bylo to bez teplého resetu, tedy zamýšlené
+  pípnutí nepřevzaté klávesnice.
+
 ### 6.7 Paralelní port a Backpack
 
 `BACKPACK.SYS` přebírá `INT 13h`, `BPHDARIA.SYS` volá `INT 6Bh`.

@@ -85,22 +85,36 @@ K Arii se dala připojit obyčejná klávesnice IBM přes adaptér na sériovém
 portu; Aria pak bere psaní z ní i z braillských kláves zároveň (HANDOFF
 6.6). V emulátoru:
 
-1. V Arii v MODE zapněte volbu **External Keyboard** (System). Aria si
-   ji ukládá do `D:\ARIA.INI` na RAM disku, takže po odpojení baterie
-   je zase vypnutá.
+1. V Arii v Parametrech (mezerník+A nebo F9) zapněte volbu **Podpora
+   externí klávesnice**. Aria si ji ukládá do `D:\ARIA.INI` na RAM disku
+   (jako `External Keyboard=On` v sekci `System`), takže po odpojení
+   baterie je zase vypnutá.
 2. **Klávesnice → Připojit externí klávesnici.** Klávesnice PC hned píše
    jako externí klávesnice: písmena, české znaky podle rozložení QWERTZ
    v ovladači Arie, `F1` až `F10`, Caps Lock s tónem Arie. Nastavení si
    emulátor pamatuje.
 3. **Teplý reset** (`F11`, `Ctrl+P`): ovladač `ATKBD.COM` hledá adaptér
    jen při startu. Pak řekne „External keyboard driver installed OK“.
-   Bez volby v MODE řekne „Disabled.“ a klávesy nikam nevedou.
+   Bez volby v Parametrech řekne „Disabled.“ a klávesy nikam nevedou.
 
 **`F11`, `Ctrl+K`** přepíná klávesnici PC mezi externí klávesnicí
 a braillskými klávesami (dva krátké vysoké tóny = externí, dva nízké =
 braillské); adaptér zůstává připojený, jako by na stole ležely obě
 klávesnice. V titulku okna stojí „externí klávesnice“, když píše externí.
-Akordy s mezerníkem a body jdou jen z braillských kláves.
+Akordy s mezerníkem a body jdou jen z braillských kláves; `Ctrl+K` bez
+`F11` jde do Arie jako klávesa.
+
+- **Escape je `Shift+Esc`.** Samotný `Esc` nemá ovladač Arie v tabulce
+  a Aria na něj pípne; `Shift+mezerník` tu je jen mezera.
+- Šipky, `Home`, `End`, `PgUp`, `PgDn`, `Insert`, `Delete` a `F1` až
+  `F12` jdou jako klávesy Arie, se `Shiftem` jako jejich druhé významy.
+- Dokud ovladač externí klávesnici nepřevezme (před teplým resetem, bez
+  volby v Parametrech, nebo když adaptér nenašel), **každý stisk pípne**
+  krátkým hlubokým tónem — klávesy by jinak nikam nevedly — a titulek
+  okna říká „externí klávesnice, Aria ji nebere“. Pak pomůže teplý
+  reset, nebo `F11`, `Ctrl+K` zpět na braillské klávesy.
+- Klávesy stisknuté během startu Arie se zahodí, dokud ovladač adaptér
+  nepřevezme; jinak by je ovladač vzal za odpověď adaptéru.
 
 ## Okno a nabídka
 
@@ -365,6 +379,9 @@ v programu (podrobnosti v HANDOFF).
   (`FILEMGR.EXE+5B8Dh`, HANDOFF 6.8). Ostatní údaje stavu, například
   kolik místo soubory zabírají, jsou správně. Sestavení 6.87 říká počet
   správně.
+- **„adaptér klávsenice není připojen“** — překlep v hlášce ovladače
+  externí klávesnice (`ATKBD.COM+0509h`, sestavení 7.05), kterou Aria
+  řekne, když adaptér při startu neodpoví.
 
 ## Licence
 

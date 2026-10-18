@@ -38,6 +38,9 @@ void TonePoweredOn() { Tone(300, 100); Tone(500, 100); Tone(700, 150); }
 // others has.
 void ToneExternal() { Tone(1047, 45); Tone(1047, 45); }
 void ToneBraille() { Tone(523, 45); Tone(523, 45); }
+// A key of the external keyboard that the Aria does not take yet (its
+// driver has not taken the adapter over): one short low note a press.
+void ToneNowhere() { Tone(220, 40); }
 
 // A host key as a key of the Aria's matrix (HANDOFF 6.4, from BKB.COM's
 // decoding at +02E5h-+0489h): row 0 = port 0581h (bits 0-5 dots 3, 2, 1,
@@ -152,9 +155,10 @@ const wchar_t kShortcutHelp[] =
     L"Externí klávesnice:\r\n"
     L"\r\n"
     L"V nabídce Klávesnice se připojí externí klávesnice IBM; klávesnice PC\r\n"
-    L"pak píše jako ona. Aria ji bere po teplém resetu, je-li v MODE\r\n"
-    L"zapnutá volba External Keyboard. F11, Ctrl+K přepíná klávesnici PC\r\n"
-    L"mezi externí klávesnicí a braillskými klávesami.";
+    L"pak píše jako ona. Aria ji bere po teplém resetu, je-li v Parametrech\r\n"
+    L"zapnutá volba Podpora externí klávesnice. F11, Ctrl+K přepíná klávesnici PC\r\n"
+    L"mezi externí klávesnicí a braillskými klávesami. Escape je na ní\r\n"
+    L"Shift+Esc; samotný Esc Aria nezná a pípne.";
 
 }  // namespace
 
@@ -271,12 +275,13 @@ void MainWindow::ToggleExternalKeyboard() {
   // its keys would be; out, the braille keys are all there is.
   SetExternalTyping(on, /*quiet=*/true);
   if (on) ToneExternal(); else ToneBraille();
-  // ATKBD.COM looks for the adapter at start-up only, and only with MODE's
-  // External Keyboard on (HANDOFF 6.6).
+  // ATKBD.COM looks for the adapter at start-up only, and only with
+  // "Podpora externí klávesnice" on in the Aria's Parametry (HANDOFF 6.6;
+  // the user's wording, as the Aria says it).
   MessageBoxW(hwnd_,
               on ? L"Externí klávesnice je připojená a klávesnice PC teď píše jako ona. Aria ji začne brát po "
-                   L"teplém resetu (F11, Ctrl+P), je-li v MODE zapnutá volba External Keyboard; jinak klávesy "
-                   L"nikam nevedou.\r\n\r\nF11, Ctrl+K přepíná klávesnici PC mezi externí klávesnicí "
+                   L"teplém resetu (F11, Ctrl+P), je-li v Parametrech zapnutá volba Podpora externí klávesnice; "
+                   L"jinak klávesy nikam nevedou.\r\n\r\nF11, Ctrl+K přepíná klávesnici PC mezi externí klávesnicí "
                    L"a braillskými klávesami."
                  : L"Externí klávesnice je odpojená, klávesnice PC je zase braillská. Ovladač v Arii o ní "
                    L"přestane vědět po teplém resetu (F11, Ctrl+P).",
@@ -321,7 +326,9 @@ void MainWindow::RefreshTitle() const {
   std::wstring title = L"Aria " + info_.version + L", " + info_.encoding +
                        (poweredOff_ ? L" — vypnutá"
                         : released_ ? L" — klávesnice uvolněná"
-                        : externalTyping_ ? L" — externí klávesnice"
+                        : externalTyping_ ? (emulator_.machine().keyboard_adapter().enabled()
+                                                 ? L" — externí klávesnice"
+                                                 : L" — externí klávesnice, Aria ji nebere")
                                     : L" — klávesy do Arie");
   // The card and the diskette: the folder or image each lives in, as
   // Eureka names a diskette's.
@@ -428,6 +435,17 @@ void MainWindow::ForwardScan(bool down, LPARAM lParam) {
   const uint16_t id = static_cast<uint16_t>(scan | (extended ? 0x100 : 0));
   const auto found = std::find(heldScans_.begin(), heldScans_.end(), id);
   if (down) {
+    // Until ATKBD.COM has enabled the adapter -- before a warm reset, with
+    // MODE's External Keyboard off, or when it gave up -- a key would go
+    // nowhere, and that must not be silence (CLAUDE.md). The press beeps
+    // instead; the adapter flag is atomic, read across threads.
+    if (!emulator_.machine().keyboard_adapter().enabled()) {
+      // The host's own short low note, not a Windows system sound, which
+      // the user took for an error of Windows (18. 10. 2026).
+      if (!(lParam & (1 << 30))) ToneNowhere();
+      RefreshTitle();
+      return;
+    }
     // A real AT keyboard repeats a held key by sending its make code again,
     // so Windows' repeat goes through as it is.
     if (found == heldScans_.end()) heldScans_.push_back(id);
@@ -608,6 +626,13 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
       if (wParam == kAudioTimer) {
         card_.Autosave();
         disk_.Autosave();
+        // The Aria's driver takes the external keyboard over during a start
+        // and lets go of it at the next; the title follows (RefreshTitle).
+        const bool taken = emulator_.machine().keyboard_adapter().enabled();
+        if (taken != adapterTaken_) {
+          adapterTaken_ = taken;
+          RefreshTitle();
+        }
       }
       if (wParam == kAudioTimer && !noAudio_ && !emulator_.AudioOk()) {
         // No sound device: say so in a way that is not the Aria's voice, and

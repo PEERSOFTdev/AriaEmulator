@@ -1,6 +1,7 @@
 #ifndef ARIA_KEYBOARD_ADAPTER_H
 #define ARIA_KEYBOARD_ADAPTER_H
 
+#include <atomic>
 #include <cstdint>
 #include <deque>
 
@@ -12,6 +13,12 @@
 // a keyboard); 10h plus the lock bits sets the keyboard's LEDs, with no
 // answer; otherwise it sends the keyboard's scan codes, set 1, release
 // with bit 7, E0h before the extended keys.
+//
+// Keys go out only once ATKBD has enabled the adapter with its first LED
+// command, and 55h drops what was queued [assumption: the real adapter's
+// behaviour is unknown]. Without that, a key pressed while ATKBD waits for
+// its answer arrives first, ATKBD takes it for the answer and says
+// "adaptér klávsenice není připojen" (user's report, 18. 10. 2026).
 class KeyboardAdapter : public SerialDevice {
  public:
   // LED bits as ATKBD sends them (ATKBD.COM+0411h): Caps Lock is bit 2.
@@ -27,11 +34,15 @@ class KeyboardAdapter : public SerialDevice {
   // A key that has gone up or down; `extended` puts E0h in front.
   void Key(uint8_t scan, bool extended, bool down);
   uint8_t leds() const { return leds_; }
-  // Back to power-on: nothing queued, LEDs off.
+  // ATKBD.COM has installed and enabled the adapter, so keys reach the
+  // Aria. Read by the window thread, to beep at keys that go nowhere.
+  bool enabled() const { return enabled_.load(); }
+  // Back to power-on: nothing queued, LEDs off, not enabled.
   void Reset();
 
  private:
   bool keyboard_ = true;
+  std::atomic<bool> enabled_{false};
   uint8_t leds_ = 0;
   std::deque<uint8_t> out_;
 };
