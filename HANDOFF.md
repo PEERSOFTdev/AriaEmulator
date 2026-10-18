@@ -2462,6 +2462,15 @@ celé a z `v20\v1_native` jen opkódy rozšíření 80186. Staženo 5. 10. 2026:
 `C1h` po podopkódech, `C8h`, `C9h`), celkem 562 MB, s README a LICENSE;
 velikost každého souboru sedí s GitHub API a všechny projdou `gzip -t`.
 
+**18. 10. 2026: data stahuje `get-cputests.sh SLOŽKA`.** Stejná
+podmnožina, gitem (řídké stažení bez API GitHubu), oba repozitáře
+připíchnuté na poslední commit ze 5. 10. 2026: 8088 `aea84484` (3. 9.
+2025), V20 `9efbd02b` (19. 8. 2025). Sada V20 se 17. 10. 2026 změnila
+(commit `6b3748f9`) a výjimky v `tests/cpu_test.cpp` jsou spočítané na
+starších datech; přechod na novější je samostatná práce. Skript stahuje
+vedle cíle a do cíle přesune až celá a ověřená data, se souborem
+`ZDROJ.txt` s oběma commity.
+
 Původní návrh: převzít jádro i86/i186 z MAME jako
 samostatnou třídu bez rámce MAME (paměť a porty přes zpětná volání, bez
 debuggeru a ukládání stavu) a periferie PCB z `i186.cpp`. Je odladěné na

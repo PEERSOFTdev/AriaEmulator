@@ -116,7 +116,7 @@ EXE do `bin/`, mezivýstupy do `build/`. Očekává se **osmnáct** řádků
 `PASS`: pět bez dat, devět s firmwarem (`ARIAFW`; osm režimů
 `firmware_test` a `pklite_unpack --check`), dva s daty instrukčních
 testů CPU (`ARIA_CPUTESTS`, výchozí `D:\aria\cputests`, 562 MB,
-SingleStepTests) a dva běhy `boot_test` (7.05 a 6.87 v Kamenických),
+SingleStepTests; stáhne je `./get-cputests.sh SLOŽKA`) a dva běhy `boot_test` (7.05 a 6.87 v Kamenických),
 když je firmware i jádro FreeDOS
 (`ARIA_FREEDOS`, výchozí `D:\aria\freedos`, soubor `KERNEL.SYS` ze
 sestavení ke2046 pro 8086; GPL, do repozitáře nepatří). Co chybí,

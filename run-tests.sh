@@ -69,6 +69,7 @@ fi
 if [ -z "$ARIA_CPUTESTS" ] || [ ! -f "$ARIA_CPUTESTS/8088/metadata.json" ]; then
   echo "Nenašel jsem data instrukčních testů CPU: ${ARIA_CPUTESTS:-(nezadána)}"
   echo "Zadejte složku s podsložkami 8088 a v20 proměnnou ARIA_CPUTESTS."
+  echo "Stáhne je ./get-cputests.sh SLOŽKA (asi 560 MB)."
   echo "Dva testy jádra CPU se vynechají a není to regrese."
   SKIP_CPU=1
   CPU_WIN=""
