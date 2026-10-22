@@ -129,6 +129,9 @@ BEGIN
         MENUITEM "Připojit &externí klávesnici",                ID_KEYBOARD_EXTERNAL
         MENUITEM "Psát na externí &klávesnici\tF11, Ctrl+K",    ID_KEYBOARD_EXTERNAL_TYPE
         MENUITEM SEPARATOR
+        MENUITEM "Body na &domovské řadě: F D S, J K L",        ID_KEYBOARD_LAYOUT_HOME
+        MENUITEM "Body o řadu &výš: R E W, U I O",              ID_KEYBOARD_LAYOUT_TOP
+        MENUITEM SEPARATOR
         /* No shortcut, as in Eureka's submenu: every host shortcut is a key
            the Aria never gets again.  The mnemonics reach it in four keys:
            F12, K, P, K. */

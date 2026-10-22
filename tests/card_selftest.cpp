@@ -258,6 +258,7 @@ int main() {
     saved.SetSlot(9, (root / L"Obrazy karet" / L"Karta.img").wstring());
     saved.SetCardLocked((root / L"Jen zamčená").wstring(), true);
     saved.SetCardLocked(folder, true);
+    saved.SetLayout(L"horni");
     std::wstring error;
     Check(saved.Save(error), "the settings save");
     Settings loaded(file);
@@ -276,6 +277,7 @@ int main() {
     Check(!loaded.FindCard((root / L"Nikdy").wstring()), "an unknown folder is no card");
     Check(!loaded.backpack_connected() && loaded.last_disk().empty(), "no Backpack unless connected");
     Check(!loaded.keyboard_connected(), "no external keyboard unless connected");
+    Check(loaded.layout() == L"horni", "the keyboard layout comes back");
   }
 
   // The Backpack drive's settings (HANDOFF 6.7): the cable, the last

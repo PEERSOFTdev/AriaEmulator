@@ -48,23 +48,56 @@ void ToneNowhere() { Tone(220, 40); }
 // 1 = 0582h (bits 0-7 F1-F8), row 2 = 0584h (bits 0-3 the cursor cross up,
 // down, left, right; bit 6 the central Shift). The dot order shows in BKB's
 // chord list (+052Eh-+0578h): space + 1Bh and 1Ch are API.DOC's time
-// (dots 2345) and date (dots 145) only this way round. The host layout
-// follows the Eureka emulator: F D S and J K L are dots 1-3 and 4-6. Home,
-// End, PgUp and PgDn press two arrows at once, as the Aria API defines them
-// (Home = up + left, PgDn = down + right).
+// (dots 2345) and date (dots 145) only this way round. The dots are one of
+// kLayouts below. Home, End, PgUp and PgDn press two arrows at once, as the
+// Aria API defines them (Home = up + left, PgDn = down + right).
 struct AriaKey {
   int row = -1;
   uint8_t bits = 0;
 };
 
-AriaKey KeyFor(WPARAM key) {
+// Which PC keys are the six dots, after the GIN emulator (its HANDOFF 7.6).
+// F D S and J K L, as in the Eureka emulator, are the default; the row above
+// is there because a cheap keyboard need not report five keys of the home
+// row at once, and the owner's reports them on the row above (22. 10. 2026).
+// By scan code, that is by where the key is: the dots are a shape under the
+// fingers, and the Czech layout's QWERTZ must not move them.
+struct Layout {
+  // As nastaveni.txt writes it.
+  const wchar_t* name;
+  UINT command;
+  // Dots 1 to 6.
+  uint8_t scan[6];
+  const wchar_t* help;
+};
+
+constexpr Layout kLayouts[] = {
+    {L"domovska", ID_KEYBOARD_LAYOUT_HOME, {0x21, 0x20, 0x1F, 0x24, 0x25, 0x26},
+     L"F, D, S jsou body 1, 2, 3 a J, K, L body 4, 5, 6"},
+    {L"horni", ID_KEYBOARD_LAYOUT_TOP, {0x13, 0x12, 0x11, 0x16, 0x17, 0x18},
+     L"R, E, W jsou body 1, 2, 3 a U, I, O body 4, 5, 6"},
+};
+
+std::size_t LayoutIndex(const std::wstring& name) {
+  for (std::size_t i = 0; i < std::size(kLayouts); ++i) {
+    if (name == kLayouts[i].name) return i;
+  }
+  return 0;
+}
+
+// Dots 1 to 6 as row 0's bits, in the keys' order from left to right.
+constexpr uint8_t kDotBits[6] = {0x04, 0x02, 0x01, 0x08, 0x10, 0x20};
+
+AriaKey KeyFor(const Layout& layout, WPARAM key, LPARAM lParam) {
+  // Bit 24 is the extended-key flag: no dot key has it, so the keypad's and
+  // the arrows' scan codes cannot pass for one.
+  if (!(lParam & (1 << 24))) {
+    const uint8_t scan = static_cast<uint8_t>((lParam >> 16) & 0xff);
+    for (int dot = 0; dot < 6; ++dot) {
+      if (layout.scan[dot] == scan) return {0, kDotBits[dot]};
+    }
+  }
   switch (key) {
-    case 'F': return {0, 0x04};
-    case 'D': return {0, 0x02};
-    case 'S': return {0, 0x01};
-    case 'J': return {0, 0x08};
-    case 'K': return {0, 0x10};
-    case 'L': return {0, 0x20};
     case VK_SPACE: return {0, 0x80};
     case VK_UP: return {2, 0x01};
     case VK_DOWN: return {2, 0x02};
@@ -81,11 +114,14 @@ AriaKey KeyFor(WPARAM key) {
   }
 }
 
+// Follows the line that names the dot keys of the layout in force.
 const wchar_t kShortcutHelp[] =
-    L"Klávesy Arie:\r\n"
+    L", mezerník je mezerník.\r\n"
+    L"Jiné rozložení bodů nabízí nabídka Klávesnice: když klávesnice\r\n"
+    L"neohlásí všechny stisknuté klávesy najednou, bývá na jiné řadě\r\n"
+    L"spolehlivější.\r\n"
     L"\r\n"
-    L"F, D, S jsou body 1, 2, 3 a J, K, L body 4, 5, 6, mezerník je\r\n"
-    L"mezerník. F1 až F8 jsou funkční klávesy Arie. Šipky jsou kurzorový\r\n"
+    L"F1 až F8 jsou funkční klávesy Arie. Šipky jsou kurzorový\r\n"
     L"kříž a Shift je kulatá klávesa uprostřed něj; samotný ztiší řeč.\r\n"
     L"Home, End, PgUp a PgDn stisknou dvě šipky naráz.\r\n"
     L"\r\n"
@@ -166,6 +202,7 @@ MainWindow::MainWindow(EmulatorThread& emulator, MachineInfo info, Settings& set
     : emulator_(emulator),
       info_(std::move(info)),
       settings_(settings),
+      layout_(LayoutIndex(settings.layout())),
       card_(emulator, settings, info_.text_encoding),
       disk_(emulator, settings, info_.text_encoding) {}
 
@@ -215,6 +252,9 @@ void MainWindow::RegisterCommands() {
     emulator_.Key(2, 0x0F, false);
   });
   OnCommand(ID_KEYBOARD_EXTERNAL, [this] { ToggleExternalKeyboard(); });
+  for (std::size_t i = 0; i < std::size(kLayouts); ++i) {
+    OnCommand(kLayouts[i].command, [this, i] { SetLayout(i); });
+  }
   OnCommand(ID_KEYBOARD_EXTERNAL_TYPE, [this] {
     if (!settings_.keyboard_connected()) {
       // Not silence: the shortcut works whatever the menu says.
@@ -247,7 +287,8 @@ void MainWindow::RegisterCommands() {
     PostMessageW(hwnd_, WM_SYSCOMMAND, SC_KEYMENU, 0);
   });
   OnCommand(ID_HELP_KEYS, [this] {
-    MessageBoxW(hwnd_, kShortcutHelp, L"Klávesové zkratky", MB_OK | MB_ICONINFORMATION);
+    const std::wstring help = L"Klávesy Arie:\r\n\r\n" + std::wstring(kLayouts[layout_].help) + kShortcutHelp;
+    MessageBoxW(hwnd_, help.c_str(), L"Klávesové zkratky", MB_OK | MB_ICONINFORMATION);
   });
   OnCommand(ID_HELP_ABOUT, [this] {
     MessageBoxW(hwnd_, AboutText().c_str(), L"O programu", MB_OK | MB_ICONINFORMATION);
@@ -364,6 +405,9 @@ void MainWindow::RefreshMenu() const {
   CheckMenuItem(menu, ID_KEYBOARD_EXTERNAL_TYPE, MF_BYCOMMAND | (externalTyping_ ? MF_CHECKED : MF_UNCHECKED));
   EnableMenuItem(menu, ID_KEYBOARD_EXTERNAL_TYPE,
                  MF_BYCOMMAND | (settings_.keyboard_connected() ? MF_ENABLED : MF_GRAYED));
+  // A radio mark, so that a screen reader says which layout is in force.
+  CheckMenuRadioItem(menu, kLayouts[0].command, kLayouts[std::size(kLayouts) - 1].command,
+                     kLayouts[layout_].command, MF_BYCOMMAND);
   CheckMenuItem(menu, ID_KEYBOARD_PASSONCE, MF_BYCOMMAND | (passOnce_ ? MF_CHECKED : MF_UNCHECKED));
   // Meaningless while the keyboard is released: every key already goes to
   // Windows.  Greyed says so where a screen reader reads it.
@@ -410,20 +454,33 @@ void MainWindow::RefreshShortcutText(HMENU menu) const {
 }
 
 void MainWindow::ForwardKey(bool down, WPARAM virtualKey, LPARAM lParam) {
-  const AriaKey aria = KeyFor(virtualKey);
-  if (aria.row < 0) return;
   if (down) {
+    const AriaKey aria = KeyFor(kLayouts[layout_], virtualKey, lParam);
+    if (aria.row < 0) return;
     // Windows' typematic repeat is not the Aria's; BKB repeats by itself.
     if (lParam & (1 << 30)) return;
-    held_.push_back(virtualKey);
+    held_.push_back({virtualKey, aria.row, aria.bits});
+    emulator_.Key(aria.row, aria.bits, true);
   } else {
     // Only a key whose press went to the Aria: one pressed while the host
-    // had the keyboard was never down there.
-    const auto found = std::find(held_.begin(), held_.end(), virtualKey);
+    // had the keyboard was never down there.  Let go of as it was pressed.
+    const auto found =
+        std::find_if(held_.begin(), held_.end(), [virtualKey](const HeldKey& held) { return held.key == virtualKey; });
     if (found == held_.end()) return;
+    const HeldKey held = *found;
     held_.erase(found);
+    emulator_.Key(held.row, held.bits, false);
   }
-  emulator_.Key(aria.row, aria.bits, down);
+}
+
+void MainWindow::SetLayout(std::size_t layout) {
+  if (layout == layout_) return;
+  // A key held down now would come up under another name.
+  ReleaseAll();
+  layout_ = layout;
+  settings_.SetLayout(kLayouts[layout].name);
+  std::wstring error;
+  if (!settings_.Save(error)) MessageBoxW(hwnd_, error.c_str(), L"Nastavení", MB_OK | MB_ICONWARNING);
 }
 
 void MainWindow::ForwardScan(bool down, LPARAM lParam) {
@@ -457,10 +514,7 @@ void MainWindow::ForwardScan(bool down, LPARAM lParam) {
 }
 
 void MainWindow::ReleaseAll() {
-  for (WPARAM key : held_) {
-    const AriaKey aria = KeyFor(key);
-    emulator_.Key(aria.row, aria.bits, false);
-  }
+  for (const HeldKey& held : held_) emulator_.Key(held.row, held.bits, false);
   held_.clear();
   for (uint16_t id : heldScans_) emulator_.ScanCode(static_cast<uint8_t>(id), (id & 0x100) != 0, false);
   heldScans_.clear();

@@ -86,11 +86,15 @@ class MainWindow : public win::Window {
   // stay; otherwise switchOffOnExit_ holds whether to keep the memory.
   bool ConfirmClose();
   void SetPassOnce(bool armed);
+  // Switches the dot keys to kLayouts[layout] and saves the choice.
+  void SetLayout(std::size_t layout);
   std::wstring AboutText() const;
 
   EmulatorThread& emulator_;
   MachineInfo info_;
   Settings& settings_;
+  // Index into the layout table of main_window.cpp.
+  std::size_t layout_;
   HACCEL accelerators_ = nullptr;
   HACCEL hostAccelerators_ = nullptr;
 
@@ -109,8 +113,15 @@ class MainWindow : public win::Window {
   bool poweredOff_ = false;
   // Chosen in the close question: switch off, keep the memory.
   bool switchOffOnExit_ = false;
-  // Host keys down on the Aria, so that they can all be let go of.
-  std::vector<WPARAM> held_;
+  // Host keys down on the Aria, with the Aria key each pressed, so that they
+  // can all be let go of, and as what they went down even after the layout
+  // has changed.
+  struct HeldKey {
+    WPARAM key;
+    int row;
+    uint8_t bits;
+  };
+  std::vector<HeldKey> held_;
   // The PC keyboard types as the external keyboard (the adapter is in and
   // the user has not switched back to the braille keys), and its scan
   // codes held down there, (scan | extended << 8), to let go of likewise.

@@ -1007,6 +1007,20 @@ což je pořád pomalé, protože snímání je třikrát pomalejší než na Ar
   za sekundu a držení akordu pět snímání, tedy **69 ms**. Start do
   MAINMENU se zkrátil ze 16,9 na 6,1 s (6.3).
 
+**Rozložení kláves, 22. 10. 2026 (převzato z emulátoru GINa, jeho
+HANDOFF 7.5 a 7.6):** levná klávesnice PC nemusí pět kláves domovské řady
+ohlásit najednou. Záznam kláves v emulátoru GINa ukázal, že některou
+neohlásí vůbec nebo až po puštění ostatních, a Poznámkový blok se na ní
+choval stejně; řada nad domovskou akordy ohlásila spolehlivě. Nabídka
+Klávesnice proto volí body na domovské řadě (`F D S`, `J K L`, výchozí)
+nebo o řadu výš (`R E W`, `U I O`). Klávesy se poznávají podle kódu
+`scan`, tedy podle místa, ne podle `vk`, aby je rozložení QWERTZ
+nepřesunulo; rozšířené klávesy bodem nejsou. Držená klávesa si pamatuje,
+čím se stiskla, takže se pustí stejně i po přepnutí; přepnutí navíc
+nejdřív pustí všechny. Volba je v `nastaveni.txt`, řádek `rozlozeni`
+(`domovska`, `horni`); neznámá hodnota znamená domovskou řadu. Psaní na
+externí klávesnici (6.6) se netýká, to posílá kódy `scan` beze změny.
+
 ### 6.5 RTC a buzení alarmem
 
 API má `AwokenByRTC` a `EnableAlarm`; `ARIALARM.EXE` a `ARIAMODE.EXE`

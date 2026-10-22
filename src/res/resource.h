@@ -27,6 +27,10 @@
 // F11, Ctrl+K between it and the braille keys.
 #define ID_KEYBOARD_EXTERNAL      40030
 #define ID_KEYBOARD_EXTERNAL_TYPE 40031
+// Which keys are the dots; consecutive, CheckMenuRadioItem takes them as a
+// range.
+#define ID_KEYBOARD_LAYOUT_HOME   40032
+#define ID_KEYBOARD_LAYOUT_TOP    40033
 #define ID_HELP_KEYS         40040
 #define ID_HELP_ABOUT        40041
 // F12: the menu bar, on a key the Aria has no use for (aria.rc).

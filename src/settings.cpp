@@ -33,6 +33,8 @@ constexpr char kLockedDiskPrefix[] = "zamcena-disketa";
 // The external keyboard's adapter (HANDOFF 6.6): "externi-klavesnice=1"
 // when it is on the serial line.
 constexpr char kKeyboardKey[] = "externi-klavesnice";
+// "rozlozeni=horni": which keys are the dots.
+constexpr char kLayoutKey[] = "rozlozeni";
 constexpr char kDiskSlotPrefix[] = "disketa-slot";
 // Drive B: of the last run, "disk-b=C:\Aria\CSR0687.ZIP".
 constexpr char kFlashKey[] = "disk-b";
@@ -154,6 +156,10 @@ void Settings::Load() {
       keyboardConnected_ = value == "1";
       continue;
     }
+    if (key == kLayoutKey) {
+      layout_ = FromUtf8(value);
+      continue;
+    }
     if (key == kLastDiskKey) {
       lastDisk_ = FromUtf8(value);
       continue;
@@ -214,6 +220,7 @@ bool Settings::Save(std::wstring& error) const {
   }
   text += std::wstring(L"backpack=") + (backpackConnected_ ? L"1" : L"0") + L"\r\n";
   text += std::wstring(L"externi-klavesnice=") + (keyboardConnected_ ? L"1" : L"0") + L"\r\n";
+  if (!layout_.empty()) text += L"rozlozeni=" + layout_ + L"\r\n";
   if (!lastDisk_.empty()) text += L"posledni-disketa=" + lastDisk_ + L"\r\n";
   if (!diskFolder_.empty()) text += L"slozka-disket=" + diskFolder_ + L"\r\n";
   for (int number = 1; number <= kSlots; ++number) {

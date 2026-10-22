@@ -83,6 +83,11 @@ class Settings {
   // ar-w6w), off unless the user connects it.
   bool keyboard_connected() const { return keyboardConnected_; }
   void SetKeyboardConnected(bool connected) { keyboardConnected_ = connected; }
+  // Which PC keys are the dots, the layout's name as the file writes it
+  // ("domovska", "horni"); empty means the default.  The window knows what
+  // the names mean.
+  const std::wstring& layout() const { return layout_; }
+  void SetLayout(std::wstring name) { layout_ = std::move(name); }
   const std::wstring& last_disk() const { return lastDisk_; }
   void SetLastDisk(std::wstring path) { lastDisk_ = std::move(path); }
   const std::wstring& disk_folder() const { return diskFolder_; }
@@ -107,6 +112,7 @@ class Settings {
   std::vector<Card> cards_;
   bool backpackConnected_ = false;
   bool keyboardConnected_ = false;
+  std::wstring layout_;
   std::wstring lastDisk_;
   std::wstring diskFolder_;
   // Diskettes whose tab is closed; one that is not here is writable.

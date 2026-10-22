@@ -105,6 +105,10 @@ Klávesy Arie jsou rozložené stejně jako v emulátoru Eureky A4:
 - `F`, `D`, `S` jsou body 1, 2, 3 a `J`, `K`, `L` body 4, 5, 6;
   mezerník je mezerník. Akord platí, až jsou všechny jeho klávesy
   stisknuté současně.
+- Nabídka Klávesnice nabízí i body o řadu výš: `R`, `E`, `W`
+  a `U`, `I`, `O`. Hodí se, když klávesnice neohlásí pět kláves
+  domovské řady najednou. Volba se pamatuje (`nastaveni.txt`, řádek
+  `rozlozeni`).
 - `F1` až `F8` jsou funkční klávesy Arie.
 - Šipky jsou kurzorový kříž a `Shift` je kulatá klávesa uprostřed něj;
   samotný ztiší řeč. `Home`, `End`, `PgUp` a `PgDn` stisknou dvě šipky
