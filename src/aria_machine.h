@@ -202,11 +202,13 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
       sample_dividers_.push_back(clock_divider);
     }
     // The potentiometer after the DAC, taken as linear in amplitude (a
-    // guess: there is no board to measure). Tap 18, SPEAK's default volume
-    // 5, is unity, so the default sounds as it did before the pot was
-    // modelled; volume 9 (tap 31) is 1.7 times that. The tests and WAV
-    // dumps above keep the DSP's own words.
-    const int scaled = static_cast<int16_t>(sample) * pot_wiper_ / kPotUnity;
+    // guess: there is no board to measure). The DSP's words fit in 12 bits
+    // (start-up speech and sounds span -1498..+2007, PLAY.DSP 005Ah shifts
+    // its decoded mu-law right by 4), so they are widened to 16 bits, with
+    // tap 31, the loudest SPEAK sets (volume 9, SPEAK.EXE+BD9Dh), as full
+    // scale; the default tap 18 is then about -5 dBFS at the peaks (ar-9f1).
+    // The tests and WAV dumps above keep the DSP's own words.
+    const int scaled = static_cast<int16_t>(sample) * 16 * pot_wiper_ / kPotFullScale;
     dac_.Sample(slice_base_ + (dsp_.Cycles() - slice_dsp_start_),
                 static_cast<int16_t>(std::clamp(scaled, -32768, 32767)));
   }
@@ -282,8 +284,8 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   // A real X9C comes up where it was last stored; SPEAK sets it before the
   // DSP makes a sound (tap 0 at +09C6h, then the volume), so where it
   // starts here is never heard.
-  static constexpr int kPotUnity = 18;
-  int pot_wiper_ = kPotUnity;
+  static constexpr int kPotFullScale = 31;
+  int pot_wiper_ = 18;
   std::vector<int> pot_settings_;
   std::map<uint16_t, int> unknown_ports_;
 };

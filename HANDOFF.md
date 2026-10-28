@@ -637,6 +637,12 @@ není PKLITE, a běh s jímkou):
   a výpisech WAV zůstávají nevynásobená. Do 18. 10. 2026 se bity 0–2
   zahazovaly, proto posuvník hlasitosti v Režimu nic nedělal.
 
+  **Neplatí od 28. 10. 2026 (`ar-9f1`):** odbočka 18 už není jednička.
+  Emulátor slova DSP rozšiřuje z 12 na 16 bitů a plný rozsah dává
+  odbočka 31 (hlasitost 9): zesílení je 16 × odbočka / 31, výchozí
+  odbočka 18 tedy asi 9,3×, špička řeči kolem −5 dBFS místo −24 dBFS.
+  Viz „Rozsah vzorků“ níže.
+
   **Otevřené (18. 10. 2026): občas tišší start.** Uživatel slyšel
   některé starty bez uložené paměti (testovací běhy, kopie EXE jinde)
   „mnohem tišší“. Potenciometr to být nemohl, do té doby se nebral
@@ -840,6 +846,12 @@ před řečí **tvrdé lupnutí**, v řeči jen drobné špičky.
   ve 12 bitech, a `PLAY.DSP` posouvá o 4 bity doprava (`005Ah`): převodník
   je nejspíš **12bitový** **[předpoklad]**. Emulátor posílá hodnoty tak,
   jak jsou, takže hraje o 24 dB tišeji, než by mohl.
+
+  **Neplatí od 28. 10. 2026 (`ar-9f1`):** uživatel slyšel emulátor
+  „strašně potichu“. `AriaMachine::SportOutput` teď slovo násobí
+  16 × odbočka / 31 (odbočka 31 = hlasitost 9 = plný rozsah), výchozí
+  hlasitost hraje asi o 19 dB hlasitěji. Slova ze SPORT1 v testech a
+  výpisech WAV zůstávají nevynásobená.
 - **Doba startu** (`boot_test -v`, sekundy emulovaného času od zapnutí):
   jádro FreeDOS 1,8; VOICE.SYS 3,8; disk D: 4,7; Backpack 4,9–5,1;
   `aapi` 7,2 → hotovo 9,4; SPEAK 10,7; BKB 10,9; ARIALARM 15,0; MAINMENU
