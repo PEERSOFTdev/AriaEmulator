@@ -38,7 +38,7 @@ set "SKIP_CPU=0"
 if not exist "%ARIA_CPUTESTS%\8088\metadata.json" (
   echo Nenasel jsem data instrukcnich testu CPU: %ARIA_CPUTESTS%
   echo Zadejte slozku s podslozkami 8088 a v20 promennou ARIA_CPUTESTS.
-  echo Stahne je get-cputests.sh (ve WSL nebo v bashi msys2), asi 560 MB.
+  echo Stahne je get-cputests.sh ^(ve WSL nebo v bashi msys2^), asi 560 MB.
   echo Dva testy jadra CPU se vynechaji a neni to regrese.
   set "SKIP_CPU=1"
 )

@@ -396,8 +396,8 @@ emulátor používá 32 kHz pro českou řeč, podle poslechu (HANDOFF 6.3).
 
 Hlasitost nastavená v Arii (nabídka Režim i řídicí sekvence v textu)
 platí: emulátor napodobuje potenciometr hlasitosti, který Aria nastavuje.
-Výchozí hlasitost 5 zní stejně jako dřív, 9 je asi o 70 % hlasitější,
-0 je asi šestina. Jak přesně potenciometr na skutečné Arii zeslaboval,
+Hlasitost 9 využije celý rozsah zvukového výstupu, výchozí 5 je asi
+o 40 % tišší, 0 je asi desetina 9. Jak přesně potenciometr na skutečné Arii zeslaboval,
 se nedochovalo; emulátor bere lineární průběh.
 
 ## Rychlost procesoru
