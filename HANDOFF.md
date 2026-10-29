@@ -852,6 +852,18 @@ před řečí **tvrdé lupnutí**, v řeči jen drobné špičky.
   16 × odbočka / 31 (odbočka 31 = hlasitost 9 = plný rozsah), výchozí
   hlasitost hraje asi o 19 dB hlasitěji. Slova ze SPORT1 v testech a
   výpisech WAV zůstávají nevynásobená.
+
+  **Doloženo 29. 10. 2026 (`bin/dsp_disasm.exe`, výpis mimo strom):**
+  12 bitů není jen změřený rozsah startu, ale mez obou programů DSP.
+  Oba posouvají slovo o 4 bity doprava těsně před zařazením do fronty
+  SPORT1: `PLAY.DSP` `005Ah` (`ASHIFT AR BY -4`, dekódovaný µ-law),
+  `LPC.DSP` `0261h` (`ASHIFT MR1 BY -4` za mřížkovým filtrem
+  s `IF MV SAT MR`). Za tím `LPC.DSP` ještě průměruje dvě taková slova,
+  takže rozsah zůstává −2 048 až +2 047. `LPC.DSP` ze 7.04 a 6.90 (jiné
+  sestavení než 7.05) má tentýž posun na `0273h`, `PLAY.DSP` je ve všech
+  třech stejný. Při odbočce 31 tedy vyjde nejvýš −32 768 až +32 752,
+  bez ořezu. Že **převodník** na desce byl 12bitový, zůstává
+  **[předpoklad]**; programy DSP jsou pro něj ale psané.
 - **Doba startu** (`boot_test -v`, sekundy emulovaného času od zapnutí):
   jádro FreeDOS 1,8; VOICE.SYS 3,8; disk D: 4,7; Backpack 4,9–5,1;
   `aapi` 7,2 → hotovo 9,4; SPEAK 10,7; BKB 10,9; ARIALARM 15,0; MAINMENU

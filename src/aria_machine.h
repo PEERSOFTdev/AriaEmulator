@@ -202,9 +202,11 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
       sample_dividers_.push_back(clock_divider);
     }
     // The potentiometer after the DAC, taken as linear in amplitude (a
-    // guess: there is no board to measure). The DSP's words fit in 12 bits
-    // (start-up speech and sounds span -1498..+2007, PLAY.DSP 005Ah shifts
-    // its decoded mu-law right by 4), so they are widened to 16 bits, with
+    // guess: there is no board to measure). The DSP's words fit in 12 bits:
+    // both programs shift their output right by 4 just before queueing it
+    // (PLAY.DSP 005Ah its decoded mu-law, LPC.DSP 0261h, 0273h in the build
+    // of 7.04 and 6.90, its saturated filter output), and start-up speech
+    // and sounds span -1498..+2007. So they are widened to 16 bits, with
     // tap 31, the loudest SPEAK sets (volume 9, SPEAK.EXE+BD9Dh), as full
     // scale; the default tap 18 is then about -5 dBFS at the peaks (ar-9f1).
     // The tests and WAV dumps above keep the DSP's own words.
@@ -285,7 +287,8 @@ class AriaMachine : public CpuBus, private Adsp2105Board {
   // DSP makes a sound (tap 0 at +09C6h, then the volume), so where it
   // starts here is never heard.
   static constexpr int kPotFullScale = 31;
-  int pot_wiper_ = 18;
+  static constexpr int kPotDefault = 18;  // SPEAK's default volume 5.
+  int pot_wiper_ = kPotDefault;
   std::vector<int> pot_settings_;
   std::map<uint16_t, int> unknown_ports_;
 };
